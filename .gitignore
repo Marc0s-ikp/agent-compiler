@@ -1,0 +1,11 @@
+bin/
+build/
+results/*.txt
+*.o
+*.s
+*.elf
+src/*.tab.*
+src/*.yy.*
+.DS_Store
+*Zone.Identifier
+*Zone.Identifier
