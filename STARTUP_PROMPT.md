@@ -12,13 +12,14 @@ First session only:
 1. Check the toolchain works: build an empty `build/c_compiler`, and confirm `riscv64-unknown-elf-gcc` and `spike pk` run a hello-world.
 2. Propose the AST class hierarchy, the Context design (scopes, frame layout, types) and the register strategy. Write them to docs/DECISIONS.md and STOP so I can review them before any feature work.
 
-Every session after that, loop:
+Every session after that, do exactly ONE feature, then stop:
 1. Ask `tester` for the ranked list of failure root causes.
 2. Pick the highest-impact root cause that follows the feature order in CLAUDE.md.
 3. Create a branch `feat/<short-name>`, give `implementer` the root cause, the failing tests and the reproducer.
 4. When it reports back, have `reviewer` review the branch. If CHANGES NEEDED, send it back to `implementer` twice; if still not approved, log it in docs/BLOCKERS.md.
 5. Merge to master only if: approved, full suite run, no regressions.
 6. Update docs/PROGRESS.md and push.
+7. After the feature is merged and pushed, STOP. Don't start the next feature. Tell me the reference pass count, what was fixed, anything added to BLOCKERS.md, and which feature is next.
 
 Stop and ask me when: a change needs an architecture change, a fix is still not approved after two review rounds, or the pass count hasn't gone up in 3 cycles.
 
