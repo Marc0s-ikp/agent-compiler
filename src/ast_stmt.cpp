@@ -38,8 +38,13 @@ void DeclarationStmt::EmitRISC(std::ostream& os, Context& ctx) const {
     TypePtr base = spec_.Resolve(ctx);
     for (const InitDeclarator& d : declarators_) {
         auto [name, type] = d.declarator.Apply(base, ctx);
-        if (type->IsVoid() || type->IsFunction()) {
+        if (storage_ != Storage::Typedef &&
+            (type->IsVoid() || type->IsFunction())) {
             throw std::runtime_error("invalid type for variable '" + name + "'");
+        }
+        if (storage_ == Storage::Typedef) {
+            ctx.Declare(name, Symbol::Typedef(type));
+            continue;
         }
         if (storage_ == Storage::Static) {
             DeclareStatic(name, type, d.init.get(), ctx);

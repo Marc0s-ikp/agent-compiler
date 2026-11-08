@@ -6,10 +6,11 @@
 
 #include "type.hpp"
 
-enum class SymbolKind { Local, Global, Function, EnumConst };
+enum class SymbolKind { Local, Global, Function, EnumConst, Typedef };
 
 // A named entity. For a Local, 'offset' is relative to s0 (negative: locals
 // and temps, zero or positive: parameters passed on the caller's stack).
+// For a Typedef, 'type' is the type the name stands for.
 // For an EnumConst, 'value' is its value (type int).
 // For a Global, 'label' is the assembly name of its storage.
 // For a Function, 'type' is the Function type (return type and parameters)
@@ -26,6 +27,9 @@ struct Symbol {
     }
     static Symbol Global(TypePtr type, std::string label) {
         return Symbol{std::move(type), 0, SymbolKind::Global, std::move(label), 0};
+    }
+    static Symbol Typedef(TypePtr type) {
+        return Symbol{std::move(type), 0, SymbolKind::Typedef, "", 0};
     }
     static Symbol EnumConst(long value) {
         return Symbol{Type::Int(), 0, SymbolKind::EnumConst, "", value};

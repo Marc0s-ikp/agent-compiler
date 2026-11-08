@@ -86,7 +86,9 @@ void GlobalDeclaration::EmitRISC(std::ostream&, Context& ctx) const {
     TypePtr base = spec_.Resolve(ctx);
     for (const InitDeclarator& d : declarators_) {
         auto [name, type] = d.declarator.Apply(base, ctx);
-        if (!type->IsFunction()) {
+        if (storage_ == Storage::Typedef) {
+            ctx.Declare(name, Symbol::Typedef(type));
+        } else if (!type->IsFunction()) {
             DeclareVariable(name, type, d.init.get(), ctx);
         } else if (d.init) {
             throw std::runtime_error("function '" + name + "' initialised");

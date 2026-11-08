@@ -13,7 +13,7 @@ namespace ast {
 // (later: tags, enum constants) is available.
 
 // Storage class of a declaration. Extern is file scope only.
-enum class Storage { None, Extern, Static };
+enum class Storage { None, Extern, Static, Typedef };
 
 // One enumerator of 'enum { A, B = 5 }'; no value means previous + 1.
 struct Enumerator {
@@ -31,10 +31,12 @@ struct EnumSpec {
 // The type-specifier words of a declaration: int, unsigned, void, enum.
 class TypeSpecifier {
 public:
-    enum class Kind { Int, Unsigned, Void, Enum };
+    enum class Kind { Int, Unsigned, Void, Enum, TypedefName };
     explicit TypeSpecifier(Kind kind) : kind_(kind) {}
     explicit TypeSpecifier(std::shared_ptr<const EnumSpec> spec)
         : kind_(Kind::Enum), enum_(std::move(spec)) {}
+    explicit TypeSpecifier(std::string typedef_name)
+        : kind_(Kind::TypedefName), name_(std::move(typedef_name)) {}
     // Resolving an enum with a body declares its tag and constants in the
     // current scope, so call it once per declaration.
     TypePtr Resolve(Context& ctx) const;
@@ -44,6 +46,7 @@ private:
 
     Kind kind_;
     std::shared_ptr<const EnumSpec> enum_;
+    std::string name_;  // TypedefName only
 };
 
 struct Param;
@@ -73,6 +76,9 @@ public:
     // Builds the declared type from the base type; returns (name, type).
     std::pair<std::string, TypePtr> Apply(const TypePtr& base,
                                           Context& ctx) const;
+
+    // The identifier being declared (empty for an abstract declarator).
+    const std::string& DeclaredName() const;
 
     // The parameters of the function this declarator directly declares
     // (the Function wrapper around the name), or null if it is not one.

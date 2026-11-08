@@ -4,6 +4,7 @@
 #include <string>
 #include "ast.hpp"
 #include "parser.tab.hpp"
+#include "typedef_table.hpp"
 %}
 
 DIGIT   [0-9]
@@ -30,10 +31,14 @@ SUFFIX  [uUlL]*
 "extern"    { return T_EXTERN; }
 "static"    { return T_STATIC; }
 "enum"      { return T_ENUM; }
+"typedef"   { return T_TYPEDEF; }
 
 0[xX][0-9a-fA-F]+{SUFFIX}  { yylval.str = new std::string(yytext); return INT_LITERAL; }
 {DIGIT}+{SUFFIX}           { yylval.str = new std::string(yytext); return INT_LITERAL; }
-{IDSTART}{IDCHAR}*         { yylval.str = new std::string(yytext); return IDENTIFIER; }
+{IDSTART}{IDCHAR}*         {
+    yylval.str = new std::string(yytext);
+    return Typedefs().IsTypeName(yytext) ? T_TYPE_NAME : IDENTIFIER;
+}
 
 "<<="  { return LEFT_ASSIGN; }
 ">>="  { return RIGHT_ASSIGN; }

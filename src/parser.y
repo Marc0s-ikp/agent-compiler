@@ -7,9 +7,17 @@
 
 %code {
 #include <cstdio>
+#include "typedef_table.hpp"
 
 int yylex();
 void yyerror(std::unique_ptr<ast::TranslationUnit>& root, const char* msg);
+
+// A declaration is complete: leave typedef mode, and forget the parameter
+// names of any prototype inside it (only a function body claims them).
+static void EndDeclaration() {
+    Typedefs().SetInTypedef(false);
+    Typedefs().ClearPending();
+}
 
 static ast::ExprPtr Own(ast::Expr* e) { return ast::ExprPtr(e); }
 static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
@@ -41,9 +49,9 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     ast::Storage storage;
 }
 
-%token <str> IDENTIFIER INT_LITERAL
+%token <str> IDENTIFIER INT_LITERAL T_TYPE_NAME
 %token T_INT T_UNSIGNED T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
-%token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM
+%token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM T_TYPEDEF
 %token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
 %token LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
@@ -66,7 +74,9 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <enumerators> enumerator_list
 %type <name_decl> declarator direct_declarator
 %type <stars> pointer
-%type <storage> storage
+%type <storage> storage local_storage
+%type <str> name
+%type <name_decl> declarator_head
 %type <init> initializer
 %type <inits> initializer_list
 
@@ -113,11 +123,13 @@ external_list
 
 external_decl
     : storage type_spec init_declarator_list ';' {
+        EndDeclaration();
         $$ = new ast::GlobalDeclaration(*$2, std::move(*$3), $1);
         delete $2;
         delete $3;
     }
     | storage type_spec ';' {
+        EndDeclaration();
         $$ = new ast::GlobalDeclaration(*$2, {}, $1);
         delete $2;
     }
@@ -132,7 +144,12 @@ external_decl
 storage
     : /* empty */   { $$ = ast::Storage::None; }
     | T_EXTERN      { $$ = ast::Storage::Extern; }
-    | T_STATIC      { $$ = ast::Storage::Static; }
+    | local_storage
+    ;
+
+local_storage
+    : T_STATIC      { $$ = ast::Storage::Static; }
+    | T_TYPEDEF     { $$ = ast::Storage::Typedef; Typedefs().SetInTypedef(true); }
     ;
 
 type_spec
@@ -140,13 +157,21 @@ type_spec
     | T_UNSIGNED         { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Unsigned); }
     | T_UNSIGNED T_INT   { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Unsigned); }
     | T_VOID             { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Void); }
+    | T_TYPE_NAME        { $$ = new ast::TypeSpecifier(std::move(*$1)); delete $1; }
     | enum_spec {
         $$ = new ast::TypeSpecifier(std::shared_ptr<const ast::EnumSpec>($1));
     }
     ;
 
+/* A name being declared. It may spell a typedef name from an outer scope
+   ('int T;' hides it), so the lexer's T_TYPE_NAME is accepted too. */
+name
+    : IDENTIFIER
+    | T_TYPE_NAME
+    ;
+
 enum_spec
-    : T_ENUM IDENTIFIER {
+    : T_ENUM name {
         $$ = new ast::EnumSpec();
         $$->tag = std::move(*$2);
         delete $2;
@@ -157,7 +182,7 @@ enum_spec
         $$->items = std::move(*$3);
         delete $3;
     }
-    | T_ENUM IDENTIFIER '{' enumerator_list opt_comma '}' {
+    | T_ENUM name '{' enumerator_list opt_comma '}' {
         $$ = new ast::EnumSpec();
         $$->tag = std::move(*$2);
         $$->has_body = true;
@@ -186,11 +211,13 @@ enumerator_list
     ;
 
 enumerator
-    : IDENTIFIER {
+    : name {
+        Typedefs().Declare(*$1, false);
         $$ = new ast::Enumerator{std::move(*$1), nullptr};
         delete $1;
     }
-    | IDENTIFIER '=' conditional_expr {
+    | name '=' conditional_expr {
+        Typedefs().Declare(*$1, false);
         $$ = new ast::Enumerator{std::move(*$1), Own($3)};
         delete $1;
     }
@@ -213,7 +240,7 @@ pointer
     ;
 
 direct_declarator
-    : IDENTIFIER {
+    : name {
         $$ = new ast::Declarator(ast::Declarator::Name(std::move(*$1)));
         delete $1;
     }
@@ -266,6 +293,9 @@ param_decl
         delete $1;
     }
     | type_spec declarator {
+        if (!$2->DeclaredName().empty()) {
+            Typedefs().AddPendingParam($2->DeclaredName());
+        }
         $$ = new ast::Param{*$1, std::move(*$2)};
         delete $1;
         delete $2;
@@ -273,9 +303,10 @@ param_decl
     ;
 
 compound_stmt
-    : '{' statement_list '}' {
-        $$ = new ast::CompoundStmt(std::move(*$2));
-        delete $2;
+    : '{' { Typedefs().PushScope(); } statement_list '}' {
+        Typedefs().PopScope();
+        $$ = new ast::CompoundStmt(std::move(*$3));
+        delete $3;
     }
     ;
 
@@ -315,16 +346,19 @@ statement
 
 declaration
     : type_spec init_declarator_list ';' {
+        EndDeclaration();
         $$ = new ast::DeclarationStmt(*$1, std::move(*$2), ast::Storage::None);
         delete $1;
         delete $2;
     }
     | type_spec ';' {
+        EndDeclaration();
         $$ = new ast::DeclarationStmt(*$1, {}, ast::Storage::None);
         delete $1;
     }
-    | T_STATIC type_spec init_declarator_list ';' {
-        $$ = new ast::DeclarationStmt(*$2, std::move(*$3), ast::Storage::Static);
+    | local_storage type_spec init_declarator_list ';' {
+        EndDeclaration();
+        $$ = new ast::DeclarationStmt(*$2, std::move(*$3), $1);
         delete $2;
         delete $3;
     }
@@ -343,12 +377,22 @@ init_declarator_list
     }
     ;
 
-init_declarator
+/* The name is declared (as a type or as an ordinary identifier) as soon as
+   its declarator is complete, before the initialiser and before the next
+   declaration is lexed. */
+declarator_head
     : declarator {
+        Typedefs().Declare($1->DeclaredName(), Typedefs().InTypedef());
+        $$ = $1;
+    }
+    ;
+
+init_declarator
+    : declarator_head {
         $$ = new ast::InitDeclarator{std::move(*$1), nullptr};
         delete $1;
     }
-    | declarator '=' initializer {
+    | declarator_head '=' initializer {
         $$ = new ast::InitDeclarator{
             std::move(*$1), std::unique_ptr<ast::Initializer>($3)};
         delete $1;

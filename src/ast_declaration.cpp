@@ -32,6 +32,13 @@ TypePtr TypeSpecifier::ResolveEnum(Context& ctx) const {
 TypePtr TypeSpecifier::Resolve(Context& ctx) const {
     switch (kind_) {
         case Kind::Enum: return ResolveEnum(ctx);
+        case Kind::TypedefName: {
+            const Symbol& sym = ctx.Lookup(name_);
+            if (sym.kind != SymbolKind::Typedef) {
+                throw std::runtime_error("'" + name_ + "' is not a type");
+            }
+            return sym.type;
+        }
         case Kind::Unsigned: return Type::UInt();
         case Kind::Void: return Type::Void();
         case Kind::Int: break;
@@ -103,6 +110,10 @@ std::pair<std::string, TypePtr> Declarator::Apply(const TypePtr& base,
                 Type::Function(base, ResolveParams(params_, ctx).types), ctx);
     }
     return {name_, base};
+}
+
+const std::string& Declarator::DeclaredName() const {
+    return kind_ == Kind::Name ? name_ : inner_->DeclaredName();
 }
 
 const std::vector<Param>* Declarator::Parameters() const {

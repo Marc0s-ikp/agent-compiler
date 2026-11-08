@@ -9,7 +9,7 @@ namespace ast {
 namespace {
 const Symbol& LookupName(const Context& ctx, const std::string& name) {
     const Symbol& sym = ctx.Lookup(name);
-    if (sym.kind == SymbolKind::Function) {
+    if (sym.kind == SymbolKind::Function || sym.kind == SymbolKind::Typedef) {
         throw std::runtime_error("'" + name + "' is not a variable");
     }
     return sym;
