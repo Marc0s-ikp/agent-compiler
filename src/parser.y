@@ -26,6 +26,9 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     ast::TypeSpecifier* spec;
     ast::InitDeclarator* declarator;
     ast::Declarator* name_decl;
+    ast::Enumerator* enumerator;
+    ast::EnumSpec* enum_spec;
+    std::vector<ast::Enumerator>* enumerators;
     ast::Initializer* init;
     ast::Initializer::List* inits;
     std::vector<ast::StmtPtr>* stmts;
@@ -40,7 +43,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 
 %token <str> IDENTIFIER INT_LITERAL
 %token T_INT T_UNSIGNED T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
-%token T_BREAK T_CONTINUE T_EXTERN T_STATIC
+%token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM
 %token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
 %token LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
@@ -58,14 +61,17 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <params> param_list param_list_opt
 %type <declarators> init_declarator_list
 %type <spec> type_spec
+%type <enum_spec> enum_spec
+%type <enumerator> enumerator
+%type <enumerators> enumerator_list
 %type <name_decl> declarator direct_declarator
 %type <stars> pointer
 %type <storage> storage
 %type <init> initializer
 %type <inits> initializer_list
 
-%destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl> <init>
-%destructor { delete $$; } <stmts> <externals> <params> <declarators> <str> <args> <inits>
+%destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl> <init> <enum_spec> <enumerator>
+%destructor { delete $$; } <stmts> <externals> <params> <declarators> <str> <args> <inits> <enumerators>
 
 /* Dangling else: shift the 'else' so it binds to the nearest 'if'. */
 %nonassoc LOWER_THAN_ELSE
@@ -111,6 +117,10 @@ external_decl
         delete $2;
         delete $3;
     }
+    | storage type_spec ';' {
+        $$ = new ast::GlobalDeclaration(*$2, {}, $1);
+        delete $2;
+    }
     | storage type_spec declarator compound_stmt {
         $$ = new ast::FunctionDefinition(*$2, std::move(*$3),
                                          std::unique_ptr<ast::CompoundStmt>($4), $1);
@@ -130,6 +140,60 @@ type_spec
     | T_UNSIGNED         { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Unsigned); }
     | T_UNSIGNED T_INT   { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Unsigned); }
     | T_VOID             { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Void); }
+    | enum_spec {
+        $$ = new ast::TypeSpecifier(std::shared_ptr<const ast::EnumSpec>($1));
+    }
+    ;
+
+enum_spec
+    : T_ENUM IDENTIFIER {
+        $$ = new ast::EnumSpec();
+        $$->tag = std::move(*$2);
+        delete $2;
+    }
+    | T_ENUM '{' enumerator_list opt_comma '}' {
+        $$ = new ast::EnumSpec();
+        $$->has_body = true;
+        $$->items = std::move(*$3);
+        delete $3;
+    }
+    | T_ENUM IDENTIFIER '{' enumerator_list opt_comma '}' {
+        $$ = new ast::EnumSpec();
+        $$->tag = std::move(*$2);
+        $$->has_body = true;
+        $$->items = std::move(*$4);
+        delete $2;
+        delete $4;
+    }
+    ;
+
+opt_comma
+    : /* empty */
+    | ','
+    ;
+
+enumerator_list
+    : enumerator {
+        $$ = new std::vector<ast::Enumerator>();
+        $$->push_back(std::move(*$1));
+        delete $1;
+    }
+    | enumerator_list ',' enumerator {
+        $$ = $1;
+        $$->push_back(std::move(*$3));
+        delete $3;
+    }
+    ;
+
+enumerator
+    : IDENTIFIER {
+        $$ = new ast::Enumerator{std::move(*$1), nullptr};
+        delete $1;
+    }
+    | IDENTIFIER '=' conditional_expr {
+        $$ = new ast::Enumerator{std::move(*$1), Own($3)};
+        delete $1;
+    }
     ;
 
 declarator
@@ -254,6 +318,10 @@ declaration
         $$ = new ast::DeclarationStmt(*$1, std::move(*$2), ast::Storage::None);
         delete $1;
         delete $2;
+    }
+    | type_spec ';' {
+        $$ = new ast::DeclarationStmt(*$1, {}, ast::Storage::None);
+        delete $1;
     }
     | T_STATIC type_spec init_declarator_list ';' {
         $$ = new ast::DeclarationStmt(*$2, std::move(*$3), ast::Storage::Static);

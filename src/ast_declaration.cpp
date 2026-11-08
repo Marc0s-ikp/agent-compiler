@@ -5,8 +5,33 @@
 
 namespace ast {
 
-TypePtr TypeSpecifier::Resolve(Context&) const {
+// Enums are int (design section 2). Each constant is declared as soon as its
+// value is known, so later enumerators can use earlier ones.
+TypePtr TypeSpecifier::ResolveEnum(Context& ctx) const {
+    if (!enum_->has_body) {
+        if (!enum_->tag.empty()) ctx.LookupTag(enum_->tag);
+        return Type::Int();
+    }
+    long next = 0;
+    for (const Enumerator& e : enum_->items) {
+        if (e.value) {
+            std::optional<long> v = e.value->EvalConst(ctx);
+            if (!v) throw std::runtime_error("enumerator value is not constant");
+            next = *v;
+        }
+        if (next < INT_MIN || next > INT_MAX) {
+            throw std::runtime_error("enumerator value out of range");
+        }
+        ctx.Declare(e.name, Symbol::EnumConst(next));
+        ++next;
+    }
+    if (!enum_->tag.empty()) ctx.DeclareTag(enum_->tag, Type::Int());
+    return Type::Int();
+}
+
+TypePtr TypeSpecifier::Resolve(Context& ctx) const {
     switch (kind_) {
+        case Kind::Enum: return ResolveEnum(ctx);
         case Kind::Unsigned: return Type::UInt();
         case Kind::Void: return Type::Void();
         case Kind::Int: break;

@@ -10,9 +10,28 @@ int RoundUp(int value, int multiple) {
 }
 }  // namespace
 
-void Context::PushScope() { scopes_.emplace_back(); }
+void Context::PushScope() {
+    scopes_.emplace_back();
+    tag_scopes_.emplace_back();
+}
 
-void Context::PopScope() { scopes_.pop_back(); }
+void Context::PopScope() {
+    scopes_.pop_back();
+    tag_scopes_.pop_back();
+}
+
+void Context::DeclareTag(const std::string& tag, const TypePtr& type) {
+    tag_scopes_.back()[tag] = type;
+}
+
+TypePtr Context::LookupTag(const std::string& tag) const {
+    for (auto scope = tag_scopes_.rbegin(); scope != tag_scopes_.rend();
+         ++scope) {
+        auto found = scope->find(tag);
+        if (found != scope->end()) return found->second;
+    }
+    throw std::runtime_error("unknown tag '" + tag + "'");
+}
 
 void Context::Declare(const std::string& name, const Symbol& symbol) {
     scopes_.back()[name] = symbol;

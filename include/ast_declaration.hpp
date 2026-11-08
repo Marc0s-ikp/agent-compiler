@@ -15,15 +15,35 @@ namespace ast {
 // Storage class of a declaration. Extern is file scope only.
 enum class Storage { None, Extern, Static };
 
-// The type-specifier words of a declaration: int, unsigned, void.
+// One enumerator of 'enum { A, B = 5 }'; no value means previous + 1.
+struct Enumerator {
+    std::string name;
+    ExprPtr value;
+};
+
+// 'enum tag { ... }', 'enum { ... }' or just 'enum tag'.
+struct EnumSpec {
+    std::string tag;  // empty if anonymous
+    bool has_body = false;
+    std::vector<Enumerator> items;
+};
+
+// The type-specifier words of a declaration: int, unsigned, void, enum.
 class TypeSpecifier {
 public:
-    enum class Kind { Int, Unsigned, Void };
+    enum class Kind { Int, Unsigned, Void, Enum };
     explicit TypeSpecifier(Kind kind) : kind_(kind) {}
+    explicit TypeSpecifier(std::shared_ptr<const EnumSpec> spec)
+        : kind_(Kind::Enum), enum_(std::move(spec)) {}
+    // Resolving an enum with a body declares its tag and constants in the
+    // current scope, so call it once per declaration.
     TypePtr Resolve(Context& ctx) const;
 
 private:
+    TypePtr ResolveEnum(Context& ctx) const;
+
     Kind kind_;
+    std::shared_ptr<const EnumSpec> enum_;
 };
 
 struct Param;

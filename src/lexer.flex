@@ -29,6 +29,7 @@ SUFFIX  [uUlL]*
 "continue"  { return T_CONTINUE; }
 "extern"    { return T_EXTERN; }
 "static"    { return T_STATIC; }
+"enum"      { return T_ENUM; }
 
 0[xX][0-9a-fA-F]+{SUFFIX}  { yylval.str = new std::string(yytext); return INT_LITERAL; }
 {DIGIT}+{SUFFIX}           { yylval.str = new std::string(yytext); return INT_LITERAL; }

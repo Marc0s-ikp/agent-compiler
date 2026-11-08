@@ -7,7 +7,7 @@
 namespace ast {
 
 namespace {
-const Symbol& LookupVariable(const Context& ctx, const std::string& name) {
+const Symbol& LookupName(const Context& ctx, const std::string& name) {
     const Symbol& sym = ctx.Lookup(name);
     if (sym.kind == SymbolKind::Function) {
         throw std::runtime_error("'" + name + "' is not a variable");
@@ -17,35 +17,48 @@ const Symbol& LookupVariable(const Context& ctx, const std::string& name) {
 }  // namespace
 
 TypePtr Identifier::GetType(const Context& ctx) const {
-    return LookupVariable(ctx, name_).type;
+    return LookupName(ctx, name_).type;
+}
+
+// An enumeration constant is an integer constant expression.
+std::optional<long> Identifier::EvalConst(const Context& ctx) const {
+    const Symbol* sym = ctx.Find(name_);
+    if (sym && sym->kind == SymbolKind::EnumConst) return sym->value;
+    return std::nullopt;
 }
 
 // Only a global has a constant address. An array's value is that address.
 std::optional<ConstValue> Identifier::EvalConstAddress(
     const Context& ctx) const {
-    const Symbol& sym = LookupVariable(ctx, name_);
+    const Symbol& sym = LookupName(ctx, name_);
     if (sym.kind != SymbolKind::Global) return std::nullopt;
     return ConstValue{sym.label, 0};
 }
 
 std::optional<ConstValue> Identifier::EvalConstValue(
     const Context& ctx) const {
+    if (std::optional<long> n = EvalConst(ctx)) return ConstValue{"", *n};
     if (!GetType(ctx)->IsArray()) return std::nullopt;
     return EvalConstAddress(ctx);
 }
 
 void Identifier::EmitRISC(std::ostream& os, Context& ctx) const {
-    const Symbol& sym = LookupVariable(ctx, name_);
-    if (sym.kind == SymbolKind::Global) {
+    const Symbol& sym = LookupName(ctx, name_);
+    if (sym.kind == SymbolKind::EnumConst) {
+        os << "\tli a0, " << sym.value << "\n";
+    } else if (sym.kind == SymbolKind::Global) {
         EmitAddress(os, ctx);
         EmitLoad(os, *sym.type, "a0", "a0", 0);
-        return;
+    } else {
+        EmitLoad(os, *sym.type, "a0", "s0", sym.offset);
     }
-    EmitLoad(os, *sym.type, "a0", "s0", sym.offset);
 }
 
 void Identifier::EmitAddress(std::ostream& os, Context& ctx) const {
-    const Symbol& sym = LookupVariable(ctx, name_);
+    const Symbol& sym = LookupName(ctx, name_);
+    if (sym.kind == SymbolKind::EnumConst) {
+        throw std::runtime_error("enumeration constant is not an lvalue");
+    }
     if (sym.kind == SymbolKind::Global) {
         os << "\tla a0, " << sym.label << "\n";
         return;

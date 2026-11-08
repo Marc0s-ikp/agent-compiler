@@ -6,10 +6,11 @@
 
 #include "type.hpp"
 
-enum class SymbolKind { Local, Global, Function };
+enum class SymbolKind { Local, Global, Function, EnumConst };
 
 // A named entity. For a Local, 'offset' is relative to s0 (negative: locals
 // and temps, zero or positive: parameters passed on the caller's stack).
+// For an EnumConst, 'value' is its value (type int).
 // For a Global, 'label' is the assembly name of its storage.
 // For a Function, 'type' is the Function type (return type and parameters)
 // and no storage is recorded (D9).
@@ -18,15 +19,19 @@ struct Symbol {
     int offset = 0;
     SymbolKind kind = SymbolKind::Local;
     std::string label;
+    long value = 0;
 
     static Symbol Local(TypePtr type, int offset) {
-        return Symbol{std::move(type), offset, SymbolKind::Local, ""};
+        return Symbol{std::move(type), offset, SymbolKind::Local, "", 0};
     }
     static Symbol Global(TypePtr type, std::string label) {
-        return Symbol{std::move(type), 0, SymbolKind::Global, std::move(label)};
+        return Symbol{std::move(type), 0, SymbolKind::Global, std::move(label), 0};
+    }
+    static Symbol EnumConst(long value) {
+        return Symbol{Type::Int(), 0, SymbolKind::EnumConst, "", value};
     }
     static Symbol Function(TypePtr type) {
-        return Symbol{std::move(type), 0, SymbolKind::Function, ""};
+        return Symbol{std::move(type), 0, SymbolKind::Function, "", 0};
     }
 };
 
@@ -40,6 +45,10 @@ public:
     void Declare(const std::string& name, const Symbol& symbol);
     const Symbol& Lookup(const std::string& name) const;  // throws if unknown
     const Symbol* Find(const std::string& name) const;    // null if unknown
+    // Struct, union and enum tags live in their own namespace, scoped like
+    // ordinary names. Declare in the innermost scope; Lookup searches outwards.
+    void DeclareTag(const std::string& tag, const TypePtr& type);
+    TypePtr LookupTag(const std::string& tag) const;  // throws if unknown
     // Record a function in file scope; throws if it clashes with an earlier
     // declaration of the same name.
     void DeclareFunction(const std::string& name, const TypePtr& function_type);
@@ -97,6 +106,7 @@ private:
     int Allocate(const TypePtr& type);
 
     std::vector<std::map<std::string, Symbol>> scopes_;
+    std::vector<std::map<std::string, TypePtr>> tag_scopes_;
     int used_ = 0;                  // bytes currently allocated below s0
     int max_used_ = 0;              // high-water mark, decides the frame size
     int outgoing_ = 0;              // outgoing stack-argument area (feature 3)
