@@ -1,5 +1,15 @@
 # Progress
 
+## Features
+- [x] 1. Integer expressions, locals, return
+- [x] 2. Control flow
+- [x] 3. Functions
+- [x] 4. Arrays and pointers
+- [x] 5. Globals, static, enum, typedef, switch
+- [ ] 6. char, strings, sizeof (in progress on feat/char-strings-sizeof)
+- [ ] 7. float / double
+- [ ] 8. structs, unions
+
 ## Latest session
 Pass count: 159/180 before and after (65 of 86 compiler_tests, 94 of 94 custom). No compiler code changed this session. On feat/char-strings-sizeof the suite reads 159/205, because the 25 new tests fail until feature 6 exists.
 Fixed: nothing new. Feature 5 is complete and merged on master at ef26bb9 (globals and extern, static, enum, typedef, switch), with no feature 5 work outstanding.
