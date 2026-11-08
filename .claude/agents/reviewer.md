@@ -15,3 +15,5 @@ Flag, in order of severity:
 5. Anything unclear enough that a human couldn't explain it in a viva.
 
 Reply APPROVE or CHANGES NEEDED with a short list. Don't rewrite the code yourself.
+
+Only block (CHANGES NEEDED) for problems that would affect realistic C programs in the test categories,or that would break a later feature in CLAUDE.md's feature order. Pathological edge cases (huge allocations, extreme values, inputs no test or normal program would use) go in docs/BLOCKERS.md under "Nice to have" and do not block the merge.

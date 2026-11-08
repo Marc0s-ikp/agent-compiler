@@ -16,7 +16,7 @@ Every session after that, loop:
 1. Ask `tester` for the ranked list of failure root causes.
 2. Pick the highest-impact root cause that follows the feature order in CLAUDE.md.
 3. Create a branch `feat/<short-name>`, give `implementer` the root cause, the failing tests and the reproducer.
-4. When it reports back, have `reviewer` review the branch. If CHANGES NEEDED, send it back to `implementer` once; if still not approved, log it in docs/BLOCKERS.md.
+4. When it reports back, have `reviewer` review the branch. If CHANGES NEEDED, send it back to `implementer` twice; if still not approved, log it in docs/BLOCKERS.md.
 5. Merge to main only if: approved, full suite run, no regressions.
 6. Update docs/PROGRESS.md and push.
 
