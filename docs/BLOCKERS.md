@@ -44,3 +44,40 @@ in `Declarator::Apply`, which bounds one array but not the frame.
 
 **Status 2026-11-08: OPEN.** Marcus waived reviewer approval for this item and feature 4 was merged as is.
 The fix above has not been made.
+
+## Nice to have
+
+From the feature 5 review (2026-11-08). None of these blocked the merge, and none is fixed yet.
+
+1. `src/ast_operators.cpp:121`: `FoldBinary` folds in untyped 64-bit `long`, so `unsigned a = ~0u >> 1;` and
+   `case (0u-2)/2:` compile to the wrong value. Runtime evaluation is correct. Fix: fold using `GetType` and wrap to 32 bits.
+2. `src/ast_function.cpp:118`: `static int f(int); int f(int x){...}` still emits `.globl f`. The definition should
+   inherit internal linkage from the earlier declaration.
+3. `src/global_init.cpp:91-93`: `Word` silently emits nothing for sizes other than 1, 2 or 4. Unreachable today, but
+   `double` would shift the data after it. Add a throw.
+4. `src/ast_function.cpp:76-77`: the initialiser is built before the name is declared, so `int **q = &q[0];` fails
+   with "undeclared identifier". Feature 8's `struct n a = {&a}` would hit the same error.
+5. `src/ast_pointer.cpp`: `Deref` has no constant-address override, so `int *p = *m;` and `&*a` are rejected.
+6. `BinaryCompare`, `LogicalAnd`, `LogicalOr` and `Ternary` have no `EvalConst`, so `enum { A = 1 < 2 }` is rejected.
+7. `src/ast_function.cpp:79`: this size check looks unreachable, because the merge step already rejects mismatches.
+
+Unsupported and deferred: local brace initialisers (`src/ast_stmt.cpp:57`, schedule with feature 6, since
+`char s[] = "abc"` needs the same path), local `extern` (`src/parser.y:356`), local function prototypes
+(`src/ast_stmt.cpp:41-44`).
+
+## Do first in later features
+
+From the same review.
+
+1. `include/ast_declaration.hpp:42`: `Resolve` mutates `Context` for enum bodies, but `sizeof(type)` and casts call
+   it from `GetType`/`EvalConst`, which take `const Context&` (D3). Split it into a declaring resolve and a const
+   lookup rather than using `const_cast`.
+2. `include/ast_node.hpp:42`, `src/global_init.cpp:17`: `char *g = "x"` needs `AddString`, but the initialiser walk
+   has only a `const Context&`.
+3. `src/global_init.cpp:107` and `:42-52`: strings need a case at top level and in `Object`, for `char s[]`, `{"ab"}`
+   and `char a[2][4] = {"ab","cd"}`.
+4. D15 understates the float work. `ConstValue` needs a floating field, `FloatLiteral`, `UnaryOp`, `BinaryArith` and
+   `Cast` need overrides, and `Scalar` must convert to the target type (`float f = 1;`, single-precision `0.1`).
+5. Feature 8: struct member rules must not call `EndDeclaration()` (`src/parser.y:17`), member declarators must not
+   go through `declarator_head`, `.`/`->` must accept `T_TYPE_NAME`, and Records must compare by identity, because
+   structural `Equals` would recurse forever on `struct node { struct node *next; }`.
