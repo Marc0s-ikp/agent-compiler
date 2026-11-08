@@ -1,0 +1,67 @@
+#include "ast_function.hpp"
+
+#include <sstream>
+
+#include "abi.hpp"
+#include "emit.hpp"
+
+namespace ast {
+
+namespace {
+
+// Allocate the frame, save ra and the caller's s0, point s0 at the old sp.
+void EmitPrologue(std::ostream& os, int size) {
+    EmitAddrOffset(os, "sp", "sp", -size);
+    EmitMem(os, "sw", "ra", "sp", size - 4);
+    EmitMem(os, "sw", "s0", "sp", size - 8);
+    EmitAddrOffset(os, "s0", "sp", size);
+}
+
+void EmitEpilogue(std::ostream& os) {
+    EmitMem(os, "lw", "ra", "s0", -4);
+    EmitMem(os, "lw", "t0", "s0", -8);
+    os << "\tmv sp, s0\n\tmv s0, t0\n\tret\n";
+}
+
+}  // namespace
+
+// Register parameters are copied to local home slots; after that they are
+// ordinary locals. Stack parameters stay where the caller put them.
+void FunctionDefinition::EmitParams(std::ostream& os, Context& ctx) const {
+    std::vector<TypePtr> types;
+    for (const Param& p : params_) types.push_back(p.type);
+    std::vector<ArgLoc> locs = ClassifyArgs(types);
+    for (size_t i = 0; i < params_.size(); ++i) {
+        const TypePtr& type = params_[i].type;
+        if (locs[i].kind == ArgLoc::Kind::Stack) {
+            ctx.Declare(params_[i].name, {type, locs[i].offset});
+            continue;
+        }
+        int home = ctx.AllocLocal(type);
+        ctx.Declare(params_[i].name, {type, home});
+        EmitStore(os, *type, "a" + std::to_string(locs[i].reg), "s0", home);
+    }
+}
+
+// The body is generated first into a buffer, because the frame size it
+// needs for the prologue is only known afterwards (D2).
+void FunctionDefinition::EmitRISC(std::ostream& os, Context& ctx) const {
+    ctx.BeginFunction(return_type_);
+    std::ostringstream body;
+    ctx.PushScope();
+    EmitParams(body, ctx);
+    body_->EmitRISC(body, ctx);
+    ctx.PopScope();
+
+    os << "\t.text\n\t.globl " << name_ << "\n" << name_ << ":\n";
+    EmitPrologue(os, ctx.FrameSize());
+    os << body.str();
+    os << ctx.ReturnLabel() << ":\n";
+    EmitEpilogue(os);
+}
+
+void TranslationUnit::EmitRISC(std::ostream& os, Context& ctx) const {
+    for (const ExternalDeclPtr& decl : decls_) decl->EmitRISC(os, ctx);
+}
+
+}  // namespace ast

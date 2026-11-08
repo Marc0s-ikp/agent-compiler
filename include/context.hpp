@@ -1,0 +1,50 @@
+#pragma once
+#include <map>
+#include <string>
+#include <vector>
+
+#include "type.hpp"
+
+// A named object. Offsets are relative to s0 (negative: locals and temps,
+// zero or positive: parameters passed on the caller's stack).
+struct Symbol {
+    TypePtr type;
+    int offset;
+};
+
+// Code generation state: scopes, the stack frame of the current function,
+// and label generation. See design sections 3 and 4.
+class Context {
+public:
+    // Scopes. Lookup searches the innermost scope first.
+    void PushScope();
+    void PopScope();
+    void Declare(const std::string& name, const Symbol& symbol);
+    const Symbol& Lookup(const std::string& name) const;
+
+    // Frame. Slots grow downwards from s0, below the saved ra and s0.
+    void BeginFunction(const TypePtr& return_type);
+    int AllocLocal(const TypePtr& type);
+    int PushTemp(const TypePtr& type);
+    void PopTemp();
+    int FrameSize() const;
+
+    // Function-level information.
+    const std::string& ReturnLabel() const { return return_label_; }
+    const TypePtr& ReturnType() const { return return_type_; }
+
+    // Labels are unique across the whole file.
+    std::string NewLabel(const std::string& prefix);
+
+private:
+    int Allocate(const TypePtr& type);
+
+    std::vector<std::map<std::string, Symbol>> scopes_;
+    int used_ = 0;                  // bytes currently allocated below s0
+    int max_used_ = 0;              // high-water mark, decides the frame size
+    int outgoing_ = 0;              // outgoing stack-argument area (feature 3)
+    std::vector<int> temp_marks_;   // 'used_' before each live temp
+    std::string return_label_;
+    TypePtr return_type_;
+    int label_count_ = 0;
+};
