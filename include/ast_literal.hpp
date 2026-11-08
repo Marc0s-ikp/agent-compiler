@@ -14,8 +14,13 @@ public:
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
-    uint32_t value_;
-    TypePtr type_;
+    // Throws if the value does not fit 32 bits. Checked at code generation,
+    // not in the constructor, so the parser never throws.
+    void CheckRange() const;
+
+    unsigned long long value_;
+    bool has_u_;
+    std::string text_;
 };
 
 }  // namespace ast

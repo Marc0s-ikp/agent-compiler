@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 
+#include "ast_declaration.hpp"
 #include "ast_node.hpp"
 
 namespace ast {
@@ -25,20 +26,14 @@ private:
     ExprPtr expr_;
 };
 
-// One declarator of a declaration: name and optional initialiser.
-struct InitDeclarator {
-    std::string name;
-    ExprPtr init;
-};
-
 class DeclarationStmt : public Stmt {
 public:
-    DeclarationStmt(TypePtr type, std::vector<InitDeclarator> declarators)
-        : type_(std::move(type)), declarators_(std::move(declarators)) {}
+    DeclarationStmt(TypeSpecifier spec, std::vector<InitDeclarator> declarators)
+        : spec_(spec), declarators_(std::move(declarators)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
-    TypePtr type_;
+    TypeSpecifier spec_;
     std::vector<InitDeclarator> declarators_;
 };
 

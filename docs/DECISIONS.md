@@ -15,6 +15,7 @@
 | 2026-11-08 | ACCEPTED D11: global initialisers are compile-time constants emitted as `.data`/`.rodata`, covering integer, float/double and address-of-global | Added in Marcus's review. Globals are initialised before any code runs | Extending `EvalConst` or adding a separate constant evaluator; the choice is left open until feature 5 |
 | 2026-11-08 | ACCEPTED D12: `FrameSize()` rounds to 16 including the outgoing area. Temp and local slots respect type alignment (8 for `double`) | Added in Marcus's review. Keeps `sp` ABI-aligned and every slot correctly aligned | |
 | 2026-11-08 | ACCEPTED D13: when each feature group is reached, `tester` writes `tests/custom/` cases for anything the reference tests don't cover | Added in Marcus's review. The reference tests leave parts of the feature order untested | |
+| 2026-11-08 | PROPOSED D14: bison semantic values are raw pointers in %union with %destructor; ownership moves to std::unique_ptr when a node adopts them | bison's C++ variants need the lalr1.cc skeleton and a different lexer interface; design section 1 says unique_ptr throughout, so this states the exception for the parser stack | lalr1.cc skeleton with variants |
 
 Status: all of the above was approved by Marcus on 2026-11-08.
 

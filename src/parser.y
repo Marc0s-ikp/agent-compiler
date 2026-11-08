@@ -11,14 +11,6 @@
 int yylex();
 void yyerror(std::unique_ptr<ast::TranslationUnit>& root, const char* msg);
 
-enum { SPEC_INT, SPEC_UNSIGNED, SPEC_VOID };
-
-static TypePtr MakeType(int spec) {
-    if (spec == SPEC_VOID) return Type::Void();
-    if (spec == SPEC_UNSIGNED) return Type::UInt();
-    return Type::Int();
-}
-
 static ast::ExprPtr Own(ast::Expr* e) { return ast::ExprPtr(e); }
 static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 }
@@ -31,13 +23,14 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     ast::CompoundStmt* compound;
     ast::ExternalDecl* external;
     ast::Param* param;
+    ast::TypeSpecifier* spec;
     ast::InitDeclarator* declarator;
+    ast::Declarator* name_decl;
     std::vector<ast::StmtPtr>* stmts;
     std::vector<ast::ExternalDeclPtr>* externals;
     std::vector<ast::Param>* params;
     std::vector<ast::InitDeclarator>* declarators;
     std::string* str;
-    int spec;
 }
 
 %token <str> IDENTIFIER INT_LITERAL
@@ -58,8 +51,9 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <params> param_list param_list_opt
 %type <declarators> init_declarator_list
 %type <spec> type_spec
+%type <name_decl> declarator
 
-%destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator>
+%destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl>
 %destructor { delete $$; } <stmts> <externals> <params> <declarators> <str>
 
 /* Binary operator precedence, lowest first. */
@@ -97,20 +91,24 @@ external_list
     ;
 
 function_definition
-    : type_spec IDENTIFIER '(' param_list_opt ')' compound_stmt {
-        $$ = new ast::FunctionDefinition(MakeType($1), std::move(*$2),
-                                         std::move(*$4),
+    : type_spec declarator '(' param_list_opt ')' compound_stmt {
+        $$ = new ast::FunctionDefinition(*$1, std::move(*$2), std::move(*$4),
                                          std::unique_ptr<ast::CompoundStmt>($6));
+        delete $1;
         delete $2;
         delete $4;
     }
     ;
 
 type_spec
-    : T_INT              { $$ = SPEC_INT; }
-    | T_UNSIGNED         { $$ = SPEC_UNSIGNED; }
-    | T_UNSIGNED T_INT   { $$ = SPEC_UNSIGNED; }
-    | T_VOID             { $$ = SPEC_VOID; }
+    : T_INT              { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Int); }
+    | T_UNSIGNED         { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Unsigned); }
+    | T_UNSIGNED T_INT   { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Unsigned); }
+    | T_VOID             { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Void); }
+    ;
+
+declarator
+    : IDENTIFIER { $$ = new ast::Declarator(std::move(*$1)); delete $1; }
     ;
 
 param_list_opt
@@ -133,8 +131,9 @@ param_list
     ;
 
 param_decl
-    : type_spec IDENTIFIER {
-        $$ = new ast::Param{std::move(*$2), MakeType($1)};
+    : type_spec declarator {
+        $$ = new ast::Param{*$1, std::move(*$2)};
+        delete $1;
         delete $2;
     }
     ;
@@ -165,7 +164,8 @@ statement
 
 declaration
     : type_spec init_declarator_list ';' {
-        $$ = new ast::DeclarationStmt(MakeType($1), std::move(*$2));
+        $$ = new ast::DeclarationStmt(*$1, std::move(*$2));
+        delete $1;
         delete $2;
     }
     ;
@@ -184,12 +184,13 @@ init_declarator_list
     ;
 
 init_declarator
-    : IDENTIFIER {
+    : declarator {
         $$ = new ast::InitDeclarator{std::move(*$1), nullptr};
         delete $1;
     }
-    | IDENTIFIER '=' assignment_expr {
-        $$ = new ast::InitDeclarator{std::move(*$1), Own($3)};
+    | declarator '=' assignment_expr {
+        $$ = new ast::InitDeclarator{
+            std::move(*$1), std::make_unique<ast::Initializer>(Own($3))};
         delete $1;
     }
     ;

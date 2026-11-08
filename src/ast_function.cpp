@@ -28,32 +28,38 @@ void EmitEpilogue(std::ostream& os) {
 // Register parameters are copied to local home slots; after that they are
 // ordinary locals. Stack parameters stay where the caller put them.
 void FunctionDefinition::EmitParams(std::ostream& os, Context& ctx) const {
+    std::vector<std::string> names;
     std::vector<TypePtr> types;
-    for (const Param& p : params_) types.push_back(p.type);
+    for (const Param& p : params_) {
+        auto [name, type] = p.declarator.Apply(p.spec.Resolve(ctx), ctx);
+        names.push_back(name);
+        types.push_back(type);
+    }
     std::vector<ArgLoc> locs = ClassifyArgs(types);
     for (size_t i = 0; i < params_.size(); ++i) {
-        const TypePtr& type = params_[i].type;
         if (locs[i].kind == ArgLoc::Kind::Stack) {
-            ctx.Declare(params_[i].name, {type, locs[i].offset});
+            ctx.Declare(names[i], {types[i], locs[i].offset});
             continue;
         }
-        int home = ctx.AllocLocal(type);
-        ctx.Declare(params_[i].name, {type, home});
-        EmitStore(os, *type, "a" + std::to_string(locs[i].reg), "s0", home);
+        int home = ctx.AllocLocal(types[i]);
+        ctx.Declare(names[i], {types[i], home});
+        EmitStore(os, *types[i], "a" + std::to_string(locs[i].reg), "s0", home);
     }
 }
 
 // The body is generated first into a buffer, because the frame size it
 // needs for the prologue is only known afterwards (D2).
 void FunctionDefinition::EmitRISC(std::ostream& os, Context& ctx) const {
-    ctx.BeginFunction(return_type_);
+    const std::string name =
+        declarator_.Apply(return_spec_.Resolve(ctx), ctx).first;
+    ctx.BeginFunction(return_spec_.Resolve(ctx));
     std::ostringstream body;
     ctx.PushScope();
     EmitParams(body, ctx);
     body_->EmitRISC(body, ctx);
     ctx.PopScope();
 
-    os << "\t.text\n\t.globl " << name_ << "\n" << name_ << ":\n";
+    os << "\t.text\n\t.globl " << name << "\n" << name << ":\n";
     EmitPrologue(os, ctx.FrameSize());
     os << body.str();
     os << ctx.ReturnLabel() << ":\n";

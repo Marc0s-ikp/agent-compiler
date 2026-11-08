@@ -17,14 +17,17 @@ void ExprStmt::EmitRISC(std::ostream& os, Context& ctx) const {
 }
 
 void DeclarationStmt::EmitRISC(std::ostream& os, Context& ctx) const {
-    if (type_->IsVoid()) throw std::runtime_error("variable of type void");
+    TypePtr base = spec_.Resolve(ctx);
     for (const InitDeclarator& d : declarators_) {
-        int offset = ctx.AllocLocal(type_);
-        ctx.Declare(d.name, {type_, offset});
+        auto [name, type] = d.declarator.Apply(base, ctx);
+        if (type->IsVoid()) throw std::runtime_error("variable of type void");
+        int offset = ctx.AllocLocal(type);
+        ctx.Declare(name, {type, offset});
         if (!d.init) continue;
-        d.init->EmitRISC(os, ctx);
-        EmitConvert(os, *d.init->GetType(ctx), *type_);
-        EmitStore(os, *type_, "a0", "s0", offset);
+        const Expr& value = d.init->Value();
+        value.EmitRISC(os, ctx);
+        EmitConvert(os, *value.GetType(ctx), *type);
+        EmitStore(os, *type, "a0", "s0", offset);
     }
 }
 

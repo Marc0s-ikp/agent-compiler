@@ -7,17 +7,26 @@
 namespace ast {
 
 IntLiteral::IntLiteral(const std::string& text) {
-    unsigned long long v = std::strtoull(text.c_str(), nullptr, 0);
-    if (v > 0xFFFFFFFFULL) throw std::runtime_error("integer too large: " + text);
-    bool has_u = text.find_first_of("uU") != std::string::npos;
-    value_ = static_cast<uint32_t>(v);
-    type_ = (has_u || v > INT_MAX) ? Type::UInt() : Type::Int();
+    value_ = std::strtoull(text.c_str(), nullptr, 0);
+    has_u_ = text.find_first_of("uU") != std::string::npos;
+    text_ = text;
 }
 
-TypePtr IntLiteral::GetType(const Context&) const { return type_; }
+void IntLiteral::CheckRange() const {
+    if (value_ > 0xFFFFFFFFULL) {
+        throw std::runtime_error("integer too large: " + text_);
+    }
+}
+
+TypePtr IntLiteral::GetType(const Context&) const {
+    CheckRange();
+    return (has_u_ || value_ > INT_MAX) ? Type::UInt() : Type::Int();
+}
 
 void IntLiteral::EmitRISC(std::ostream& os, Context&) const {
-    os << "\tli a0, " << static_cast<int32_t>(value_) << "\n";
+    CheckRange();
+    os << "\tli a0, " << static_cast<int32_t>(static_cast<uint32_t>(value_))
+       << "\n";
 }
 
 }  // namespace ast
