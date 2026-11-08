@@ -12,9 +12,9 @@ ARCH_FLAGS="-march=rv32imfd -mabi=ilp32d"
 SIM="${RISCV_SIM:-spike pk}"
 TIMEOUT="${TEST_TIMEOUT:-5}"
 OUT="$ROOT/results/latest.txt"
-WORK="$ROOT/bin/test_out"
+WORK="$ROOT/build/test_out"
 
-make -s bin/c_compiler || { echo "BUILD FAILED"; exit 1; }
+make -s build/c_compiler || { echo "BUILD FAILED"; exit 1; }
 mkdir -p "$WORK" "$ROOT/results"
 : > "$OUT"
 
@@ -32,7 +32,7 @@ for t in "${TESTS[@]}"; do
   base="$WORK/${rel//\//_}"
   driver="${name}_driver.c"
 
-  if ! timeout "$TIMEOUT" bin/c_compiler -S "$t" -o "$base.s" > "$base.compile.log" 2>&1; then
+  if ! timeout "$TIMEOUT" build/c_compiler -S "$t" -o "$base.s" > "$base.compile.log" 2>&1; then
     echo "CRASH   $rel (compiler)" >> "$OUT"; continue
   fi
   if ! $GCC $ARCH_FLAGS -o "$base.elf" "$base.s" "$driver" > "$base.link.log" 2>&1; then

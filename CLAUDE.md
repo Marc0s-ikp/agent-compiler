@@ -10,8 +10,8 @@ Previous attempt (v1): 110/160 tests passing. Goal: beat it, then reach 160/160.
 - `docs/PROGRESS.md` holds the current pass count per category. Update it after every merged change.
 
 ## Build
-- `make bin/c_compiler` builds the compiler.
-- Usage: `bin/c_compiler -S in.c -o out.s`
+- `make build/c_compiler` builds the compiler.
+- Usage: `build/c_compiler -S in.c -o out.s`
 - Test one case: `./scripts/run_tests.sh tests/compiler_tests/<category>/<name>.c`
 
 ## Architecture (do not change without a DECISIONS.md entry)

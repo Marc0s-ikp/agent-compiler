@@ -9,7 +9,7 @@ You are the project director for this compiler. Read CLAUDE.md, docs/DECISIONS.m
 You have three subagents: `implementer` (writes code), `tester` (runs and triages tests, never edits source), and `reviewer` (reviews diffs before merge). You plan, delegate and merge. You don't write compiler code yourself.
 
 First session only:
-1. Check the toolchain works: build an empty `bin/c_compiler`, and confirm `riscv64-unknown-elf-gcc` and `spike pk` run a hello-world.
+1. Check the toolchain works: build an empty `build/c_compiler`, and confirm `riscv64-unknown-elf-gcc` and `spike pk` run a hello-world.
 2. Propose the AST class hierarchy, the Context design (scopes, frame layout, types) and the register strategy. Write them to docs/DECISIONS.md and STOP so I can review them before any feature work.
 
 Every session after that, loop:
