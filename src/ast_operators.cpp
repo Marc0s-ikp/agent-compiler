@@ -41,12 +41,6 @@ void EmitBinOp(std::ostream& os, BinOp op, const Type& common) {
 
 namespace {
 
-int PointeeSize(const Type& pointer) {
-    int size = pointer.Base()->Size();
-    if (size == 0) throw std::runtime_error("arithmetic on pointer to void");
-    return size;
-}
-
 bool IsPowerOfTwo(int n) { return (n & (n - 1)) == 0; }
 
 int Log2(int n) {
@@ -56,6 +50,12 @@ int Log2(int n) {
 }
 
 }  // namespace
+
+int PointeeSize(const Type& pointer) {
+    int size = pointer.Base()->Size();
+    if (size == 0) throw std::runtime_error("arithmetic on pointer to void");
+    return size;
+}
 
 PointerOp ClassifyPointerOp(BinOp op, const TypePtr& l, const TypePtr& r) {
     if (!l->IsPointer() && !r->IsPointer()) return PointerOp::None;

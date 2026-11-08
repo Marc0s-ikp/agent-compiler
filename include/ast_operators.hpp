@@ -21,6 +21,10 @@ void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond);
 // a0 = a0 <op> t0, using signedness of 'common' (shared with CompoundAssign).
 void EmitBinOp(std::ostream& os, BinOp op, const Type& common);
 
+// Size of the object a pointer points to; throws if it has none (void).
+// Every pointer scaling, including ++ and --, takes its step from here.
+int PointeeSize(const Type& pointer);
+
 // The pointer forms of + and -, decided once for the whole compiler.
 enum class PointerOp { None, PtrPlusInt, IntPlusPtr, PtrMinusInt, PtrMinusPtr };
 

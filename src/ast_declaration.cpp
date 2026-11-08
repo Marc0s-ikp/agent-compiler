@@ -1,5 +1,6 @@
 #include "ast_declaration.hpp"
 
+#include <climits>
 #include <stdexcept>
 
 namespace ast {
@@ -60,6 +61,14 @@ std::pair<std::string, TypePtr> Declarator::Apply(const TypePtr& base,
                     throw std::runtime_error(
                         "array size must be a positive constant");
                 }
+                // The inner dimensions are already in 'base', so this one
+                // check bounds the whole array. Divide to avoid overflow.
+                if (base->Size() == 0) {
+                    throw std::runtime_error("array of incomplete element type");
+                }
+                if (*n > INT_MAX / base->Size()) {
+                    throw std::runtime_error("array too large");
+                }
                 length = static_cast<int>(*n);
             }
             return inner_->Apply(Type::Array(base, length), ctx);
@@ -88,6 +97,7 @@ ResolvedParams ResolveParams(const std::vector<Param>& params, Context& ctx) {
         if (type->IsVoid() && (params.size() > 1 || !name.empty())) {
             throw std::runtime_error("parameter of type void");
         }
+        if (type->IsFunction()) throw std::runtime_error("parameter of function type");
         if (type->IsVoid()) return {};
         out.names.push_back(name);
         out.types.push_back(Decay(type));

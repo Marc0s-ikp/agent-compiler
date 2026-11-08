@@ -20,10 +20,7 @@ TypePtr TargetType(const Expr& lhs, const Context& ctx) {
 
 // Bytes ++ and -- add: 1, or the pointee size for a pointer.
 int StepSize(const Type& type) {
-    if (!type.IsPointer()) return 1;
-    int size = type.Base()->Size();
-    if (size == 0) throw std::runtime_error("arithmetic on pointer to void");
-    return size;
+    return type.IsPointer() ? PointeeSize(type) : 1;
 }
 
 }  // namespace
