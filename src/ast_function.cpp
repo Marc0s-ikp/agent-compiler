@@ -50,9 +50,8 @@ void FunctionDefinition::EmitParams(std::ostream& os, Context& ctx) const {
 // The body is generated first into a buffer, because the frame size it
 // needs for the prologue is only known afterwards (D2).
 void FunctionDefinition::EmitRISC(std::ostream& os, Context& ctx) const {
-    const std::string name =
-        declarator_.Apply(return_spec_.Resolve(ctx), ctx).first;
-    ctx.BeginFunction(return_spec_.Resolve(ctx));
+    auto [name, type] = declarator_.Apply(return_spec_.Resolve(ctx), ctx);
+    ctx.BeginFunction(type);
     std::ostringstream body;
     ctx.PushScope();
     EmitParams(body, ctx);
