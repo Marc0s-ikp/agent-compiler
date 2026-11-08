@@ -53,7 +53,7 @@ SUFFIX  [uUlL]*
 "++"   { return INC_OP; }
 "--"   { return DEC_OP; }
 
-[-+*/%<>=!~&|^?:;,(){}]  { return yytext[0]; }
+[-+*/%<>=!~&|^?:;,(){}\[\]]  { return yytext[0]; }
 
 .      { fprintf(stderr, "lexer: unexpected character '%s'\n", yytext); exit(1); }
 %%

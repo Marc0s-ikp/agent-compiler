@@ -30,20 +30,22 @@ TypePtr FunctionCall::GetType(const Context& ctx) const {
     if (sym->kind != SymbolKind::Function) {
         throw std::runtime_error("'" + name_ + "' is not a function");
     }
-    return sym->type;
+    return sym->type->Base();
 }
 
 std::vector<TypePtr> FunctionCall::ArgumentTypes(const Context& ctx) const {
     GetType(ctx);  // rejects calling a non-function
     const Symbol* sym = ctx.Find(name_);
-    size_t declared = sym ? sym->params.size() : 0;
+    const std::vector<TypePtr> none;
+    const std::vector<TypePtr>& params = sym ? sym->type->Params() : none;
+    size_t declared = params.size();
     if (args_.size() < declared) {
         throw std::runtime_error("too few arguments to '" + name_ + "'");
     }
     std::vector<TypePtr> types;
     for (size_t i = 0; i < args_.size(); ++i) {
-        TypePtr own = RequireInteger(args_[i]->GetType(ctx));
-        types.push_back(i < declared ? sym->params[i] : Promote(own));
+        TypePtr own = RequireScalar(args_[i]->ValueType(ctx));
+        types.push_back(i < declared ? params[i] : Promote(own));
     }
     return types;
 }
@@ -56,7 +58,7 @@ void FunctionCall::EmitRISC(std::ostream& os, Context& ctx) const {
     std::vector<int> slots;
     for (size_t i = 0; i < args_.size(); ++i) {
         args_[i]->EmitRISC(os, ctx);
-        EmitConvert(os, *args_[i]->GetType(ctx), *types[i]);
+        EmitConvert(os, *args_[i]->ValueType(ctx), *types[i]);
         slots.push_back(ctx.PushTemp(types[i]));
         EmitStore(os, *types[i], "a0", "s0", slots[i]);
     }

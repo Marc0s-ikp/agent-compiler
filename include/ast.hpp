@@ -9,4 +9,5 @@
 #include "ast_literal.hpp"
 #include "ast_node.hpp"
 #include "ast_operators.hpp"
+#include "ast_pointer.hpp"
 #include "ast_stmt.hpp"

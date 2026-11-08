@@ -28,5 +28,6 @@ void EmitBranchIfZero(std::ostream& os, const std::string& label);
 void EmitBranchIfNonZero(std::ostream& os, const std::string& label);
 void EmitJump(std::ostream& os, const std::string& label);
 
-// Convert the value in a0 from one type to another.
+// Convert the value in a0 from one type to another. Both must be scalar
+// (a source array must be decayed by the caller first), or both void.
 void EmitConvert(std::ostream& os, const Type& from, const Type& to);

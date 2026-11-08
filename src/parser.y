@@ -32,6 +32,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     std::vector<ast::Param>* params;
     std::vector<ast::InitDeclarator>* declarators;
     std::string* str;
+    int stars;
 }
 
 %token <str> IDENTIFIER INT_LITERAL
@@ -54,7 +55,8 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <params> param_list param_list_opt
 %type <declarators> init_declarator_list
 %type <spec> type_spec
-%type <name_decl> declarator
+%type <name_decl> declarator direct_declarator
+%type <stars> pointer
 
 %destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl>
 %destructor { delete $$; } <stmts> <externals> <params> <declarators> <str> <args>
@@ -98,18 +100,16 @@ external_list
     ;
 
 external_decl
-    : type_spec declarator '(' param_list_opt ')' ';' {
-        $$ = new ast::FunctionDeclaration(*$1, std::move(*$2), std::move(*$4));
+    : type_spec declarator ';' {
+        $$ = new ast::FunctionDeclaration(*$1, std::move(*$2));
         delete $1;
         delete $2;
-        delete $4;
     }
-    | type_spec declarator '(' param_list_opt ')' compound_stmt {
-        $$ = new ast::FunctionDefinition(*$1, std::move(*$2), std::move(*$4),
-                                         std::unique_ptr<ast::CompoundStmt>($6));
+    | type_spec declarator compound_stmt {
+        $$ = new ast::FunctionDefinition(*$1, std::move(*$2),
+                                         std::unique_ptr<ast::CompoundStmt>($3));
         delete $1;
         delete $2;
-        delete $4;
     }
     ;
 
@@ -121,7 +121,40 @@ type_spec
     ;
 
 declarator
-    : IDENTIFIER { $$ = new ast::Declarator(std::move(*$1)); delete $1; }
+    : direct_declarator
+    | pointer direct_declarator {
+        $$ = $2;
+        for (int i = 0; i < $1; ++i) {
+            $$ = new ast::Declarator(ast::Declarator::Pointer(
+                std::unique_ptr<ast::Declarator>($$)));
+        }
+    }
+    ;
+
+pointer
+    : '*'           { $$ = 1; }
+    | pointer '*'   { $$ = $1 + 1; }
+    ;
+
+direct_declarator
+    : IDENTIFIER {
+        $$ = new ast::Declarator(ast::Declarator::Name(std::move(*$1)));
+        delete $1;
+    }
+    | '(' declarator ')' { $$ = $2; }
+    | direct_declarator '[' conditional_expr ']' {
+        $$ = new ast::Declarator(ast::Declarator::Array(
+            std::unique_ptr<ast::Declarator>($1), Own($3)));
+    }
+    | direct_declarator '[' ']' {
+        $$ = new ast::Declarator(ast::Declarator::Array(
+            std::unique_ptr<ast::Declarator>($1), nullptr));
+    }
+    | direct_declarator '(' param_list_opt ')' {
+        $$ = new ast::Declarator(ast::Declarator::Function(
+            std::unique_ptr<ast::Declarator>($1), std::move(*$3)));
+        delete $3;
+    }
     ;
 
 param_list_opt
@@ -144,7 +177,16 @@ param_list
 
 param_decl
     : type_spec {
-        $$ = new ast::Param{*$1, ast::Declarator("")};
+        $$ = new ast::Param{*$1, ast::Declarator::Name("")};
+        delete $1;
+    }
+    | type_spec pointer {
+        std::unique_ptr<ast::Declarator> d(
+            new ast::Declarator(ast::Declarator::Name("")));
+        for (int i = 0; i < $2; ++i) {
+            d.reset(new ast::Declarator(ast::Declarator::Pointer(std::move(d))));
+        }
+        $$ = new ast::Param{*$1, std::move(*d)};
         delete $1;
     }
     | type_spec declarator {
@@ -292,6 +334,8 @@ unary_expr
     | '-' unary_expr     { $$ = new ast::UnaryOp(ast::UnOp::Neg, Own($2)); }
     | '~' unary_expr     { $$ = new ast::UnaryOp(ast::UnOp::BitNot, Own($2)); }
     | '!' unary_expr     { $$ = new ast::UnaryOp(ast::UnOp::LogNot, Own($2)); }
+    | '*' unary_expr     { $$ = new ast::Deref(Own($2)); }
+    | '&' unary_expr     { $$ = new ast::AddressOf(Own($2)); }
     ;
 
 postfix_expr
@@ -301,6 +345,7 @@ postfix_expr
         delete $1;
         delete $3;
     }
+    | postfix_expr '[' expr ']' { $$ = new ast::Index(Own($1), Own($3)); }
     | postfix_expr INC_OP { $$ = new ast::IncDec(true, false, Own($1)); }
     | postfix_expr DEC_OP { $$ = new ast::IncDec(false, false, Own($1)); }
     ;

@@ -11,6 +11,7 @@ public:
     // 'text' is the source spelling: decimal, octal or hex, optional u/l suffix.
     explicit IntLiteral(const std::string& text);
     TypePtr GetType(const Context& ctx) const override;
+    std::optional<long> EvalConst(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:

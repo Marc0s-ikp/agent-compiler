@@ -24,27 +24,6 @@ void EmitEpilogue(std::ostream& os) {
     os << "\tmv sp, s0\n\tmv s0, t0\n\tret\n";
 }
 
-// Parameter names and types after applying the declarators. A lone unnamed
-// 'void' means "no parameters"; any other void parameter is an error.
-struct ResolvedParams {
-    std::vector<std::string> names;
-    std::vector<TypePtr> types;
-};
-
-ResolvedParams ResolveParams(const std::vector<Param>& params, Context& ctx) {
-    ResolvedParams out;
-    for (const Param& p : params) {
-        auto [name, type] = p.declarator.Apply(p.spec.Resolve(ctx), ctx);
-        if (type->IsVoid() && (params.size() > 1 || !name.empty())) {
-            throw std::runtime_error("parameter of type void");
-        }
-        if (type->IsVoid()) return {};
-        out.names.push_back(name);
-        out.types.push_back(type);
-    }
-    return out;
-}
-
 // Register parameters are copied to local home slots; after that they are
 // ordinary locals. Stack parameters stay where the caller put them.
 void EmitParams(std::ostream& os, Context& ctx, const ResolvedParams& params) {
@@ -63,19 +42,34 @@ void EmitParams(std::ostream& os, Context& ctx, const ResolvedParams& params) {
 
 }  // namespace
 
+namespace {
+
+// The declared type must be a function type; returns it with the name.
+std::pair<std::string, TypePtr> ResolveFunction(const TypeSpecifier& spec,
+                                                const Declarator& declarator,
+                                                Context& ctx) {
+    auto [name, type] = declarator.Apply(spec.Resolve(ctx), ctx);
+    if (!type->IsFunction()) throw std::runtime_error("not a function");
+    return {name, type};
+}
+
+}  // namespace
+
 void FunctionDeclaration::EmitRISC(std::ostream&, Context& ctx) const {
-    auto [name, type] = declarator_.Apply(return_spec_.Resolve(ctx), ctx);
-    ctx.DeclareFunction(name, type, ResolveParams(params_, ctx).types);
+    auto [name, type] = ResolveFunction(spec_, declarator_, ctx);
+    ctx.DeclareFunction(name, type);
 }
 
 // The body is generated first into a buffer, because the frame size it
 // needs for the prologue is only known afterwards (D2). The function is
 // declared before its body so that it can call itself.
 void FunctionDefinition::EmitRISC(std::ostream& os, Context& ctx) const {
-    auto [name, type] = declarator_.Apply(return_spec_.Resolve(ctx), ctx);
-    ResolvedParams params = ResolveParams(params_, ctx);
-    ctx.DeclareFunction(name, type, params.types);
-    ctx.BeginFunction(type);
+    auto [name, type] = ResolveFunction(spec_, declarator_, ctx);
+    const std::vector<Param>* declared = declarator_.Parameters();
+    if (!declared) throw std::runtime_error("'" + name + "' is not a function");
+    ResolvedParams params = ResolveParams(*declared, ctx);
+    ctx.DeclareFunction(name, type);
+    ctx.BeginFunction(type->Base());
     std::ostringstream body;
     ctx.PushScope();
     EmitParams(body, ctx, params);

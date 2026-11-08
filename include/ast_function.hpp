@@ -17,34 +17,27 @@ using ExternalDeclPtr = std::unique_ptr<ExternalDecl>;
 // nothing (D9).
 class FunctionDeclaration : public ExternalDecl {
 public:
-    FunctionDeclaration(TypeSpecifier return_spec, Declarator declarator,
-                        std::vector<Param> params)
-        : return_spec_(return_spec),
-          declarator_(std::move(declarator)),
-          params_(std::move(params)) {}
+    FunctionDeclaration(TypeSpecifier spec, Declarator declarator)
+        : spec_(spec), declarator_(std::move(declarator)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
-    TypeSpecifier return_spec_;
+    TypeSpecifier spec_;
     Declarator declarator_;
-    std::vector<Param> params_;
 };
 
 class FunctionDefinition : public ExternalDecl {
 public:
-    FunctionDefinition(TypeSpecifier return_spec, Declarator declarator,
-                       std::vector<Param> params,
+    FunctionDefinition(TypeSpecifier spec, Declarator declarator,
                        std::unique_ptr<CompoundStmt> body)
-        : return_spec_(return_spec),
+        : spec_(spec),
           declarator_(std::move(declarator)),
-          params_(std::move(params)),
           body_(std::move(body)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
-    TypeSpecifier return_spec_;
+    TypeSpecifier spec_;
     Declarator declarator_;
-    std::vector<Param> params_;
     std::unique_ptr<CompoundStmt> body_;
 };
 

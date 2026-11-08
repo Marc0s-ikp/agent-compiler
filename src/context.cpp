@@ -32,32 +32,26 @@ const Symbol& Context::Lookup(const std::string& name) const {
     return *symbol;
 }
 
-namespace {
-bool SameTypes(const std::vector<TypePtr>& a, const std::vector<TypePtr>& b) {
-    if (a.size() != b.size()) return false;
-    for (size_t i = 0; i < a.size(); ++i) {
-        if (!a[i]->Equals(*b[i])) return false;
-    }
-    return true;
-}
-}  // namespace
-
 // Parameters are compared only when both declarations list some, because
 // 'int f();' leaves them unspecified.
 void Context::DeclareFunction(const std::string& name,
-                              const TypePtr& return_type,
-                              const std::vector<TypePtr>& params) {
+                              const TypePtr& function_type) {
     Symbol& slot = scopes_.front()[name];
     if (!slot.type) {
-        slot = Symbol{return_type, 0, SymbolKind::Function, params};
+        slot = Symbol::Function(function_type);
         return;
     }
-    bool clash = slot.kind != SymbolKind::Function ||
-                 !slot.type->Equals(*return_type) ||
-                 (!slot.params.empty() && !params.empty() &&
-                  !SameTypes(slot.params, params));
-    if (clash) throw std::runtime_error("conflicting declaration of '" + name + "'");
-    if (slot.params.empty()) slot.params = params;
+    const TypePtr& old = slot.type;
+    bool compatible = slot.kind == SymbolKind::Function &&
+                      old->Base()->Equals(*function_type->Base());
+    if (compatible && !old->Params().empty() &&
+        !function_type->Params().empty()) {
+        compatible = old->Equals(*function_type);
+    }
+    if (!compatible) {
+        throw std::runtime_error("conflicting declaration of '" + name + "'");
+    }
+    if (old->Params().empty()) slot.type = function_type;
 }
 
 void Context::BeginFunction(const TypePtr& return_type) {

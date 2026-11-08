@@ -23,6 +23,11 @@ TypePtr IntLiteral::GetType(const Context&) const {
     return (has_u_ || value_ > INT_MAX) ? Type::UInt() : Type::Int();
 }
 
+std::optional<long> IntLiteral::EvalConst(const Context&) const {
+    CheckRange();
+    return static_cast<long>(value_);
+}
+
 void IntLiteral::EmitRISC(std::ostream& os, Context&) const {
     CheckRange();
     os << "\tli a0, " << static_cast<int32_t>(static_cast<uint32_t>(value_))

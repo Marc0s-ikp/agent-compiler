@@ -10,19 +10,36 @@ enum class UnOp { Plus, Neg, BitNot, LogNot };
 // Throws unless 't' is an integer type; returns it.
 TypePtr RequireInteger(const TypePtr& t);
 
+// Throws unless 't' is an integer or pointer type; returns it.
+TypePtr RequireScalar(const TypePtr& t);
+
 // Evaluate 'cond' as a condition: leaves its truth value in a0 (nonzero is
-// true). The one place that decides what may be a condition; integer-only
-// for now, floats and pointers change only this function.
+// true). The one place that decides what may be a condition: integers and
+// pointers now; floats change only this function.
 void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond);
 
 // a0 = a0 <op> t0, using signedness of 'common' (shared with CompoundAssign).
 void EmitBinOp(std::ostream& os, BinOp op, const Type& common);
+
+// The pointer forms of + and -, decided once for the whole compiler.
+enum class PointerOp { None, PtrPlusInt, IntPlusPtr, PtrMinusInt, PtrMinusPtr };
+
+// Classifies 'l op r' (value types). Throws for invalid pointer combinations.
+PointerOp ClassifyPointerOp(BinOp op, const TypePtr& l, const TypePtr& r);
+
+// With the pointer in a0 and the integer index in t0: a0 = a0 +/- t0 scaled
+// by the pointee size. The one place pointer arithmetic is scaled.
+void EmitPointerAdd(std::ostream& os, bool subtract, const Type& pointer);
+
+// a0 = (a0 - t0) / pointee size, for pointer subtraction.
+void EmitPointerDiff(std::ostream& os, const Type& pointer);
 
 class BinaryArith : public Expr {
 public:
     BinaryArith(BinOp op, ExprPtr lhs, ExprPtr rhs)
         : op_(op), lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
+    std::optional<long> EvalConst(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
@@ -69,6 +86,7 @@ public:
     UnaryOp(UnOp op, ExprPtr operand)
         : op_(op), operand_(std::move(operand)) {}
     TypePtr GetType(const Context& ctx) const override;
+    std::optional<long> EvalConst(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:

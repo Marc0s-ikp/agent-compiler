@@ -1,5 +1,7 @@
 #include "emit.hpp"
 
+#include <stdexcept>
+
 namespace {
 bool FitsImm12(int v) { return v >= -2048 && v <= 2047; }
 }  // namespace
@@ -17,6 +19,11 @@ void EmitMem(std::ostream& os, const std::string& op, const std::string& reg,
 
 void EmitLoad(std::ostream& os, const Type& type, const std::string& reg,
               const std::string& base, int off) {
+    // An array has no scalar value: its value is its address (D10).
+    if (type.IsArray()) {
+        EmitAddrOffset(os, reg, base, off);
+        return;
+    }
     const char* op = "lw";
     if (type.Size() == 1) op = type.IsSigned() ? "lb" : "lbu";
     if (type.Size() == 2) op = type.IsSigned() ? "lh" : "lhu";
@@ -33,6 +40,7 @@ void EmitStore(std::ostream& os, const Type& type, const std::string& reg,
 
 void EmitAddrOffset(std::ostream& os, const std::string& dst,
                     const std::string& base, int off) {
+    if (off == 0 && dst == base) return;
     if (FitsImm12(off)) {
         os << "\taddi " << dst << ", " << base << ", " << off << "\n";
         return;
@@ -44,7 +52,11 @@ void EmitAddrOffset(std::ostream& os, const std::string& dst,
 // Registers always hold a canonical 32-bit value, so only narrowing needs
 // code: shift left then right to drop high bits and re-extend.
 void EmitConvert(std::ostream& os, const Type& from, const Type& to) {
-    if (!to.IsInteger() || !from.IsInteger()) return;
+    if (from.IsVoid() && to.IsVoid()) return;
+    if (!from.IsScalar() || !to.IsScalar()) {
+        throw std::runtime_error("invalid type conversion");
+    }
+    if (!to.IsInteger() || !from.IsInteger()) return;  // 32-bit pointers
     if (to.Size() >= 4) return;
     if (from.Size() == to.Size() && from.IsSigned() == to.IsSigned()) return;
     int shift = 32 - 8 * to.Size();
