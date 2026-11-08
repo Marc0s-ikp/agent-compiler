@@ -1,6 +1,7 @@
 #include "ast_function.hpp"
 
 #include <sstream>
+#include <stdexcept>
 
 #include "abi.hpp"
 #include "emit.hpp"
@@ -23,38 +24,61 @@ void EmitEpilogue(std::ostream& os) {
     os << "\tmv sp, s0\n\tmv s0, t0\n\tret\n";
 }
 
-}  // namespace
+// Parameter names and types after applying the declarators. A lone unnamed
+// 'void' means "no parameters"; any other void parameter is an error.
+struct ResolvedParams {
+    std::vector<std::string> names;
+    std::vector<TypePtr> types;
+};
+
+ResolvedParams ResolveParams(const std::vector<Param>& params, Context& ctx) {
+    ResolvedParams out;
+    for (const Param& p : params) {
+        auto [name, type] = p.declarator.Apply(p.spec.Resolve(ctx), ctx);
+        if (type->IsVoid() && (params.size() > 1 || !name.empty())) {
+            throw std::runtime_error("parameter of type void");
+        }
+        if (type->IsVoid()) return {};
+        out.names.push_back(name);
+        out.types.push_back(type);
+    }
+    return out;
+}
 
 // Register parameters are copied to local home slots; after that they are
 // ordinary locals. Stack parameters stay where the caller put them.
-void FunctionDefinition::EmitParams(std::ostream& os, Context& ctx) const {
-    std::vector<std::string> names;
-    std::vector<TypePtr> types;
-    for (const Param& p : params_) {
-        auto [name, type] = p.declarator.Apply(p.spec.Resolve(ctx), ctx);
-        names.push_back(name);
-        types.push_back(type);
-    }
-    std::vector<ArgLoc> locs = ClassifyArgs(types);
-    for (size_t i = 0; i < params_.size(); ++i) {
+void EmitParams(std::ostream& os, Context& ctx, const ResolvedParams& params) {
+    std::vector<ArgLoc> locs = ClassifyArgs(params.types);
+    for (size_t i = 0; i < params.types.size(); ++i) {
+        const TypePtr& type = params.types[i];
         if (locs[i].kind == ArgLoc::Kind::Stack) {
-            ctx.Declare(names[i], {types[i], locs[i].offset});
+            ctx.Declare(params.names[i], Symbol::Local(type, locs[i].offset));
             continue;
         }
-        int home = ctx.AllocLocal(types[i]);
-        ctx.Declare(names[i], {types[i], home});
-        EmitStore(os, *types[i], "a" + std::to_string(locs[i].reg), "s0", home);
+        int home = ctx.AllocLocal(type);
+        ctx.Declare(params.names[i], Symbol::Local(type, home));
+        EmitStore(os, *type, "a" + std::to_string(locs[i].reg), "s0", home);
     }
 }
 
+}  // namespace
+
+void FunctionDeclaration::EmitRISC(std::ostream&, Context& ctx) const {
+    auto [name, type] = declarator_.Apply(return_spec_.Resolve(ctx), ctx);
+    ctx.DeclareFunction(name, type, ResolveParams(params_, ctx).types);
+}
+
 // The body is generated first into a buffer, because the frame size it
-// needs for the prologue is only known afterwards (D2).
+// needs for the prologue is only known afterwards (D2). The function is
+// declared before its body so that it can call itself.
 void FunctionDefinition::EmitRISC(std::ostream& os, Context& ctx) const {
     auto [name, type] = declarator_.Apply(return_spec_.Resolve(ctx), ctx);
+    ResolvedParams params = ResolveParams(params_, ctx);
+    ctx.DeclareFunction(name, type, params.types);
     ctx.BeginFunction(type);
     std::ostringstream body;
     ctx.PushScope();
-    EmitParams(body, ctx);
+    EmitParams(body, ctx, params);
     body_->EmitRISC(body, ctx);
     ctx.PopScope();
 
@@ -65,8 +89,11 @@ void FunctionDefinition::EmitRISC(std::ostream& os, Context& ctx) const {
     EmitEpilogue(os);
 }
 
+// File scope holds the function symbols.
 void TranslationUnit::EmitRISC(std::ostream& os, Context& ctx) const {
+    ctx.PushScope();
     for (const ExternalDeclPtr& decl : decls_) decl->EmitRISC(os, ctx);
+    ctx.PopScope();
 }
 
 }  // namespace ast

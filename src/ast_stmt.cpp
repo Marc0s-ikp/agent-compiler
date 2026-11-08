@@ -22,7 +22,7 @@ void DeclarationStmt::EmitRISC(std::ostream& os, Context& ctx) const {
         auto [name, type] = d.declarator.Apply(base, ctx);
         if (type->IsVoid()) throw std::runtime_error("variable of type void");
         int offset = ctx.AllocLocal(type);
-        ctx.Declare(name, {type, offset});
+        ctx.Declare(name, Symbol::Local(type, offset));
         if (!d.init) continue;
         const Expr& value = d.init->Value();
         value.EmitRISC(os, ctx);

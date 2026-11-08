@@ -18,12 +18,46 @@ void Context::Declare(const std::string& name, const Symbol& symbol) {
     scopes_.back()[name] = symbol;
 }
 
-const Symbol& Context::Lookup(const std::string& name) const {
+const Symbol* Context::Find(const std::string& name) const {
     for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
         auto found = scope->find(name);
-        if (found != scope->end()) return found->second;
+        if (found != scope->end()) return &found->second;
     }
-    throw std::runtime_error("undeclared identifier '" + name + "'");
+    return nullptr;
+}
+
+const Symbol& Context::Lookup(const std::string& name) const {
+    const Symbol* symbol = Find(name);
+    if (!symbol) throw std::runtime_error("undeclared identifier '" + name + "'");
+    return *symbol;
+}
+
+namespace {
+bool SameTypes(const std::vector<TypePtr>& a, const std::vector<TypePtr>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (!a[i]->Equals(*b[i])) return false;
+    }
+    return true;
+}
+}  // namespace
+
+// Parameters are compared only when both declarations list some, because
+// 'int f();' leaves them unspecified.
+void Context::DeclareFunction(const std::string& name,
+                              const TypePtr& return_type,
+                              const std::vector<TypePtr>& params) {
+    Symbol& slot = scopes_.front()[name];
+    if (!slot.type) {
+        slot = Symbol{return_type, 0, SymbolKind::Function, params};
+        return;
+    }
+    bool clash = slot.kind != SymbolKind::Function ||
+                 !slot.type->Equals(*return_type) ||
+                 (!slot.params.empty() && !params.empty() &&
+                  !SameTypes(slot.params, params));
+    if (clash) throw std::runtime_error("conflicting declaration of '" + name + "'");
+    if (slot.params.empty()) slot.params = params;
 }
 
 void Context::BeginFunction(const TypePtr& return_type) {
@@ -56,6 +90,10 @@ void Context::PopTemp() {
 }
 
 // Rounded to 16 including the outgoing area, so sp stays ABI-aligned (D12).
+void Context::ReserveOutgoing(int bytes) {
+    if (bytes > outgoing_) outgoing_ = bytes;
+}
+
 int Context::FrameSize() const { return RoundUp(max_used_ + outgoing_, 16); }
 
 std::string Context::NewLabel(const std::string& prefix) {

@@ -13,6 +13,23 @@ class ExternalDecl : public Node {};
 
 using ExternalDeclPtr = std::unique_ptr<ExternalDecl>;
 
+// A function declaration without a body. Records a Function symbol and emits
+// nothing (D9).
+class FunctionDeclaration : public ExternalDecl {
+public:
+    FunctionDeclaration(TypeSpecifier return_spec, Declarator declarator,
+                        std::vector<Param> params)
+        : return_spec_(return_spec),
+          declarator_(std::move(declarator)),
+          params_(std::move(params)) {}
+    void EmitRISC(std::ostream& os, Context& ctx) const override;
+
+private:
+    TypeSpecifier return_spec_;
+    Declarator declarator_;
+    std::vector<Param> params_;
+};
+
 class FunctionDefinition : public ExternalDecl {
 public:
     FunctionDefinition(TypeSpecifier return_spec, Declarator declarator,
@@ -25,8 +42,6 @@ public:
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
-    void EmitParams(std::ostream& os, Context& ctx) const;
-
     TypeSpecifier return_spec_;
     Declarator declarator_;
     std::vector<Param> params_;

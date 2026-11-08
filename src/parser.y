@@ -27,6 +27,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     ast::InitDeclarator* declarator;
     ast::Declarator* name_decl;
     std::vector<ast::StmtPtr>* stmts;
+    std::vector<ast::ExprPtr>* args;
     std::vector<ast::ExternalDeclPtr>* externals;
     std::vector<ast::Param>* params;
     std::vector<ast::InitDeclarator>* declarators;
@@ -44,10 +45,11 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <expr> postfix_expr primary_expr
 %type <stmt> statement declaration
 %type <compound> compound_stmt
-%type <external> function_definition
+%type <external> external_decl
 %type <param> param_decl
 %type <declarator> init_declarator
 %type <stmts> statement_list
+%type <args> argument_list argument_list_opt
 %type <externals> external_list
 %type <params> param_list param_list_opt
 %type <declarators> init_declarator_list
@@ -55,7 +57,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <name_decl> declarator
 
 %destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl>
-%destructor { delete $$; } <stmts> <externals> <params> <declarators> <str>
+%destructor { delete $$; } <stmts> <externals> <params> <declarators> <str> <args>
 
 /* Dangling else: shift the 'else' so it binds to the nearest 'if'. */
 %nonassoc LOWER_THAN_ELSE
@@ -85,18 +87,24 @@ translation_unit
     ;
 
 external_list
-    : function_definition {
+    : external_decl {
         $$ = new std::vector<ast::ExternalDeclPtr>();
         $$->push_back(ast::ExternalDeclPtr($1));
     }
-    | external_list function_definition {
+    | external_list external_decl {
         $$ = $1;
         $$->push_back(ast::ExternalDeclPtr($2));
     }
     ;
 
-function_definition
-    : type_spec declarator '(' param_list_opt ')' compound_stmt {
+external_decl
+    : type_spec declarator '(' param_list_opt ')' ';' {
+        $$ = new ast::FunctionDeclaration(*$1, std::move(*$2), std::move(*$4));
+        delete $1;
+        delete $2;
+        delete $4;
+    }
+    | type_spec declarator '(' param_list_opt ')' compound_stmt {
         $$ = new ast::FunctionDefinition(*$1, std::move(*$2), std::move(*$4),
                                          std::unique_ptr<ast::CompoundStmt>($6));
         delete $1;
@@ -118,7 +126,6 @@ declarator
 
 param_list_opt
     : /* empty */   { $$ = new std::vector<ast::Param>(); }
-    | T_VOID        { $$ = new std::vector<ast::Param>(); }
     | param_list    { $$ = $1; }
     ;
 
@@ -136,7 +143,11 @@ param_list
     ;
 
 param_decl
-    : type_spec declarator {
+    : type_spec {
+        $$ = new ast::Param{*$1, ast::Declarator("")};
+        delete $1;
+    }
+    | type_spec declarator {
         $$ = new ast::Param{*$1, std::move(*$2)};
         delete $1;
         delete $2;
@@ -285,8 +296,29 @@ unary_expr
 
 postfix_expr
     : primary_expr
+    | IDENTIFIER '(' argument_list_opt ')' {
+        $$ = new ast::FunctionCall(std::move(*$1), std::move(*$3));
+        delete $1;
+        delete $3;
+    }
     | postfix_expr INC_OP { $$ = new ast::IncDec(true, false, Own($1)); }
     | postfix_expr DEC_OP { $$ = new ast::IncDec(false, false, Own($1)); }
+    ;
+
+argument_list_opt
+    : /* empty */   { $$ = new std::vector<ast::ExprPtr>(); }
+    | argument_list { $$ = $1; }
+    ;
+
+argument_list
+    : assignment_expr {
+        $$ = new std::vector<ast::ExprPtr>();
+        $$->push_back(Own($1));
+    }
+    | argument_list ',' assignment_expr {
+        $$ = $1;
+        $$->push_back(Own($3));
+    }
     ;
 
 primary_expr

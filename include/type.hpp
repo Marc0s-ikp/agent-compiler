@@ -20,6 +20,9 @@ public:
     int Size() const { return size_; }
     int Align() const { return size_ == 0 ? 1 : size_; }
     bool IsSigned() const { return signed_; }
+    bool Equals(const Type& o) const {
+        return kind_ == o.kind_ && size_ == o.size_ && signed_ == o.signed_;
+    }
     bool IsVoid() const { return kind_ == Kind::Void; }
     bool IsInteger() const { return kind_ == Kind::Integer; }
     bool IsScalar() const { return IsInteger(); }
