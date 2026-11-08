@@ -1,11 +1,11 @@
 # Progress
 
 ## Latest session
-Pass count: 127/155 at session start (58 of 86 compiler_tests), 159/180 now (65 of 86 compiler_tests, 94 of 94 custom, 25 custom added).
-Fixed: feature 5 merged (globals and extern, static, enum, typedef, switch).
-Blocked: no new blockers. The frame-size item stays open, and the reviewer's non-blocking items are under "Nice to have" in docs/BLOCKERS.md. D15 and D16 await Marcus's acceptance.
-Remaining failures: 21 tests, all needing later features (float 7, strings 5, struct 5, types/sizeof 4).
-Next: feature 6 (char, strings, sizeof), waiting for Marcus's go-ahead.
+Pass count: 159/180 before and after (65 of 86 compiler_tests, 94 of 94 custom). No compiler code changed this session. On feat/char-strings-sizeof the suite reads 159/205, because the 25 new tests fail until feature 6 exists.
+Fixed: nothing new. Feature 5 is complete and merged on master at ef26bb9 (globals and extern, static, enum, typedef, switch), with no feature 5 work outstanding.
+Blocked: no new blockers. The session stopped early on usage limits. The frame-size item stays open, and D15 and D16 await Marcus's acceptance.
+Feature 6 is started but not implemented: feat/char-strings-sizeof holds only the WIP commit of 25 custom tests (checked against riscv gcc) and this update. Not reviewed, not merged, not pushed.
+Next: implement feature 6 on that branch. In order: `char`/`signed` keywords, char literals, `sizeof` (with the const Resolve split from BLOCKERS), string literals and the data pool, then local and global initialisers. It should fix 9 reference tests (strings 5, types 4). Then review, merge and record it here.
 
 ## Pass count by category
 | Category | Passing | Total |
