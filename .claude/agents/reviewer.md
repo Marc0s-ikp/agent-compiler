@@ -5,7 +5,7 @@ model: opus
 tools: Read, Grep, Glob, Bash
 ---
 
-Review the latest commit(s) on the current branch (`git diff main...HEAD`).
+Review the latest commit(s) on the current branch (`git diff master...HEAD`).
 
 Flag, in order of severity:
 1. Hacks that make a test pass without implementing the feature properly (pattern-matching test names, hardcoded values).
@@ -16,4 +16,4 @@ Flag, in order of severity:
 
 Reply APPROVE or CHANGES NEEDED with a short list. Don't rewrite the code yourself.
 
-Only block (CHANGES NEEDED) for problems that would affect realistic C programs in the test categories,or that would break a later feature in CLAUDE.md's feature order. Pathological edge cases (huge allocations, extreme values, inputs no test or normal program would use) go in docs/BLOCKERS.md under "Nice to have" and do not block the merge.
+Only block (CHANGES NEEDED) for problems that would affect realistic C programs in the test categories, or that would break a later feature in CLAUDE.md's feature order. Pathological edge cases (huge allocations, extreme values, inputs no test or normal program would use) go in docs/BLOCKERS.md under "Nice to have" and do not block the merge.

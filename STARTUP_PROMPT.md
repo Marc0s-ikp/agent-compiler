@@ -17,9 +17,9 @@ Every session after that, loop:
 2. Pick the highest-impact root cause that follows the feature order in CLAUDE.md.
 3. Create a branch `feat/<short-name>`, give `implementer` the root cause, the failing tests and the reproducer.
 4. When it reports back, have `reviewer` review the branch. If CHANGES NEEDED, send it back to `implementer` twice; if still not approved, log it in docs/BLOCKERS.md.
-5. Merge to main only if: approved, full suite run, no regressions.
+5. Merge to master only if: approved, full suite run, no regressions.
 6. Update docs/PROGRESS.md and push.
 
-Stop and ask me when: a change needs an architecture change, the same root cause has failed twice, or the pass count hasn't gone up in 3 cycles.
+Stop and ask me when: a change needs an architecture change, a fix is still not approved after two review rounds, or the pass count hasn't gone up in 3 cycles.
 
 At the end of each session, write a 5-line summary at the top of docs/PROGRESS.md: pass count before/after, what was fixed, what's blocked, what's next.
