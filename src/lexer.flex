@@ -32,6 +32,9 @@ SUFFIX  [uUlL]*
 "static"    { return T_STATIC; }
 "enum"      { return T_ENUM; }
 "typedef"   { return T_TYPEDEF; }
+"switch"    { return T_SWITCH; }
+"case"      { return T_CASE; }
+"default"   { return T_DEFAULT; }
 
 0[xX][0-9a-fA-F]+{SUFFIX}  { yylval.str = new std::string(yytext); return INT_LITERAL; }
 {DIGIT}+{SUFFIX}           { yylval.str = new std::string(yytext); return INT_LITERAL; }

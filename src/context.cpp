@@ -1,5 +1,6 @@
 #include "context.hpp"
 
+#include <cstdint>
 #include <stdexcept>
 
 namespace {
@@ -215,4 +216,40 @@ void Context::EmitGlobals(std::ostream& os) const {
             os << "\t.zero " << g.type->Size() << "\n";
         }
     }
+}
+
+void Context::PushSwitch(const std::string& break_label) {
+    break_labels_.push_back(break_label);
+    switches_.emplace_back();
+}
+
+Context::SwitchInfo Context::PopSwitch() {
+    break_labels_.pop_back();
+    SwitchInfo info = std::move(switches_.back());
+    switches_.pop_back();
+    return info;
+}
+
+// Case values are compared as 32-bit integers, so they are wrapped to that
+// width first; two labels that wrap to the same value are duplicates.
+std::string Context::AddCase(long value) {
+    if (switches_.empty()) throw std::runtime_error("case outside switch");
+    SwitchInfo& info = switches_.back();
+    long wrapped = static_cast<int32_t>(static_cast<uint32_t>(value));
+    for (const auto& c : info.cases) {
+        if (c.first == wrapped) throw std::runtime_error("duplicate case value");
+    }
+    std::string label = NewLabel("case");
+    info.cases.emplace_back(wrapped, label);
+    return label;
+}
+
+std::string Context::AddDefault() {
+    if (switches_.empty()) throw std::runtime_error("default outside switch");
+    SwitchInfo& info = switches_.back();
+    if (!info.default_label.empty()) {
+        throw std::runtime_error("duplicate default label");
+    }
+    info.default_label = NewLabel("default");
+    return info.default_label;
 }

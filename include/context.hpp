@@ -2,6 +2,7 @@
 #include <map>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "type.hpp"
@@ -89,6 +90,20 @@ public:
     const std::string& BreakLabel() const;
     const std::string& ContinueLabel() const;
 
+    // Switch. The dispatch is written after the body (the body is buffered),
+    // so each case registers its value here and gets a label back.
+    // 'break' finds the switch through the same stack as loops; 'continue'
+    // does not, because only PushLoop sets a continue target.
+    struct SwitchInfo {
+        std::vector<std::pair<long, std::string>> cases;  // value, label
+        std::string default_label;                        // empty if none
+    };
+    void PushSwitch(const std::string& break_label);
+    SwitchInfo PopSwitch();
+    // Both throw outside a switch, or for a duplicate case / second default.
+    std::string AddCase(long value);
+    std::string AddDefault();
+
     // Function-level information.
     const std::string& ReturnLabel() const { return return_label_; }
     const TypePtr& ReturnType() const { return return_type_; }
@@ -117,6 +132,7 @@ private:
     std::vector<int> temp_marks_;   // 'used_' before each live temp
     std::vector<std::string> break_labels_;
     std::vector<std::string> continue_labels_;
+    std::vector<SwitchInfo> switches_;
     std::string return_label_;
     TypePtr return_type_;
     std::vector<GlobalVar> globals_;

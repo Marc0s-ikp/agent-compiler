@@ -51,7 +51,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 
 %token <str> IDENTIFIER INT_LITERAL T_TYPE_NAME
 %token T_INT T_UNSIGNED T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
-%token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM T_TYPEDEF
+%token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM T_TYPEDEF T_SWITCH T_CASE T_DEFAULT
 %token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
 %token LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
@@ -337,6 +337,15 @@ statement
     }
     | T_FOR '(' expr_opt ';' expr_opt ';' expr_opt ')' statement {
         $$ = new ast::ForStmt(Own($3), Own($5), Own($7), Own($9));
+    }
+    | T_SWITCH '(' expr ')' statement {
+        $$ = new ast::SwitchStmt(Own($3), Own($5));
+    }
+    | T_CASE conditional_expr ':' statement {
+        $$ = new ast::CaseStmt(Own($2), Own($4));
+    }
+    | T_DEFAULT ':' statement {
+        $$ = new ast::DefaultStmt(Own($3));
     }
     | T_BREAK ';'              { $$ = new ast::BreakStmt(); }
     | T_CONTINUE ';'           { $$ = new ast::ContinueStmt(); }
