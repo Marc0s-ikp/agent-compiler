@@ -12,6 +12,9 @@ namespace ast {
 // they are turned into types during code generation, when scope information
 // (later: tags, enum constants) is available.
 
+// Storage class of a declaration. Extern is file scope only.
+enum class Storage { None, Extern, Static };
+
 // The type-specifier words of a declaration: int, unsigned, void.
 class TypeSpecifier {
 public:

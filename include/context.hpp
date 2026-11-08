@@ -52,6 +52,11 @@ public:
     void DeclareGlobal(const std::string& name, const TypePtr& type,
                        bool is_extern);
     void InitGlobal(const std::string& name, const std::string& data);
+    // A 'static' local: storage under a fresh label, never exported. Returns
+    // the label; 'data' is the initialiser directives, or null for zeros.
+    std::string AddStaticLocal(const TypePtr& type, const std::string* data);
+    // Marks an already declared global as having internal linkage.
+    void MakeGlobalInternal(const std::string& name);
     void EmitGlobals(std::ostream& os) const;
 
     // Frame. Slots grow downwards from s0, below the saved ra and s0.
@@ -80,13 +85,14 @@ public:
 
 private:
     struct GlobalVar {
-        std::string name;
+        std::string name;          // the label
         TypePtr type;
+        bool internal = false;     // 'static': no .globl
         bool has_storage = false;  // defined here, not only declared extern
         bool initialised = false;
         std::string data;          // initialiser directives
     };
-    GlobalVar& FindGlobal(const std::string& name);
+    GlobalVar& FindGlobal(const std::string& label);
 
     int Allocate(const TypePtr& type);
 

@@ -19,31 +19,34 @@ using ExternalDeclPtr = std::unique_ptr<ExternalDecl>;
 class GlobalDeclaration : public ExternalDecl {
 public:
     GlobalDeclaration(TypeSpecifier spec, std::vector<InitDeclarator> declarators,
-                      bool is_extern)
+                      Storage storage)
         : spec_(spec),
           declarators_(std::move(declarators)),
-          is_extern_(is_extern) {}
+          storage_(storage) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
+    void MarkLinkage(const std::string& name, Context& ctx) const;
     void DeclareVariable(const std::string& name, const TypePtr& type,
                          const Initializer* init, Context& ctx) const;
 
     TypeSpecifier spec_;
     std::vector<InitDeclarator> declarators_;
-    bool is_extern_;
+    Storage storage_;
 };
 
 class FunctionDefinition : public ExternalDecl {
 public:
     FunctionDefinition(TypeSpecifier spec, Declarator declarator,
-                       std::unique_ptr<CompoundStmt> body)
-        : spec_(spec),
+                       std::unique_ptr<CompoundStmt> body, Storage storage)
+        : storage_(storage),
+          spec_(spec),
           declarator_(std::move(declarator)),
           body_(std::move(body)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
+    Storage storage_;
     TypeSpecifier spec_;
     Declarator declarator_;
     std::unique_ptr<CompoundStmt> body_;

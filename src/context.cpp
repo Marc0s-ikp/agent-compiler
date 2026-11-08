@@ -132,11 +132,11 @@ TypePtr MergeGlobalTypes(const TypePtr& a, const TypePtr& b) {
 
 }  // namespace
 
-Context::GlobalVar& Context::FindGlobal(const std::string& name) {
+Context::GlobalVar& Context::FindGlobal(const std::string& label) {
     for (GlobalVar& g : globals_) {
-        if (g.name == name) return g;
+        if (g.name == label) return g;
     }
-    throw std::runtime_error("'" + name + "' is not a global");
+    throw std::runtime_error("'" + label + "' is not a global");
 }
 
 void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
@@ -144,7 +144,7 @@ void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
     Symbol& slot = scopes_.front()[name];
     if (!slot.type) {
         slot = Symbol::Global(type, name);
-        globals_.push_back(GlobalVar{name, type, !is_extern, false, ""});
+        globals_.push_back(GlobalVar{name, type, false, !is_extern, false, ""});
         return;
     }
     TypePtr merged = slot.kind == SymbolKind::Global
@@ -169,13 +169,25 @@ void Context::InitGlobal(const std::string& name, const std::string& data) {
     var.data = data;
 }
 
+std::string Context::AddStaticLocal(const TypePtr& type,
+                                    const std::string* data) {
+    std::string label = NewLabel("static");
+    globals_.push_back(
+        GlobalVar{label, type, true, true, data != nullptr, data ? *data : ""});
+    return label;
+}
+
+void Context::MakeGlobalInternal(const std::string& name) {
+    FindGlobal(name).internal = true;
+}
+
 void Context::EmitGlobals(std::ostream& os) const {
     for (const GlobalVar& g : globals_) {
         if (!g.has_storage) continue;
         if (g.type->Size() == 0) {
             throw std::runtime_error("'" + g.name + "' has incomplete type");
         }
-        os << "\t.globl " << g.name << "\n";
+        if (!g.internal) os << "\t.globl " << g.name << "\n";
         os << (g.initialised ? "\t.data\n" : "\t.bss\n");
         os << "\t.balign " << g.type->Align() << "\n" << g.name << ":\n";
         if (g.initialised) {

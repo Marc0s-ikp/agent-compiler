@@ -56,6 +56,11 @@ std::pair<std::string, TypePtr> ResolveFunction(const TypeSpecifier& spec,
 
 }  // namespace
 
+void GlobalDeclaration::MarkLinkage(const std::string& name,
+                                    Context& ctx) const {
+    if (storage_ == Storage::Static) ctx.MakeGlobalInternal(name);
+}
+
 void GlobalDeclaration::DeclareVariable(const std::string& name,
                                         const TypePtr& type,
                                         const Initializer* init,
@@ -64,11 +69,13 @@ void GlobalDeclaration::DeclareVariable(const std::string& name,
         throw std::runtime_error("invalid type for variable '" + name + "'");
     }
     if (!init) {
-        ctx.DeclareGlobal(name, type, is_extern_);
+        ctx.DeclareGlobal(name, type, storage_ == Storage::Extern);
+        MarkLinkage(name, ctx);
         return;
     }
     GlobalInit built = BuildGlobalInit(type, *init, ctx);
     ctx.DeclareGlobal(name, built.type, false);
+    MarkLinkage(name, ctx);
     if (ctx.Lookup(name).type->Size() != built.type->Size()) {
         throw std::runtime_error("conflicting declaration of '" + name + "'");
     }
@@ -105,7 +112,9 @@ void FunctionDefinition::EmitRISC(std::ostream& os, Context& ctx) const {
     body_->EmitRISC(body, ctx);
     ctx.PopScope();
 
-    os << "\t.text\n\t.globl " << name << "\n" << name << ":\n";
+    os << "\t.text\n";
+    if (storage_ != Storage::Static) os << "\t.globl " << name << "\n";
+    os << name << ":\n";
     EmitPrologue(os, ctx.FrameSize());
     os << body.str();
     os << ctx.ReturnLabel() << ":\n";
