@@ -47,15 +47,6 @@ void EmitOperands(std::ostream& os, Context& ctx, const Expr& lhs,
     ctx.PopTemp();
 }
 
-// Branch to 'label' if a0 is zero / nonzero.
-void EmitBranchIfZero(std::ostream& os, const std::string& label) {
-    os << "\tbeqz a0, " << label << "\n";
-}
-
-void EmitBranchIfNonZero(std::ostream& os, const std::string& label) {
-    os << "\tbnez a0, " << label << "\n";
-}
-
 }  // namespace
 
 // ---- BinaryArith ----

@@ -61,3 +61,26 @@ int Context::FrameSize() const { return RoundUp(max_used_ + outgoing_, 16); }
 std::string Context::NewLabel(const std::string& prefix) {
     return ".L" + prefix + std::to_string(label_count_++);
 }
+
+void Context::PushLoop(const std::string& break_label,
+                       const std::string& continue_label) {
+    break_labels_.push_back(break_label);
+    continue_labels_.push_back(continue_label);
+}
+
+void Context::PopLoop() {
+    break_labels_.pop_back();
+    continue_labels_.pop_back();
+}
+
+const std::string& Context::BreakLabel() const {
+    if (break_labels_.empty()) throw std::runtime_error("break outside loop");
+    return break_labels_.back();
+}
+
+const std::string& Context::ContinueLabel() const {
+    if (continue_labels_.empty()) {
+        throw std::runtime_error("continue outside loop");
+    }
+    return continue_labels_.back();
+}

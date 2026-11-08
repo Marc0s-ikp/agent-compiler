@@ -34,12 +34,13 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 }
 
 %token <str> IDENTIFIER INT_LITERAL
-%token T_INT T_UNSIGNED T_VOID T_RETURN
+%token T_INT T_UNSIGNED T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
+%token T_BREAK T_CONTINUE
 %token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
 %token LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
 
-%type <expr> expr assignment_expr conditional_expr binary_expr unary_expr
+%type <expr> expr_opt expr assignment_expr conditional_expr binary_expr unary_expr
 %type <expr> postfix_expr primary_expr
 %type <stmt> statement declaration
 %type <compound> compound_stmt
@@ -55,6 +56,10 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 
 %destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl>
 %destructor { delete $$; } <stmts> <externals> <params> <declarators> <str>
+
+/* Dangling else: shift the 'else' so it binds to the nearest 'if'. */
+%nonassoc LOWER_THAN_ELSE
+%nonassoc T_ELSE
 
 /* Binary operator precedence, lowest first. */
 %left OR_OP
@@ -158,6 +163,23 @@ statement
     | declaration              { $$ = $1; }
     | expr ';'                 { $$ = new ast::ExprStmt(Own($1)); }
     | ';'                      { $$ = new ast::ExprStmt(nullptr); }
+    | T_IF '(' expr ')' statement %prec LOWER_THAN_ELSE {
+        $$ = new ast::IfStmt(Own($3), Own($5), nullptr);
+    }
+    | T_IF '(' expr ')' statement T_ELSE statement {
+        $$ = new ast::IfStmt(Own($3), Own($5), Own($7));
+    }
+    | T_WHILE '(' expr ')' statement {
+        $$ = new ast::WhileStmt(Own($3), Own($5));
+    }
+    | T_DO statement T_WHILE '(' expr ')' ';' {
+        $$ = new ast::DoWhileStmt(Own($2), Own($5));
+    }
+    | T_FOR '(' expr_opt ';' expr_opt ';' expr_opt ')' statement {
+        $$ = new ast::ForStmt(Own($3), Own($5), Own($7), Own($9));
+    }
+    | T_BREAK ';'              { $$ = new ast::BreakStmt(); }
+    | T_CONTINUE ';'           { $$ = new ast::ContinueStmt(); }
     | T_RETURN ';'             { $$ = new ast::ReturnStmt(nullptr); }
     | T_RETURN expr ';'        { $$ = new ast::ReturnStmt(Own($2)); }
     ;
@@ -193,6 +215,11 @@ init_declarator
             std::move(*$1), std::make_unique<ast::Initializer>(Own($3))};
         delete $1;
     }
+    ;
+
+expr_opt
+    : /* empty */ { $$ = nullptr; }
+    | expr
     ;
 
 expr

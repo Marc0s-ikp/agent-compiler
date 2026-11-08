@@ -29,6 +29,14 @@ public:
     void PopTemp();
     int FrameSize() const;
 
+    // Control. A loop sets both targets; a switch (feature 5) will set only
+    // break, so 'continue' inside a switch still finds the enclosing loop.
+    void PushLoop(const std::string& break_label,
+                  const std::string& continue_label);
+    void PopLoop();
+    const std::string& BreakLabel() const;
+    const std::string& ContinueLabel() const;
+
     // Function-level information.
     const std::string& ReturnLabel() const { return return_label_; }
     const TypePtr& ReturnType() const { return return_type_; }
@@ -44,6 +52,8 @@ private:
     int max_used_ = 0;              // high-water mark, decides the frame size
     int outgoing_ = 0;              // outgoing stack-argument area (feature 3)
     std::vector<int> temp_marks_;   // 'used_' before each live temp
+    std::vector<std::string> break_labels_;
+    std::vector<std::string> continue_labels_;
     std::string return_label_;
     TypePtr return_type_;
     int label_count_ = 0;

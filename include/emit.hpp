@@ -21,5 +21,12 @@ void EmitStore(std::ostream& os, const Type& type, const std::string& reg,
 void EmitAddrOffset(std::ostream& os, const std::string& dst,
                     const std::string& base, int off);
 
+// Branch on the truthiness of a0 (an integer: nonzero is true). Uses the
+// inverted short branch over an unconditional 'j', so the target may be any
+// distance away (a conditional branch only reaches about 4KB).
+void EmitBranchIfZero(std::ostream& os, const std::string& label);
+void EmitBranchIfNonZero(std::ostream& os, const std::string& label);
+void EmitJump(std::ostream& os, const std::string& label);
+
 // Convert the value in a0 from one type to another.
 void EmitConvert(std::ostream& os, const Type& from, const Type& to);

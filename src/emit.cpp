@@ -52,3 +52,20 @@ void EmitConvert(std::ostream& os, const Type& from, const Type& to) {
     os << "\t" << (to.IsSigned() ? "srai" : "srli") << " a0, a0, " << shift
        << "\n";
 }
+
+void EmitJump(std::ostream& os, const std::string& label) {
+    os << "\tj " << label << "\n";
+}
+
+// '1f' is the assembler's local label 1 just ahead, so no unique name is needed.
+void EmitBranchIfZero(std::ostream& os, const std::string& label) {
+    os << "\tbnez a0, 1f\n";
+    EmitJump(os, label);
+    os << "1:\n";
+}
+
+void EmitBranchIfNonZero(std::ostream& os, const std::string& label) {
+    os << "\tbeqz a0, 1f\n";
+    EmitJump(os, label);
+    os << "1:\n";
+}
