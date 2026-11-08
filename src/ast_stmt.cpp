@@ -27,6 +27,9 @@ void DeclarationStmt::EmitRISC(std::ostream& os, Context& ctx) const {
         int offset = ctx.AllocLocal(type);
         ctx.Declare(name, Symbol::Local(type, offset));
         if (!d.init) continue;
+        if (d.init->IsList()) {
+            throw std::runtime_error("brace initialiser for a local variable");
+        }
         const Expr& value = d.init->Value();
         value.EmitRISC(os, ctx);
         EmitConvert(os, *value.ValueType(ctx), *type);

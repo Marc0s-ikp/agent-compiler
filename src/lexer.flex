@@ -27,6 +27,7 @@ SUFFIX  [uUlL]*
 "for"       { return T_FOR; }
 "break"     { return T_BREAK; }
 "continue"  { return T_CONTINUE; }
+"extern"    { return T_EXTERN; }
 
 0[xX][0-9a-fA-F]+{SUFFIX}  { yylval.str = new std::string(yytext); return INT_LITERAL; }
 {DIGIT}+{SUFFIX}           { yylval.str = new std::string(yytext); return INT_LITERAL; }

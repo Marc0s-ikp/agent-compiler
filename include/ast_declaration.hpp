@@ -66,14 +66,21 @@ private:
     std::vector<Param> params_;
 };
 
-// The '= expr' part of a declarator. Brace lists come later.
+// The '= ...' part of a declarator: a single expression, or a brace list of
+// initialisers (which may nest).
 class Initializer {
 public:
+    using List = std::vector<std::unique_ptr<Initializer>>;
     explicit Initializer(ExprPtr expr) : expr_(std::move(expr)) {}
-    const Expr& Value() const { return *expr_; }
+    explicit Initializer(List items) : items_(std::move(items)), is_list_(true) {}
+    bool IsList() const { return is_list_; }
+    const Expr& Value() const { return *expr_; }  // only if !IsList()
+    const List& Items() const { return items_; }  // only if IsList()
 
 private:
     ExprPtr expr_;
+    List items_;
+    bool is_list_ = false;
 };
 
 // One declarator with its own optional initialiser.

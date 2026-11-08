@@ -26,6 +26,8 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     ast::TypeSpecifier* spec;
     ast::InitDeclarator* declarator;
     ast::Declarator* name_decl;
+    ast::Initializer* init;
+    ast::Initializer::List* inits;
     std::vector<ast::StmtPtr>* stmts;
     std::vector<ast::ExprPtr>* args;
     std::vector<ast::ExternalDeclPtr>* externals;
@@ -33,11 +35,12 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     std::vector<ast::InitDeclarator>* declarators;
     std::string* str;
     int stars;
+    bool flag;
 }
 
 %token <str> IDENTIFIER INT_LITERAL
 %token T_INT T_UNSIGNED T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
-%token T_BREAK T_CONTINUE
+%token T_BREAK T_CONTINUE T_EXTERN
 %token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
 %token LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
@@ -57,9 +60,12 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <spec> type_spec
 %type <name_decl> declarator direct_declarator
 %type <stars> pointer
+%type <flag> opt_extern
+%type <init> initializer
+%type <inits> initializer_list
 
-%destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl>
-%destructor { delete $$; } <stmts> <externals> <params> <declarators> <str> <args>
+%destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl> <init>
+%destructor { delete $$; } <stmts> <externals> <params> <declarators> <str> <args> <inits>
 
 /* Dangling else: shift the 'else' so it binds to the nearest 'if'. */
 %nonassoc LOWER_THAN_ELSE
@@ -100,17 +106,22 @@ external_list
     ;
 
 external_decl
-    : type_spec declarator ';' {
-        $$ = new ast::FunctionDeclaration(*$1, std::move(*$2));
-        delete $1;
+    : opt_extern type_spec init_declarator_list ';' {
+        $$ = new ast::GlobalDeclaration(*$2, std::move(*$3), $1);
         delete $2;
+        delete $3;
     }
-    | type_spec declarator compound_stmt {
-        $$ = new ast::FunctionDefinition(*$1, std::move(*$2),
-                                         std::unique_ptr<ast::CompoundStmt>($3));
-        delete $1;
+    | opt_extern type_spec declarator compound_stmt {
+        $$ = new ast::FunctionDefinition(*$2, std::move(*$3),
+                                         std::unique_ptr<ast::CompoundStmt>($4));
         delete $2;
+        delete $3;
     }
+    ;
+
+opt_extern
+    : /* empty */   { $$ = false; }
+    | T_EXTERN      { $$ = true; }
     ;
 
 type_spec
@@ -263,10 +274,27 @@ init_declarator
         $$ = new ast::InitDeclarator{std::move(*$1), nullptr};
         delete $1;
     }
-    | declarator '=' assignment_expr {
+    | declarator '=' initializer {
         $$ = new ast::InitDeclarator{
-            std::move(*$1), std::make_unique<ast::Initializer>(Own($3))};
+            std::move(*$1), std::unique_ptr<ast::Initializer>($3)};
         delete $1;
+    }
+    ;
+
+initializer
+    : assignment_expr { $$ = new ast::Initializer(Own($1)); }
+    | '{' initializer_list '}'     { $$ = new ast::Initializer(std::move(*$2)); delete $2; }
+    | '{' initializer_list ',' '}' { $$ = new ast::Initializer(std::move(*$2)); delete $2; }
+    ;
+
+initializer_list
+    : initializer {
+        $$ = new ast::Initializer::List();
+        $$->push_back(std::unique_ptr<ast::Initializer>($1));
+    }
+    | initializer_list ',' initializer {
+        $$ = $1;
+        $$->push_back(std::unique_ptr<ast::Initializer>($3));
     }
     ;
 

@@ -1,26 +1,32 @@
 #pragma once
 #include <map>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include "type.hpp"
 
-enum class SymbolKind { Local, Function };
+enum class SymbolKind { Local, Global, Function };
 
 // A named entity. For a Local, 'offset' is relative to s0 (negative: locals
 // and temps, zero or positive: parameters passed on the caller's stack).
+// For a Global, 'label' is the assembly name of its storage.
 // For a Function, 'type' is the Function type (return type and parameters)
 // and no storage is recorded (D9).
 struct Symbol {
     TypePtr type;
     int offset = 0;
     SymbolKind kind = SymbolKind::Local;
+    std::string label;
 
     static Symbol Local(TypePtr type, int offset) {
-        return Symbol{std::move(type), offset, SymbolKind::Local};
+        return Symbol{std::move(type), offset, SymbolKind::Local, ""};
+    }
+    static Symbol Global(TypePtr type, std::string label) {
+        return Symbol{std::move(type), 0, SymbolKind::Global, std::move(label)};
     }
     static Symbol Function(TypePtr type) {
-        return Symbol{std::move(type), 0, SymbolKind::Function};
+        return Symbol{std::move(type), 0, SymbolKind::Function, ""};
     }
 };
 
@@ -37,6 +43,16 @@ public:
     // Record a function in file scope; throws if it clashes with an earlier
     // declaration of the same name.
     void DeclareFunction(const std::string& name, const TypePtr& function_type);
+
+    // Globals (D11). DeclareGlobal records the symbol; an 'extern' declaration
+    // alone reserves no storage. A later definition of the same name (with or
+    // without an initialiser) is merged into one object. InitGlobal supplies
+    // the initialiser as assembly data directives. EmitGlobals writes all
+    // storage once, after the functions.
+    void DeclareGlobal(const std::string& name, const TypePtr& type,
+                       bool is_extern);
+    void InitGlobal(const std::string& name, const std::string& data);
+    void EmitGlobals(std::ostream& os) const;
 
     // Frame. Slots grow downwards from s0, below the saved ra and s0.
     void BeginFunction(const TypePtr& return_type);
@@ -63,6 +79,15 @@ public:
     std::string NewLabel(const std::string& prefix);
 
 private:
+    struct GlobalVar {
+        std::string name;
+        TypePtr type;
+        bool has_storage = false;  // defined here, not only declared extern
+        bool initialised = false;
+        std::string data;          // initialiser directives
+    };
+    GlobalVar& FindGlobal(const std::string& name);
+
     int Allocate(const TypePtr& type);
 
     std::vector<std::map<std::string, Symbol>> scopes_;
@@ -74,5 +99,6 @@ private:
     std::vector<std::string> continue_labels_;
     std::string return_label_;
     TypePtr return_type_;
+    std::vector<GlobalVar> globals_;
     int label_count_ = 0;
 };

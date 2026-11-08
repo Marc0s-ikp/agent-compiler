@@ -5,6 +5,7 @@
 
 #include "abi.hpp"
 #include "emit.hpp"
+#include "global_init.hpp"
 
 namespace ast {
 
@@ -55,9 +56,37 @@ std::pair<std::string, TypePtr> ResolveFunction(const TypeSpecifier& spec,
 
 }  // namespace
 
-void FunctionDeclaration::EmitRISC(std::ostream&, Context& ctx) const {
-    auto [name, type] = ResolveFunction(spec_, declarator_, ctx);
-    ctx.DeclareFunction(name, type);
+void GlobalDeclaration::DeclareVariable(const std::string& name,
+                                        const TypePtr& type,
+                                        const Initializer* init,
+                                        Context& ctx) const {
+    if (type->IsVoid()) {
+        throw std::runtime_error("invalid type for variable '" + name + "'");
+    }
+    if (!init) {
+        ctx.DeclareGlobal(name, type, is_extern_);
+        return;
+    }
+    GlobalInit built = BuildGlobalInit(type, *init, ctx);
+    ctx.DeclareGlobal(name, built.type, false);
+    if (ctx.Lookup(name).type->Size() != built.type->Size()) {
+        throw std::runtime_error("conflicting declaration of '" + name + "'");
+    }
+    ctx.InitGlobal(name, built.data);
+}
+
+void GlobalDeclaration::EmitRISC(std::ostream&, Context& ctx) const {
+    TypePtr base = spec_.Resolve(ctx);
+    for (const InitDeclarator& d : declarators_) {
+        auto [name, type] = d.declarator.Apply(base, ctx);
+        if (!type->IsFunction()) {
+            DeclareVariable(name, type, d.init.get(), ctx);
+        } else if (d.init) {
+            throw std::runtime_error("function '" + name + "' initialised");
+        } else {
+            ctx.DeclareFunction(name, type);
+        }
+    }
 }
 
 // The body is generated first into a buffer, because the frame size it
@@ -83,10 +112,11 @@ void FunctionDefinition::EmitRISC(std::ostream& os, Context& ctx) const {
     EmitEpilogue(os);
 }
 
-// File scope holds the function symbols.
+// File scope holds the function and global symbols.
 void TranslationUnit::EmitRISC(std::ostream& os, Context& ctx) const {
     ctx.PushScope();
     for (const ExternalDeclPtr& decl : decls_) decl->EmitRISC(os, ctx);
+    ctx.EmitGlobals(os);
     ctx.PopScope();
 }
 

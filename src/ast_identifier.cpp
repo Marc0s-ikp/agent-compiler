@@ -9,7 +9,7 @@ namespace ast {
 namespace {
 const Symbol& LookupVariable(const Context& ctx, const std::string& name) {
     const Symbol& sym = ctx.Lookup(name);
-    if (sym.kind != SymbolKind::Local) {
+    if (sym.kind == SymbolKind::Function) {
         throw std::runtime_error("'" + name + "' is not a variable");
     }
     return sym;
@@ -20,13 +20,37 @@ TypePtr Identifier::GetType(const Context& ctx) const {
     return LookupVariable(ctx, name_).type;
 }
 
+// Only a global has a constant address. An array's value is that address.
+std::optional<ConstValue> Identifier::EvalConstAddress(
+    const Context& ctx) const {
+    const Symbol& sym = LookupVariable(ctx, name_);
+    if (sym.kind != SymbolKind::Global) return std::nullopt;
+    return ConstValue{sym.label, 0};
+}
+
+std::optional<ConstValue> Identifier::EvalConstValue(
+    const Context& ctx) const {
+    if (!GetType(ctx)->IsArray()) return std::nullopt;
+    return EvalConstAddress(ctx);
+}
+
 void Identifier::EmitRISC(std::ostream& os, Context& ctx) const {
     const Symbol& sym = LookupVariable(ctx, name_);
+    if (sym.kind == SymbolKind::Global) {
+        EmitAddress(os, ctx);
+        EmitLoad(os, *sym.type, "a0", "a0", 0);
+        return;
+    }
     EmitLoad(os, *sym.type, "a0", "s0", sym.offset);
 }
 
 void Identifier::EmitAddress(std::ostream& os, Context& ctx) const {
-    EmitAddrOffset(os, "a0", "s0", LookupVariable(ctx, name_).offset);
+    const Symbol& sym = LookupVariable(ctx, name_);
+    if (sym.kind == SymbolKind::Global) {
+        os << "\tla a0, " << sym.label << "\n";
+        return;
+    }
+    EmitAddrOffset(os, "a0", "s0", sym.offset);
 }
 
 }  // namespace ast

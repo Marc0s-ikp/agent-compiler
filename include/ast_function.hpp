@@ -13,17 +13,25 @@ class ExternalDecl : public Node {};
 
 using ExternalDeclPtr = std::unique_ptr<ExternalDecl>;
 
-// A function declaration without a body. Records a Function symbol and emits
-// nothing (D9).
-class FunctionDeclaration : public ExternalDecl {
+// A file-scope declaration: variables with optional initialisers, 'extern'
+// declarations, and function prototypes (which record a Function symbol and
+// emit nothing, D9). Variable storage is written at the end of the file.
+class GlobalDeclaration : public ExternalDecl {
 public:
-    FunctionDeclaration(TypeSpecifier spec, Declarator declarator)
-        : spec_(spec), declarator_(std::move(declarator)) {}
+    GlobalDeclaration(TypeSpecifier spec, std::vector<InitDeclarator> declarators,
+                      bool is_extern)
+        : spec_(spec),
+          declarators_(std::move(declarators)),
+          is_extern_(is_extern) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
+    void DeclareVariable(const std::string& name, const TypePtr& type,
+                         const Initializer* init, Context& ctx) const;
+
     TypeSpecifier spec_;
-    Declarator declarator_;
+    std::vector<InitDeclarator> declarators_;
+    bool is_extern_;
 };
 
 class FunctionDefinition : public ExternalDecl {

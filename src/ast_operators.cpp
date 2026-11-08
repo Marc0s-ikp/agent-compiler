@@ -162,6 +162,26 @@ std::optional<long> BinaryArith::EvalConst(const Context& ctx) const {
     return FoldBinary(op_, *a, *b);
 }
 
+// Integer constants fold as usual; 'address +/- integer' keeps the label and
+// moves the offset by whole elements.
+std::optional<ConstValue> BinaryArith::EvalConstValue(
+    const Context& ctx) const {
+    if (std::optional<long> n = EvalConst(ctx)) return ConstValue{"", *n};
+    PointerOp kind = ClassifyPointerOp(op_, lhs_->ValueType(ctx), rhs_->ValueType(ctx));
+    if (kind == PointerOp::None || kind == PointerOp::PtrMinusPtr) {
+        return std::nullopt;
+    }
+    bool pointer_first = kind != PointerOp::IntPlusPtr;
+    const Expr& pointer = pointer_first ? *lhs_ : *rhs_;
+    const Expr& index = pointer_first ? *rhs_ : *lhs_;
+    std::optional<ConstValue> base = pointer.EvalConstValue(ctx);
+    std::optional<long> n = index.EvalConst(ctx);
+    if (!base || !n) return std::nullopt;
+    long step = PointeeSize(*pointer.ValueType(ctx)) * *n;
+    base->offset += (kind == PointerOp::PtrMinusInt) ? -step : step;
+    return base;
+}
+
 void BinaryArith::EmitRISC(std::ostream& os, Context& ctx) const {
     TypePtr l = lhs_->ValueType(ctx);
     TypePtr r = rhs_->ValueType(ctx);

@@ -44,6 +44,7 @@ public:
         : op_(op), lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
+    std::optional<ConstValue> EvalConstValue(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:

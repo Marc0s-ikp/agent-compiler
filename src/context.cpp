@@ -116,3 +116,72 @@ const std::string& Context::ContinueLabel() const {
     }
     return continue_labels_.back();
 }
+
+namespace {
+
+// The type two declarations of one global agree on, or null. An array of
+// unspecified length ('extern int a[];') is completed by the other.
+TypePtr MergeGlobalTypes(const TypePtr& a, const TypePtr& b) {
+    if (a->Equals(*b)) return a;
+    if (a->IsArray() && b->IsArray() && a->Base()->Equals(*b->Base())) {
+        if (a->Length() == 0) return b;
+        if (b->Length() == 0) return a;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+Context::GlobalVar& Context::FindGlobal(const std::string& name) {
+    for (GlobalVar& g : globals_) {
+        if (g.name == name) return g;
+    }
+    throw std::runtime_error("'" + name + "' is not a global");
+}
+
+void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
+                            bool is_extern) {
+    Symbol& slot = scopes_.front()[name];
+    if (!slot.type) {
+        slot = Symbol::Global(type, name);
+        globals_.push_back(GlobalVar{name, type, !is_extern, false, ""});
+        return;
+    }
+    TypePtr merged = slot.kind == SymbolKind::Global
+                         ? MergeGlobalTypes(slot.type, type)
+                         : nullptr;
+    if (!merged) {
+        throw std::runtime_error("conflicting declaration of '" + name + "'");
+    }
+    slot.type = merged;
+    GlobalVar& var = FindGlobal(name);
+    var.type = merged;
+    if (!is_extern) var.has_storage = true;
+}
+
+void Context::InitGlobal(const std::string& name, const std::string& data) {
+    GlobalVar& var = FindGlobal(name);
+    if (var.initialised) {
+        throw std::runtime_error("redefinition of '" + name + "'");
+    }
+    var.initialised = true;
+    var.has_storage = true;
+    var.data = data;
+}
+
+void Context::EmitGlobals(std::ostream& os) const {
+    for (const GlobalVar& g : globals_) {
+        if (!g.has_storage) continue;
+        if (g.type->Size() == 0) {
+            throw std::runtime_error("'" + g.name + "' has incomplete type");
+        }
+        os << "\t.globl " << g.name << "\n";
+        os << (g.initialised ? "\t.data\n" : "\t.bss\n");
+        os << "\t.balign " << g.type->Align() << "\n" << g.name << ":\n";
+        if (g.initialised) {
+            os << g.data;
+        } else {
+            os << "\t.zero " << g.type->Size() << "\n";
+        }
+    }
+}
