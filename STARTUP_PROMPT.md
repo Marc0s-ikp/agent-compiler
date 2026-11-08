@@ -18,7 +18,7 @@ Every session after that, do exactly ONE feature, then stop:
 3. Create a branch `feat/<short-name>`, give `implementer` the root cause, the failing tests and the reproducer.
 4. When it reports back, have `reviewer` review the branch. If CHANGES NEEDED, send it back to `implementer` twice; if still not approved, log it in docs/BLOCKERS.md.
 5. Merge to master only if: approved, full suite run, no regressions.
-6. Update docs/PROGRESS.md and push.
+6. Update docs/PROGRESS.md (including the Features checklist at the top: tick a feature when it's merged) and push.
 7. After the feature is merged and pushed, STOP. Don't start the next feature. Tell me the reference pass count, what was fixed, anything added to BLOCKERS.md, and which feature is next.
 
 Stop and ask me when: a change needs an architecture change, a fix is still not approved after two review rounds, or the pass count hasn't gone up in 3 cycles.
