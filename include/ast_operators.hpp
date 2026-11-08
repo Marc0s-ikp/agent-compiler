@@ -10,6 +10,11 @@ enum class UnOp { Plus, Neg, BitNot, LogNot };
 // Throws unless 't' is an integer type; returns it.
 TypePtr RequireInteger(const TypePtr& t);
 
+// Evaluate 'cond' as a condition: leaves its truth value in a0 (nonzero is
+// true). The one place that decides what may be a condition; integer-only
+// for now, floats and pointers change only this function.
+void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond);
+
 // a0 = a0 <op> t0, using signedness of 'common' (shared with CompoundAssign).
 void EmitBinOp(std::ostream& os, BinOp op, const Type& common);
 

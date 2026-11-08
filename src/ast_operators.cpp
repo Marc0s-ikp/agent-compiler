@@ -11,6 +11,11 @@ TypePtr RequireInteger(const TypePtr& t) {
     return t;
 }
 
+void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond) {
+    RequireInteger(cond.GetType(ctx));
+    cond.EmitRISC(os, ctx);
+}
+
 void EmitBinOp(std::ostream& os, BinOp op, const Type& common) {
     bool s = common.IsSigned();
     const char* name = "add";
@@ -102,9 +107,9 @@ TypePtr LogicalAnd::GetType(const Context&) const { return Type::Int(); }
 void LogicalAnd::EmitRISC(std::ostream& os, Context& ctx) const {
     std::string is_false = ctx.NewLabel("andf");
     std::string end = ctx.NewLabel("ande");
-    lhs_->EmitRISC(os, ctx);
+    EmitCondition(os, ctx, *lhs_);
     EmitBranchIfZero(os, is_false);
-    rhs_->EmitRISC(os, ctx);
+    EmitCondition(os, ctx, *rhs_);
     EmitBranchIfZero(os, is_false);
     os << "\tli a0, 1\n\tj " << end << "\n";
     os << is_false << ":\n\tli a0, 0\n" << end << ":\n";
@@ -115,9 +120,9 @@ TypePtr LogicalOr::GetType(const Context&) const { return Type::Int(); }
 void LogicalOr::EmitRISC(std::ostream& os, Context& ctx) const {
     std::string is_true = ctx.NewLabel("ort");
     std::string end = ctx.NewLabel("ore");
-    lhs_->EmitRISC(os, ctx);
+    EmitCondition(os, ctx, *lhs_);
     EmitBranchIfNonZero(os, is_true);
-    rhs_->EmitRISC(os, ctx);
+    EmitCondition(os, ctx, *rhs_);
     EmitBranchIfNonZero(os, is_true);
     os << "\tli a0, 0\n\tj " << end << "\n";
     os << is_true << ":\n\tli a0, 1\n" << end << ":\n";
@@ -154,7 +159,7 @@ void Ternary::EmitRISC(std::ostream& os, Context& ctx) const {
     TypePtr result = GetType(ctx);
     std::string else_label = ctx.NewLabel("elsq");
     std::string end = ctx.NewLabel("endq");
-    cond_->EmitRISC(os, ctx);
+    EmitCondition(os, ctx, *cond_);
     EmitBranchIfZero(os, else_label);
     then_->EmitRISC(os, ctx);
     EmitConvert(os, *then_->GetType(ctx), *result);

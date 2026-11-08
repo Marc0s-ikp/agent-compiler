@@ -7,12 +7,6 @@ namespace ast {
 
 namespace {
 
-// Evaluate a condition into a0; it must be an integer.
-void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond) {
-    RequireInteger(cond.GetType(ctx));
-    cond.EmitRISC(os, ctx);
-}
-
 void EmitBody(std::ostream& os, Context& ctx, const Stmt& body,
               const std::string& break_label,
               const std::string& continue_label) {
