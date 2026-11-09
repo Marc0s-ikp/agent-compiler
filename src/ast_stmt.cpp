@@ -4,6 +4,7 @@
 
 #include "emit.hpp"
 #include "global_init.hpp"
+#include "local_init.hpp"
 
 namespace ast {
 
@@ -34,6 +35,22 @@ void DeclarationStmt::DeclareStatic(const std::string& name, const TypePtr& type
     ctx.Declare(name, Symbol::Global(final_type, label));
 }
 
+// An ordinary local. The initialiser is laid out first because an array
+// declared without a length takes it from there ('char s[] = "abc"').
+void DeclarationStmt::DeclareLocal(std::ostream& os, const std::string& name,
+                                   TypePtr type, const Initializer* init,
+                                   Context& ctx) const {
+    FlatInit flat;
+    if (init) {
+        flat = FlattenInit(type, *init);
+        type = flat.type;
+    }
+    if (type->Size() == 0) throw std::runtime_error("array size missing");
+    int offset = ctx.AllocLocal(type);
+    ctx.Declare(name, Symbol::Local(type, offset));
+    if (init) EmitLocalInit(os, ctx, flat, offset);
+}
+
 void DeclarationStmt::EmitRISC(std::ostream& os, Context& ctx) const {
     TypePtr base = spec_.Resolve(ctx);
     for (const InitDeclarator& d : declarators_) {
@@ -50,17 +67,7 @@ void DeclarationStmt::EmitRISC(std::ostream& os, Context& ctx) const {
             DeclareStatic(name, type, d.init.get(), ctx);
             continue;
         }
-        if (type->Size() == 0) throw std::runtime_error("array size missing");
-        int offset = ctx.AllocLocal(type);
-        ctx.Declare(name, Symbol::Local(type, offset));
-        if (!d.init) continue;
-        if (d.init->IsList()) {
-            throw std::runtime_error("brace initialiser for a local variable");
-        }
-        const Expr& value = d.init->Value();
-        value.EmitRISC(os, ctx);
-        EmitConvert(os, *value.ValueType(ctx), *type);
-        EmitStore(os, *type, "a0", "s0", offset);
+        DeclareLocal(os, name, type, d.init.get(), ctx);
     }
 }
 

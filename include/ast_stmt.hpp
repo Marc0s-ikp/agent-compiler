@@ -36,6 +36,8 @@ public:
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
+    void DeclareLocal(std::ostream& os, const std::string& name, TypePtr type,
+                      const Initializer* init, Context& ctx) const;
     void DeclareStatic(const std::string& name, const TypePtr& type,
                        const Initializer* init, Context& ctx) const;
 

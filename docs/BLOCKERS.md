@@ -61,23 +61,32 @@ From the feature 5 review (2026-11-08). None of these blocked the merge, and non
 6. `BinaryCompare`, `LogicalAnd`, `LogicalOr` and `Ternary` have no `EvalConst`, so `enum { A = 1 < 2 }` is rejected.
 7. `src/ast_function.cpp:79`: this size check looks unreachable, because the merge step already rejects mismatches.
 
-Unsupported and deferred: local brace initialisers (`src/ast_stmt.cpp:57`, schedule with feature 6, since
-`char s[] = "abc"` needs the same path), local `extern` (`src/parser.y:356`), local function prototypes
+Unsupported and deferred: local `extern` (`src/parser.y:356`), local function prototypes
 (`src/ast_stmt.cpp:41-44`).
 
 ## Do first in later features
 
-From the same review.
+From the same review. Items 1-3 were done in feature 6 (D17). Local brace initialisers and local
+`char s[] = "abc"` are done too.
 
-1. `include/ast_declaration.hpp:42`: `Resolve` mutates `Context` for enum bodies, but `sizeof(type)` and casts call
+1. DONE (feature 6). `include/ast_declaration.hpp:42`: `Resolve` mutates `Context` for enum bodies, but `sizeof(type)` and casts call
    it from `GetType`/`EvalConst`, which take `const Context&` (D3). Split it into a declaring resolve and a const
    lookup rather than using `const_cast`.
-2. `include/ast_node.hpp:42`, `src/global_init.cpp:17`: `char *g = "x"` needs `AddString`, but the initialiser walk
+2. DONE (feature 6). `include/ast_node.hpp:42`, `src/global_init.cpp:17`: `char *g = "x"` needs `AddString`, but the initialiser walk
    has only a `const Context&`.
-3. `src/global_init.cpp:107` and `:42-52`: strings need a case at top level and in `Object`, for `char s[]`, `{"ab"}`
+3. DONE (feature 6). `src/global_init.cpp:107` and `:42-52`: strings need a case at top level and in `Object`, for `char s[]`, `{"ab"}`
    and `char a[2][4] = {"ab","cd"}`.
 4. D15 understates the float work. `ConstValue` needs a floating field, `FloatLiteral`, `UnaryOp`, `BinaryArith` and
    `Cast` need overrides, and `Scalar` must convert to the target type (`float f = 1;`, single-precision `0.1`).
 5. Feature 8: struct member rules must not call `EndDeclaration()` (`src/parser.y:17`), member declarators must not
    go through `declarator_head`, `.`/`->` must accept `T_TYPE_NAME`, and Records must compare by identity, because
    structural `Equals` would recurse forever on `struct node { struct node *next; }`.
+
+## Known limits left by feature 6
+
+- No cast expressions exist yet (`(char)x`); `sizeof(type)` is the only user of type names. Type names accept pointer,
+  array and parenthesised abstract declarators, but not function declarators (`sizeof(int (*)(int))`).
+- An `enum { ... }` body inside a parameter list or a type name is rejected ("enum definition not allowed here"),
+  because those paths only look types up (D17). Enums declared as ordinary declarations are unaffected.
+- `short` is still not a keyword.
+- A local initialiser zeroes the whole array before storing, even when the list covers it. Correct, slightly wasteful.

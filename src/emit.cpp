@@ -65,6 +65,24 @@ void EmitConvert(std::ostream& os, const Type& from, const Type& to) {
        << "\n";
 }
 
+void EmitZeroMem(std::ostream& os, const std::string& base, int off,
+                 int bytes) {
+    const int kUnrolledMax = 64;
+    if (bytes <= kUnrolledMax) {
+        for (int i = 0; i < bytes;) {
+            bool word = (off + i) % 4 == 0 && bytes - i >= 4;
+            EmitMem(os, word ? "sw" : "sb", "zero", base, off + i);
+            i += word ? 4 : 1;
+        }
+        return;
+    }
+    bool word = off % 4 == 0 && bytes % 4 == 0;
+    EmitAddrOffset(os, "t0", base, off);
+    os << "\tli t1, " << bytes << "\n\tadd t1, t0, t1\n";
+    os << "1:\n\t" << (word ? "sw" : "sb") << " zero, 0(t0)\n";
+    os << "\taddi t0, t0, " << (word ? 4 : 1) << "\n\tbne t0, t1, 1b\n";
+}
+
 void EmitJump(std::ostream& os, const std::string& label) {
     os << "\tj " << label << "\n";
 }

@@ -21,6 +21,10 @@ void EmitStore(std::ostream& os, const Type& type, const std::string& reg,
 void EmitAddrOffset(std::ostream& os, const std::string& dst,
                     const std::string& base, int off);
 
+// Sets 'bytes' bytes at off(base) to zero, for any size and offset: a few
+// stores for a small object, a loop (clobbering t0 and t1) for a big one.
+void EmitZeroMem(std::ostream& os, const std::string& base, int off, int bytes);
+
 // Branch on the truthiness of a0 (an integer: nonzero is true). Uses the
 // inverted short branch over an unconditional 'j', so the target may be any
 // distance away (a conditional branch only reaches about 4KB).
