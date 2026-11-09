@@ -47,13 +47,13 @@ The fix above has not been made.
 
 ## Nice to have
 
-From the feature 5 review (2026-11-08). None of these blocked the merge, and none is fixed yet.
+From the feature 5 review (2026-11-08). None of these blocked the merge. Item 3 was fixed in feature 6, and the others are still open.
 
 1. `src/ast_operators.cpp:121`: `FoldBinary` folds in untyped 64-bit `long`, so `unsigned a = ~0u >> 1;` and
    `case (0u-2)/2:` compile to the wrong value. Runtime evaluation is correct. Fix: fold using `GetType` and wrap to 32 bits.
 2. `src/ast_function.cpp:118`: `static int f(int); int f(int x){...}` still emits `.globl f`. The definition should
    inherit internal linkage from the earlier declaration.
-3. `src/global_init.cpp:91-93`: `Word` silently emits nothing for sizes other than 1, 2 or 4. Unreachable today, but
+3. DONE (feature 6). `src/global_init.cpp:91-93`: `Word` silently emits nothing for sizes other than 1, 2 or 4. Unreachable today, but
    `double` would shift the data after it. Add a throw.
 4. `src/ast_function.cpp:76-77`: the initialiser is built before the name is declared, so `int **q = &q[0];` fails
    with "undeclared identifier". Feature 8's `struct n a = {&a}` would hit the same error.
@@ -90,3 +90,26 @@ From the same review. Items 1-3 were done in feature 6 (D17). Local brace initia
   because those paths only look types up (D17). Enums declared as ordinary declarations are unaffected.
 - `short` is still not a keyword.
 - A local initialiser zeroes the whole array before storing, even when the list covers it. Correct, slightly wasteful.
+
+## Nice to have from the feature 6 review
+
+From the feature 6 review (2026-11-09). None of these blocked the merge, and none is fixed yet.
+
+1. `src/ast_operators.cpp:337`: `Comma::GetType` returns `rhs_->GetType`, so the array does not decay.
+   `int a[3]; sizeof(0, a)` gives 12, gcc gives 4. Fix: return `rhs_->ValueType(ctx)`.
+2. `src/ast_call.cpp:74`: narrow stack arguments are written with `sb`, but the psABI widens them to the full 4-byte
+   slot. No visible effect today, because gcc's callee reads with `lbu`/`lb`. Fix: store the extended register with `sw`.
+3. `src/parser.y:332-354`: unnamed array parameters in prototypes are a syntax error, as in `int g(char [], int []);`.
+   Not new in feature 6. Fix: try `type_spec abstract_declarator` in `param_decl` and check for conflicts.
+4. `src/lexer.flex:66`: a backslash-newline inside a string is a lexer error. Fix: strip continuations before decoding.
+5. `src/escapes.cpp:22`: unknown escapes that gcc accepts (`"\e"`, `"\8"`) are rejected. From reading the code,
+   out-of-range `"\400"` and `"\x141"` wrap to 8 bits (lines 32 and 47); this was not compared with gcc.
+6. Duplication: the pointer-wrap loop appears four times in `src/parser.y` (236, 287, 295, 340) and should be one helper.
+   The D8 char type `Type::Integer(1, false)` is spelled out in `src/ast_declaration.cpp:49-50`, `src/ast_literal.cpp:42`
+   and `src/local_init.cpp:19`, and should be a `Type::Char()` helper.
+7. `src/global_init.cpp:22`: the comment mentions a `size` parameter that does not exist.
+
+Deliberate: `src/init_layout.cpp:36` rejects `char s[2]="abc"` and line 94 rejects excess elements, where gcc only warns.
+
+For features 7 and 8: `src/local_init.cpp:13` stores through `a0`, so floats need `fa0`, and `src/local_init.cpp:32`
+zeroes only arrays, so partial struct initialisers need that extended.
