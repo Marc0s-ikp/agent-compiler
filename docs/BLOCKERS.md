@@ -121,3 +121,5 @@ For feature 8: `src/local_init.cpp:32` zeroes only arrays, so partial struct ini
   that gives a wrong value under spike pk. `tests/custom/float_split_double.c` checks our caller against our callee.
 - Constant folding of an out-of-range floating value (`int x = 1e20;`) is rejected as "not a constant" instead of
   saturating, and a literal beyond double's range becomes infinity without a warning.
+- Nice to have (feature 7 review): `Cast::EvalConst` only folds integer operands, so a cast of a floating constant is
+  rejected where an integer constant is required (`int a[(int)2.5];`, `enum {A=(int)2.5};`, `case (int)1.5:`). GCC accepts all three.

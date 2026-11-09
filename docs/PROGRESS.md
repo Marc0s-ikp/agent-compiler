@@ -12,8 +12,8 @@
 
 ## Latest session
 Pass count: 195/207 before, 219/224 after (81 of 86 compiler_tests, 138 of 138 custom). No test that passed before now fails.
-Fixed: feature 7 (awaiting review): `float` and `double` types, floating literals, arithmetic, comparisons and conditions, conversions, cast expressions (integer casts too), the floating ABI rows including the split double, and floating global and local initialisers. Reference float is 7/7. 17 new custom tests (14 float tests from the tester, plus `float_split_double`, `float_nan_truth`, `cast_integer`).
-Blocked: no new blockers. The frame-size item stays open. D17 and D18 await Marcus's acceptance.
+Fixed: feature 7 (reviewed 2026-11-09: approved, no blocking findings; 71 edge-case values matched GCC -O0; merged by Marcus's approval): `float` and `double` types, floating literals, arithmetic, comparisons and conditions, conversions, cast expressions (integer casts too), the floating ABI rows including the split double, and floating global and local initialisers. Reference float is 7/7. 17 new custom tests (14 float tests from the tester, plus `float_split_double`, `float_nan_truth`, `cast_integer`).
+Blocked: no new blockers. The frame-size item stays open. Marcus accepted D17 and D18 on 2026-11-09.
 Remaining failures: struct (5), all compiler crashes because the feature does not exist yet.
 Next: feature 8, structs and unions. See BLOCKERS "Do first" item 5.
 
