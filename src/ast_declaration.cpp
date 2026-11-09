@@ -49,6 +49,8 @@ TypePtr TypeSpecifier::Lookup(const Context& ctx) const {
         case Kind::Char: return Type::Integer(1, false);  // unsigned (D8)
         case Kind::UnsignedChar: return Type::Integer(1, false);
         case Kind::SignedChar: return Type::Integer(1, true);
+        case Kind::Float: return Type::Float();
+        case Kind::Double: return Type::Double();
         case Kind::Void: return Type::Void();
         case Kind::Int: break;
     }

@@ -1,9 +1,11 @@
 #include "global_init.hpp"
 
 #include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
 
+#include "const_value.hpp"
 #include "escapes.hpp"
 #include "init_layout.hpp"
 
@@ -12,8 +14,7 @@ namespace ast {
 namespace {
 
 // Writes the directives for one laid-out object. This is the one place that
-// knows how values are written into .data; floating types (feature 7) become
-// a new case of Scalar.
+// knows how values are written into .data.
 class InitWriter {
 public:
     explicit InitWriter(Context& ctx) : ctx_(ctx) {}
@@ -35,10 +36,32 @@ public:
     }
 
 private:
+    // The value is converted to the object's type, as an assignment would.
     void Scalar(const Type& type, const Expr& expr) {
         std::optional<ConstValue> value = expr.EvalConstValue(ctx_);
         if (!value) throw std::runtime_error("initialiser is not a constant");
-        Word(type.Size(), *value);
+        std::optional<ConstValue> converted = ConvertConst(*value, type);
+        if (!converted) throw std::runtime_error("initialiser is not a constant");
+        if (type.IsFloating()) {
+            Real(type.Size(), converted->real);
+        } else {
+            Word(type.Size(), *converted);
+        }
+    }
+
+    // A float is one word of IEEE bits, a double two (low word first).
+    void Real(int size, double value) {
+        uint64_t bits;
+        if (size == 4) {
+            float narrow = static_cast<float>(value);
+            uint32_t word;
+            std::memcpy(&word, &narrow, sizeof word);
+            bits = word;
+        } else {
+            std::memcpy(&bits, &value, sizeof bits);
+        }
+        out_ << "\t.word " << (bits & 0xffffffffu) << "\n";
+        if (size == 8) out_ << "\t.word " << (bits >> 32) << "\n";
     }
 
     // The chars of a string initialiser, then zeros up to 'size' bytes.

@@ -1,5 +1,6 @@
 #include "ast_call.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 
 #include "abi.hpp"
@@ -15,11 +16,41 @@ int OutgoingBytes(const std::vector<TypePtr>& types,
                   const std::vector<ArgLoc>& locs) {
     int bytes = 0;
     for (size_t i = 0; i < locs.size(); ++i) {
-        if (locs[i].kind != ArgLoc::Kind::Stack) continue;
-        int end = locs[i].offset + (types[i]->Size() + 3) / 4 * 4;
-        if (end > bytes) bytes = end;
+        bytes = std::max(bytes, StackExtent(locs[i], *types[i]));
     }
     return bytes;
+}
+
+std::string IntArgReg(int n) { return "a" + std::to_string(n); }
+
+// Moves argument 'type', saved in the temp slot at s0 + slot, to its place.
+// A word the ABI passes in an integer register is loaded as an int, even
+// when it is half of a double or the bits of a float.
+void PlaceArg(std::ostream& os, const ArgLoc& loc, const TypePtr& type,
+              int slot) {
+    TypePtr word = Type::Int();
+    switch (loc.kind) {
+        case ArgLoc::Kind::IntReg:
+            EmitLoad(os, type->IsFloating() ? *word : *type,
+                     IntArgReg(loc.reg), "s0", slot);
+            break;
+        case ArgLoc::Kind::FloatReg:
+            EmitLoad(os, *type, "fa" + std::to_string(loc.reg), "s0", slot);
+            break;
+        case ArgLoc::Kind::IntPair:
+            EmitLoad(os, *word, IntArgReg(loc.reg), "s0", slot);
+            EmitLoad(os, *word, IntArgReg(loc.reg + 1), "s0", slot + 4);
+            break;
+        case ArgLoc::Kind::Split:
+            EmitLoad(os, *word, IntArgReg(loc.reg), "s0", slot);
+            EmitLoad(os, *word, "t0", "s0", slot + 4);
+            EmitStore(os, *word, "t0", "sp", loc.offset);
+            break;
+        case ArgLoc::Kind::Stack:
+            EmitLoad(os, *type, ScratchReg(*type), "s0", slot);
+            EmitStore(os, *type, ScratchReg(*type), "sp", loc.offset);
+            break;
+    }
 }
 
 }  // namespace
@@ -31,6 +62,12 @@ TypePtr FunctionCall::GetType(const Context& ctx) const {
         throw std::runtime_error("'" + name_ + "' is not a function");
     }
     return sym->type->Base();
+}
+
+// What an argument with no declared parameter is passed as: integers
+// promote to int, and float to double.
+static TypePtr DefaultPromote(const TypePtr& t) {
+    return t->IsFloating() ? Type::Double() : Promote(t);
 }
 
 std::vector<TypePtr> FunctionCall::ArgumentTypes(const Context& ctx) const {
@@ -45,7 +82,7 @@ std::vector<TypePtr> FunctionCall::ArgumentTypes(const Context& ctx) const {
     std::vector<TypePtr> types;
     for (size_t i = 0; i < args_.size(); ++i) {
         TypePtr own = RequireScalar(args_[i]->ValueType(ctx));
-        types.push_back(i < declared ? params[i] : Promote(own));
+        types.push_back(i < declared ? params[i] : DefaultPromote(own));
     }
     return types;
 }
@@ -60,19 +97,13 @@ void FunctionCall::EmitRISC(std::ostream& os, Context& ctx) const {
         args_[i]->EmitRISC(os, ctx);
         EmitConvert(os, *args_[i]->ValueType(ctx), *types[i]);
         slots.push_back(ctx.PushTemp(types[i]));
-        EmitStore(os, *types[i], "a0", "s0", slots[i]);
+        EmitStore(os, *types[i], AccReg(*types[i]), "s0", slots[i]);
     }
 
     std::vector<ArgLoc> locs = ClassifyArgs(types);
     ctx.ReserveOutgoing(OutgoingBytes(types, locs));
     for (size_t i = 0; i < args_.size(); ++i) {
-        if (locs[i].kind == ArgLoc::Kind::IntReg) {
-            EmitLoad(os, *types[i], "a" + std::to_string(locs[i].reg), "s0",
-                     slots[i]);
-        } else {
-            EmitLoad(os, *types[i], "t0", "s0", slots[i]);
-            EmitStore(os, *types[i], "t0", "sp", locs[i].offset);
-        }
+        PlaceArg(os, locs[i], types[i], slots[i]);
     }
     os << "\tcall " << name_ << "\n";
     for (size_t i = 0; i < args_.size(); ++i) ctx.PopTemp();

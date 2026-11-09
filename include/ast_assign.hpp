@@ -40,6 +40,8 @@ public:
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
+    void EmitFloating(std::ostream& os, Context& ctx, const Type& type) const;
+
     bool increment_, prefix_;
     ExprPtr operand_;
 };

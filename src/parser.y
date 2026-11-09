@@ -49,15 +49,15 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     ast::Storage storage;
 }
 
-%token <str> IDENTIFIER INT_LITERAL T_TYPE_NAME
+%token <str> IDENTIFIER INT_LITERAL FLOAT_LITERAL T_TYPE_NAME
 %token <str> CHAR_LITERAL STRING_LITERAL
-%token T_INT T_UNSIGNED T_SIGNED T_CHAR T_SIZEOF T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
+%token T_INT T_UNSIGNED T_SIGNED T_CHAR T_FLOAT T_DOUBLE T_SIZEOF T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
 %token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM T_TYPEDEF T_SWITCH T_CASE T_DEFAULT
 %token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
 %token LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
 
-%type <expr> expr_opt expr assignment_expr conditional_expr binary_expr unary_expr
+%type <expr> expr_opt expr assignment_expr conditional_expr binary_expr cast_expr unary_expr
 %type <expr> postfix_expr primary_expr
 %type <stmt> statement declaration
 %type <compound> compound_stmt
@@ -160,6 +160,8 @@ type_spec
     | T_SIGNED           { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Int); }
     | T_SIGNED T_INT     { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Int); }
     | T_CHAR             { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Char); }
+    | T_FLOAT            { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Float); }
+    | T_DOUBLE           { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Double); }
     | T_SIGNED T_CHAR    { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::SignedChar); }
     | T_UNSIGNED T_CHAR  { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::UnsignedChar); }
     | T_VOID             { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Void); }
@@ -511,7 +513,7 @@ conditional_expr
     ;
 
 binary_expr
-    : unary_expr
+    : cast_expr
     | binary_expr OR_OP binary_expr   { $$ = new ast::LogicalOr(Own($1), Own($3)); }
     | binary_expr AND_OP binary_expr  { $$ = new ast::LogicalAnd(Own($1), Own($3)); }
     | binary_expr '|' binary_expr     { $$ = new ast::BinaryArith(ast::BinOp::Or, Own($1), Own($3)); }
@@ -532,16 +534,27 @@ binary_expr
     | binary_expr '%' binary_expr     { $$ = new ast::BinaryArith(ast::BinOp::Mod, Own($1), Own($3)); }
     ;
 
+/* A cast binds tighter than any binary operator but looser than the unary
+   ones. 'sizeof (type)' stays in unary_expr; the first token after '('
+   (a type word, never an expression start) tells the two apart. */
+cast_expr
+    : unary_expr
+    | '(' type_name ')' cast_expr {
+        $$ = new ast::Cast(std::move(*$2), Own($4));
+        delete $2;
+    }
+    ;
+
 unary_expr
     : postfix_expr
     | INC_OP unary_expr  { $$ = new ast::IncDec(true, true, Own($2)); }
     | DEC_OP unary_expr  { $$ = new ast::IncDec(false, true, Own($2)); }
-    | '+' unary_expr     { $$ = new ast::UnaryOp(ast::UnOp::Plus, Own($2)); }
-    | '-' unary_expr     { $$ = new ast::UnaryOp(ast::UnOp::Neg, Own($2)); }
-    | '~' unary_expr     { $$ = new ast::UnaryOp(ast::UnOp::BitNot, Own($2)); }
-    | '!' unary_expr     { $$ = new ast::UnaryOp(ast::UnOp::LogNot, Own($2)); }
-    | '*' unary_expr     { $$ = new ast::Deref(Own($2)); }
-    | '&' unary_expr     { $$ = new ast::AddressOf(Own($2)); }
+    | '+' cast_expr     { $$ = new ast::UnaryOp(ast::UnOp::Plus, Own($2)); }
+    | '-' cast_expr     { $$ = new ast::UnaryOp(ast::UnOp::Neg, Own($2)); }
+    | '~' cast_expr     { $$ = new ast::UnaryOp(ast::UnOp::BitNot, Own($2)); }
+    | '!' cast_expr     { $$ = new ast::UnaryOp(ast::UnOp::LogNot, Own($2)); }
+    | '*' cast_expr     { $$ = new ast::Deref(Own($2)); }
+    | '&' cast_expr     { $$ = new ast::AddressOf(Own($2)); }
     | T_SIZEOF unary_expr { $$ = new ast::SizeofExpr(Own($2)); }
     | T_SIZEOF '(' type_name ')' {
         $$ = new ast::SizeofType(std::move(*$3));
@@ -590,6 +603,7 @@ string_literal
 primary_expr
     : IDENTIFIER   { $$ = new ast::Identifier(std::move(*$1)); delete $1; }
     | INT_LITERAL  { $$ = new ast::IntLiteral(*$1); delete $1; }
+    | FLOAT_LITERAL { $$ = new ast::FloatLiteral(*$1); delete $1; }
     | string_literal {
         $$ = new ast::StringLiteral(std::move(*$1));
         delete $1;

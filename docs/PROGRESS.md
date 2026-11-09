@@ -7,15 +7,15 @@
 - [x] 4. Arrays and pointers
 - [x] 5. Globals, static, enum, typedef, switch
 - [x] 6. char, strings, sizeof
-- [ ] 7. float / double
+- [x] 7. float / double
 - [ ] 8. structs, unions
 
 ## Latest session
-Pass count: 159/205 before, 195/207 after (74 of 86 compiler_tests, 121 of 121 custom). No test that passed before now fails.
-Fixed: feature 6 is reviewed, approved and merged: `char` types, char and string literals, `sizeof`, and local and global initialisers, including `char *s = "hi"` and `char s[] = "hi"` at file scope. Reference strings and types are now 5/5 each.
-Blocked: no new blockers. The frame-size item stays open. D15 and D16 are accepted, and D17 awaits Marcus's acceptance. The review's nice-to-have items are in BLOCKERS.
-Remaining failures: float (7) and struct (5), all compiler crashes because those features do not exist yet.
-Next: feature 7, float / double. Do BLOCKERS "Do first" item 4 and the `fa0` note for local initialisers as part of it.
+Pass count: 195/207 before, 219/224 after (81 of 86 compiler_tests, 138 of 138 custom). No test that passed before now fails.
+Fixed: feature 7 (awaiting review): `float` and `double` types, floating literals, arithmetic, comparisons and conditions, conversions, cast expressions (integer casts too), the floating ABI rows including the split double, and floating global and local initialisers. Reference float is 7/7. 17 new custom tests (14 float tests from the tester, plus `float_split_double`, `float_nan_truth`, `cast_integer`).
+Blocked: no new blockers. The frame-size item stays open. D17 and D18 await Marcus's acceptance.
+Remaining failures: struct (5), all compiler crashes because the feature does not exist yet.
+Next: feature 8, structs and unions. See BLOCKERS "Do first" item 5.
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -24,7 +24,7 @@ Next: feature 7, float / double. Do BLOCKERS "Do first" item 4 and the `fa0` not
 | array | 5 | 5 |
 | control_flow | 12 | 12 |
 | default | 4 | 4 |
-| float | 0 | 7 |
+| float | 7 | 7 |
 | functions | 10 | 10 |
 | integer | 12 | 12 |
 | local_var | 6 | 6 |
@@ -34,8 +34,8 @@ Next: feature 7, float / double. Do BLOCKERS "Do first" item 4 and the `fa0` not
 | strings | 5 | 5 |
 | struct | 0 | 5 |
 | types | 5 | 5 |
-| **Reference total** | **74** | **86** |
-| custom (written by tester, D13) | 121 | 121 |
+| **Reference total** | **81** | **86** |
+| custom (written by tester, D13) | 138 | 138 |
 
 ## History
 | Date | Passing | Change |
@@ -47,3 +47,4 @@ Next: feature 7, float / double. Do BLOCKERS "Do first" item 4 and the `fa0` not
 | 2026-11-08 | 127/155 | pointer: arrays, pointers and pointer arithmetic (101→127) |
 | 2026-11-08 | 159/180 | feature 5: globals, static, enum, typedef, switch (127→159) |
 | 2026-11-09 | 195/207 | feature 6: char, strings, sizeof, local and global initialisers (159→195) |
+| 2026-11-09 | 219/224 | float: float and double, casts, floating ABI (195→219) |

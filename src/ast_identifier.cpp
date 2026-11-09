@@ -48,9 +48,9 @@ void Identifier::EmitRISC(std::ostream& os, Context& ctx) const {
         os << "\tli a0, " << sym.value << "\n";
     } else if (sym.kind == SymbolKind::Global) {
         EmitAddress(os, ctx);
-        EmitLoad(os, *sym.type, "a0", "a0", 0);
+        EmitLoad(os, *sym.type, AccReg(*sym.type), "a0", 0);
     } else {
-        EmitLoad(os, *sym.type, "a0", "s0", sym.offset);
+        EmitLoad(os, *sym.type, AccReg(*sym.type), "s0", sym.offset);
     }
 }
 

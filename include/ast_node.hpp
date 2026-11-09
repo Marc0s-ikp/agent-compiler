@@ -18,9 +18,14 @@ public:
 
 // A link-time constant: the address of a global label plus a byte offset, or
 // a plain integer when the label is empty (D11, "Address constants" row).
+// A floating constant sets is_real and keeps its value in 'real' (D18). The
+// flag is set exactly when the expression's type is float or double, and a
+// float constant already holds a value that float can represent.
 struct ConstValue {
     std::string label;
     long offset = 0;
+    bool is_real = false;
+    double real = 0;
 };
 
 class Stmt : public Node {};

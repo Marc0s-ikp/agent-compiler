@@ -13,12 +13,18 @@ TypePtr RequireInteger(const TypePtr& t);
 // Throws unless 't' is an integer or pointer type; returns it.
 TypePtr RequireScalar(const TypePtr& t);
 
+// Throws unless 't' is an integer or floating type; returns it.
+TypePtr RequireArithmetic(const TypePtr& t);
+
 // Evaluate 'cond' as a condition: leaves its truth value in a0 (nonzero is
-// true). The one place that decides what may be a condition: integers and
-// pointers now; floats change only this function.
+// true). The one place that decides what may be a condition: integers,
+// pointers and floats (compared with zero, so -0.0 is false and NaN true).
+// Every control-flow node and logical operator goes through it.
 void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond);
 
-// a0 = a0 <op> t0, using signedness of 'common' (shared with CompoundAssign).
+// acc = acc <op> scratch (a0, t0 or fa0, ft0), using the type 'common':
+// signedness for integers, the + - * / forms for float and double (shared
+// with CompoundAssign).
 void EmitBinOp(std::ostream& os, BinOp op, const Type& common);
 
 // Size of the object a pointer points to; throws if it has none (void).
@@ -48,6 +54,8 @@ public:
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
+    std::optional<ConstValue> FoldArithmetic(Context& ctx) const;
+
     BinOp op_;
     ExprPtr lhs_, rhs_;
 };
@@ -57,6 +65,7 @@ public:
     BinaryCompare(CmpOp op, ExprPtr lhs, ExprPtr rhs)
         : op_(op), lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
+    std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
@@ -92,6 +101,7 @@ public:
         : op_(op), operand_(std::move(operand)) {}
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
+    std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:

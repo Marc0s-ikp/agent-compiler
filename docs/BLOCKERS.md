@@ -58,7 +58,7 @@ From the feature 5 review (2026-11-08). None of these blocked the merge. Item 3 
 4. `src/ast_function.cpp:76-77`: the initialiser is built before the name is declared, so `int **q = &q[0];` fails
    with "undeclared identifier". Feature 8's `struct n a = {&a}` would hit the same error.
 5. `src/ast_pointer.cpp`: `Deref` has no constant-address override, so `int *p = *m;` and `&*a` are rejected.
-6. `BinaryCompare`, `LogicalAnd`, `LogicalOr` and `Ternary` have no `EvalConst`, so `enum { A = 1 < 2 }` is rejected.
+6. `LogicalAnd`, `LogicalOr` and `Ternary` have no `EvalConst` (`BinaryCompare` got `EvalConstValue` in feature 7, so global initialisers can use it, but `enum { A = 1 < 2 }` still fails), so `enum { A = 1 < 2 }` is rejected.
 7. `src/ast_function.cpp:79`: this size check looks unreachable, because the merge step already rejects mismatches.
 
 Unsupported and deferred: local `extern` (`src/parser.y:356`), local function prototypes
@@ -76,7 +76,7 @@ From the same review. Items 1-3 were done in feature 6 (D17). Local brace initia
    has only a `const Context&`.
 3. DONE (feature 6). `src/global_init.cpp:107` and `:42-52`: strings need a case at top level and in `Object`, for `char s[]`, `{"ab"}`
    and `char a[2][4] = {"ab","cd"}`.
-4. D15 understates the float work. `ConstValue` needs a floating field, `FloatLiteral`, `UnaryOp`, `BinaryArith` and
+4. DONE (feature 7, D18). D15 understated the float work. `ConstValue` needs a floating field, `FloatLiteral`, `UnaryOp`, `BinaryArith` and
    `Cast` need overrides, and `Scalar` must convert to the target type (`float f = 1;`, single-precision `0.1`).
 5. Feature 8: struct member rules must not call `EndDeclaration()` (`src/parser.y:17`), member declarators must not
    go through `declarator_head`, `.`/`->` must accept `T_TYPE_NAME`, and Records must compare by identity, because
@@ -84,8 +84,8 @@ From the same review. Items 1-3 were done in feature 6 (D17). Local brace initia
 
 ## Known limits left by feature 6
 
-- No cast expressions exist yet (`(char)x`); `sizeof(type)` is the only user of type names. Type names accept pointer,
-  array and parenthesised abstract declarators, but not function declarators (`sizeof(int (*)(int))`).
+- Casts exist (feature 7). Type names accept pointer, array and parenthesised abstract declarators, but not function
+  declarators (`sizeof(int (*)(int))`, `(int (*)(int))p`).
 - An `enum { ... }` body inside a parameter list or a type name is rejected ("enum definition not allowed here"),
   because those paths only look types up (D17). Enums declared as ordinary declarations are unaffected.
 - `short` is still not a keyword.
@@ -111,5 +111,13 @@ From the feature 6 review (2026-11-09). None of these blocked the merge, and non
 
 Deliberate: `src/init_layout.cpp:36` rejects `char s[2]="abc"` and line 94 rejects excess elements, where gcc only warns.
 
-For features 7 and 8: `src/local_init.cpp:13` stores through `a0`, so floats need `fa0`, and `src/local_init.cpp:32`
-zeroes only arrays, so partial struct initialisers need that extended.
+For feature 8: `src/local_init.cpp:32` zeroes only arrays, so partial struct initialisers need that extended. (The `fa0` store for floats was done in feature 7.)
+
+## Known limits left by feature 7
+
+- `long double` and the `L` suffix on a floating literal are rejected. Hex floating literals do not lex.
+- `LogicalAnd`, `LogicalOr` and `Ternary` have no `EvalConstValue`, so `double d = 1 ? 2.0 : 3.0;` at file scope is rejected.
+- A double split across a7 and the stack is not tested against GCC: GCC's own callee reads it with a misaligned `fld`
+  that gives a wrong value under spike pk. `tests/custom/float_split_double.c` checks our caller against our callee.
+- Constant folding of an out-of-range floating value (`int x = 1e20;`) is rejected as "not a constant" instead of
+  saturating, and a literal beyond double's range becomes infinity without a warning.

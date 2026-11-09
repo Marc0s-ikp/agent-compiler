@@ -271,3 +271,21 @@ void Context::EmitStrings(std::ostream& os) const {
         os << s.first << ":\n\t.ascii " << AsmQuoted(s.second) << "\n\t.byte 0\n";
     }
 }
+
+std::string Context::AddFloat(uint64_t bits, int size) {
+    for (const FloatConst& f : floats_) {
+        if (f.bits == bits && f.size == size) return f.label;
+    }
+    floats_.push_back({NewLabel("flt"), bits, size});
+    return floats_.back().label;
+}
+
+void Context::EmitFloats(std::ostream& os) const {
+    if (floats_.empty()) return;
+    os << "\t.section .rodata\n";
+    for (const FloatConst& f : floats_) {
+        os << "\t.balign " << f.size << "\n" << f.label << ":\n";
+        os << "\t.word " << (f.bits & 0xffffffffu) << "\n";
+        if (f.size == 8) os << "\t.word " << (f.bits >> 32) << "\n";
+    }
+}

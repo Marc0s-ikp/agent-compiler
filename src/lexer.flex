@@ -25,6 +25,8 @@ DIGIT   [0-9]
 IDSTART [a-zA-Z_]
 IDCHAR  [a-zA-Z_0-9]
 SUFFIX  [uUlL]*
+EXPONENT [eE][+-]?[0-9]+
+FSUFFIX [fFlL]
 
 %%
 "/*"([^*]|"*"+[^*/])*"*"+"/"   ;
@@ -35,6 +37,8 @@ SUFFIX  [uUlL]*
 "unsigned"  { return T_UNSIGNED; }
 "signed"    { return T_SIGNED; }
 "char"      { return T_CHAR; }
+"float"     { return T_FLOAT; }
+"double"    { return T_DOUBLE; }
 "sizeof"    { return T_SIZEOF; }
 "void"      { return T_VOID; }
 "return"    { return T_RETURN; }
@@ -53,6 +57,9 @@ SUFFIX  [uUlL]*
 "case"      { return T_CASE; }
 "default"   { return T_DEFAULT; }
 
+{DIGIT}+{EXPONENT}{FSUFFIX}?              { yylval.str = new std::string(yytext); return FLOAT_LITERAL; }
+{DIGIT}*"."{DIGIT}+{EXPONENT}?{FSUFFIX}?   { yylval.str = new std::string(yytext); return FLOAT_LITERAL; }
+{DIGIT}+"."{DIGIT}*{EXPONENT}?{FSUFFIX}?   { yylval.str = new std::string(yytext); return FLOAT_LITERAL; }
 0[xX][0-9a-fA-F]+{SUFFIX}  { yylval.str = new std::string(yytext); return INT_LITERAL; }
 {DIGIT}+{SUFFIX}           { yylval.str = new std::string(yytext); return INT_LITERAL; }
 \'([^'\\\n]|\\.)*\'  {

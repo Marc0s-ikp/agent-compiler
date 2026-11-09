@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <map>
 #include <ostream>
 #include <string>
@@ -78,6 +79,11 @@ public:
     std::string AddString(const std::string& bytes);
     void EmitStrings(std::ostream& os) const;
 
+    // Floating constants (read-only data): the IEEE bit pattern of a float
+    // (size 4) or double (size 8). The same bits and size get the same label.
+    std::string AddFloat(uint64_t bits, int size);
+    void EmitFloats(std::ostream& os) const;
+
     // Frame. Slots grow downwards from s0, below the saved ra and s0.
     void BeginFunction(const TypePtr& return_type);
     int AllocLocal(const TypePtr& type);
@@ -142,5 +148,11 @@ private:
     TypePtr return_type_;
     std::vector<GlobalVar> globals_;
     std::vector<std::pair<std::string, std::string>> strings_;  // label, bytes
+    struct FloatConst {
+        std::string label;
+        uint64_t bits;
+        int size;
+    };
+    std::vector<FloatConst> floats_;
     int label_count_ = 0;
 };

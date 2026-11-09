@@ -25,6 +25,35 @@ void EmitEpilogue(std::ostream& os) {
     os << "\tmv sp, s0\n\tmv s0, t0\n\tret\n";
 }
 
+// Stores one register parameter into its home slot at s0 + home. A word the
+// ABI passed in an integer register is stored as an int, even when it is
+// the bits of a float or half of a double.
+void StoreParamHome(std::ostream& os, const ArgLoc& loc, const TypePtr& type,
+                    int home) {
+    TypePtr word = Type::Int();
+    std::string reg = std::to_string(loc.reg);
+    switch (loc.kind) {
+        case ArgLoc::Kind::IntReg:
+            EmitStore(os, type->IsFloating() ? *word : *type, "a" + reg, "s0", home);
+            break;
+        case ArgLoc::Kind::FloatReg:
+            EmitStore(os, *type, "fa" + reg, "s0", home);
+            break;
+        case ArgLoc::Kind::IntPair:
+            EmitStore(os, *word, "a" + reg, "s0", home);
+            EmitStore(os, *word, "a" + std::to_string(loc.reg + 1), "s0", home + 4);
+            break;
+        case ArgLoc::Kind::Split:
+            // The high half is the caller's stack word. Reassembling the two
+            // halves with integer stores avoids a misaligned fld.
+            EmitStore(os, *word, "a" + reg, "s0", home);
+            EmitLoad(os, *word, "t0", "s0", loc.offset);
+            EmitStore(os, *word, "t0", "s0", home + 4);
+            break;
+        case ArgLoc::Kind::Stack: break;
+    }
+}
+
 // Register parameters are copied to local home slots; after that they are
 // ordinary locals. Stack parameters stay where the caller put them.
 void EmitParams(std::ostream& os, Context& ctx, const ResolvedParams& params) {
@@ -37,7 +66,7 @@ void EmitParams(std::ostream& os, Context& ctx, const ResolvedParams& params) {
         }
         int home = ctx.AllocLocal(type);
         ctx.Declare(params.names[i], Symbol::Local(type, home));
-        EmitStore(os, *type, "a" + std::to_string(locs[i].reg), "s0", home);
+        StoreParamHome(os, locs[i], type, home);
     }
 }
 
@@ -129,6 +158,7 @@ void TranslationUnit::EmitRISC(std::ostream& os, Context& ctx) const {
     for (const ExternalDeclPtr& decl : decls_) decl->EmitRISC(os, ctx);
     ctx.EmitGlobals(os);
     ctx.EmitStrings(os);
+    ctx.EmitFloats(os);
     ctx.PopScope();
 }
 

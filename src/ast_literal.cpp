@@ -2,7 +2,10 @@
 
 #include <climits>
 #include <cstdlib>
+#include <cstring>
 #include <stdexcept>
+
+#include "emit.hpp"
 
 namespace ast {
 
@@ -32,6 +35,48 @@ void IntLiteral::EmitRISC(std::ostream& os, Context&) const {
     CheckRange();
     os << "\tli a0, " << static_cast<int32_t>(static_cast<uint32_t>(value_))
        << "\n";
+}
+
+// strtof rounds straight to float; going through double first could round
+// twice and differ in the last bit.
+FloatLiteral::FloatLiteral(const std::string& text) {
+    char suffix = text.back();
+    is_float_ = suffix == 'f' || suffix == 'F';
+    is_long_ = suffix == 'l' || suffix == 'L';
+    value_ = is_float_ ? std::strtof(text.c_str(), nullptr)
+                       : std::strtod(text.c_str(), nullptr);
+}
+
+void FloatLiteral::CheckSuffix() const {
+    if (is_long_) throw std::runtime_error("long double is not supported");
+}
+
+TypePtr FloatLiteral::GetType(const Context&) const {
+    CheckSuffix();
+    return is_float_ ? Type::Float() : Type::Double();
+}
+
+std::optional<ConstValue> FloatLiteral::EvalConstValue(Context&) const {
+    CheckSuffix();
+    ConstValue v;
+    v.is_real = true;
+    v.real = value_;
+    return v;
+}
+
+void FloatLiteral::EmitRISC(std::ostream& os, Context& ctx) const {
+    TypePtr type = GetType(ctx);
+    uint64_t bits;
+    if (is_float_) {
+        float f = static_cast<float>(value_);
+        uint32_t narrow;
+        std::memcpy(&narrow, &f, sizeof narrow);
+        bits = narrow;
+    } else {
+        std::memcpy(&bits, &value_, sizeof bits);
+    }
+    os << "\tla t0, " << ctx.AddFloat(bits, type->Size()) << "\n";
+    EmitLoad(os, *type, "fa0", "t0", 0);
 }
 
 void CharLiteral::EmitRISC(std::ostream& os, Context&) const {

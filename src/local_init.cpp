@@ -10,7 +10,7 @@ void EmitScalarItem(std::ostream& os, Context& ctx, const InitItem& item,
                     int offset) {
     item.value->EmitRISC(os, ctx);
     EmitConvert(os, *item.value->ValueType(ctx), *item.type);
-    EmitStore(os, *item.type, "a0", "s0", offset + item.offset);
+    EmitStore(os, *item.type, AccReg(*item.type), "s0", offset + item.offset);
 }
 
 // A string's chars, one byte store each. The array was zeroed first, so zero

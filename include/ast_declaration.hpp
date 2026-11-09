@@ -28,11 +28,12 @@ struct EnumSpec {
     std::vector<Enumerator> items;
 };
 
-// The type-specifier words of a declaration: int, unsigned, char, void, enum.
+// The type-specifier words of a declaration: int, unsigned, char, float, double, void,
+// enum.
 class TypeSpecifier {
 public:
-    enum class Kind { Int, Unsigned, Char, SignedChar, UnsignedChar, Void, Enum,
-                      TypedefName };
+    enum class Kind { Int, Unsigned, Char, SignedChar, UnsignedChar, Float,
+                      Double, Void, Enum, TypedefName };
     explicit TypeSpecifier(Kind kind) : kind_(kind) {}
     explicit TypeSpecifier(std::shared_ptr<const EnumSpec> spec)
         : kind_(Kind::Enum), enum_(std::move(spec)) {}

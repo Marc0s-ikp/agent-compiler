@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "const_value.hpp"
 #include "emit.hpp"
 
 namespace ast {
@@ -16,12 +17,42 @@ TypePtr RequireScalar(const TypePtr& t) {
     return t;
 }
 
-void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond) {
-    RequireScalar(cond.ValueType(ctx));
-    cond.EmitRISC(os, ctx);
+TypePtr RequireArithmetic(const TypePtr& t) {
+    if (!t->IsArithmetic()) throw std::runtime_error("arithmetic operand required");
+    return t;
 }
 
+void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond) {
+    TypePtr type = RequireScalar(cond.ValueType(ctx));
+    cond.EmitRISC(os, ctx);
+    if (type->IsFloating()) EmitFloatTruth(os, *type);
+}
+
+namespace {
+
+// The operators defined on floating operands.
+bool IsRealOp(BinOp op) {
+    return op == BinOp::Add || op == BinOp::Sub || op == BinOp::Mul ||
+           op == BinOp::Div;
+}
+
+void EmitFloatBinOp(std::ostream& os, BinOp op, const Type& common) {
+    const char* name = "fadd";
+    switch (op) {
+        case BinOp::Add: name = "fadd"; break;
+        case BinOp::Sub: name = "fsub"; break;
+        case BinOp::Mul: name = "fmul"; break;
+        case BinOp::Div: name = "fdiv"; break;
+        default: throw std::runtime_error("invalid operands to binary operator");
+    }
+    char suffix = common.Size() == 4 ? 's' : 'd';
+    os << "\t" << name << "." << suffix << " fa0, fa0, ft0\n";
+}
+
+}  // namespace
+
 void EmitBinOp(std::ostream& os, BinOp op, const Type& common) {
+    if (common.IsFloating()) return EmitFloatBinOp(os, op, common);
     bool s = common.IsSigned();
     const char* name = "add";
     switch (op) {
@@ -100,7 +131,8 @@ void EmitPointerDiff(std::ostream& os, const Type& pointer) {
 
 namespace {
 
-// Leaves lhs in a0 and rhs in t0, each converted to its given type.
+// Leaves lhs in the accumulator and rhs in the scratch register (a0, t0 or
+// fa0, ft0 by type), each converted to its given type.
 // The lhs waits in a frame temp while the rhs is evaluated (D1).
 void EmitOperands(std::ostream& os, Context& ctx, const Expr& lhs,
                   const TypePtr& lhs_to, const Expr& rhs,
@@ -108,12 +140,21 @@ void EmitOperands(std::ostream& os, Context& ctx, const Expr& lhs,
     lhs.EmitRISC(os, ctx);
     EmitConvert(os, *lhs.ValueType(ctx), *lhs_to);
     int slot = ctx.PushTemp(lhs_to);
-    EmitStore(os, *lhs_to, "a0", "s0", slot);
+    EmitStore(os, *lhs_to, AccReg(*lhs_to), "s0", slot);
     rhs.EmitRISC(os, ctx);
     EmitConvert(os, *rhs.ValueType(ctx), *rhs_to);
-    os << "\tmv t0, a0\n";
-    EmitLoad(os, *lhs_to, "a0", "s0", slot);
+    EmitMoveToScratch(os, *rhs_to);
+    EmitLoad(os, *lhs_to, AccReg(*lhs_to), "s0", slot);
     ctx.PopTemp();
+}
+
+double FoldReal(BinOp op, double a, double b) {
+    switch (op) {
+        case BinOp::Add: return a + b;
+        case BinOp::Sub: return a - b;
+        case BinOp::Mul: return a * b;
+        default: return a / b;
+    }
 }
 
 bool IsShift(BinOp op) { return op == BinOp::Shl || op == BinOp::Shr; }
@@ -148,8 +189,12 @@ TypePtr BinaryArith::GetType(const Context& ctx) const {
         case PointerOp::PtrMinusPtr: return Type::Int();
         case PointerOp::None: break;
     }
-    RequireInteger(l);
-    RequireInteger(r);
+    RequireArithmetic(l);
+    RequireArithmetic(r);
+    if (l->IsFloating() || r->IsFloating()) {
+        if (!IsRealOp(op_)) throw std::runtime_error("integer operand required");
+        return UsualArithmetic(l, r);
+    }
     // The result of a shift has the promoted type of the left operand only.
     if (IsShift(op_)) return Promote(l);
     return UsualArithmetic(l, r);
@@ -168,9 +213,8 @@ std::optional<ConstValue> BinaryArith::EvalConstValue(
     Context& ctx) const {
     if (std::optional<long> n = EvalConst(ctx)) return ConstValue{"", *n};
     PointerOp kind = ClassifyPointerOp(op_, lhs_->ValueType(ctx), rhs_->ValueType(ctx));
-    if (kind == PointerOp::None || kind == PointerOp::PtrMinusPtr) {
-        return std::nullopt;
-    }
+    if (kind == PointerOp::None) return FoldArithmetic(ctx);
+    if (kind == PointerOp::PtrMinusPtr) return std::nullopt;
     bool pointer_first = kind != PointerOp::IntPlusPtr;
     const Expr& pointer = pointer_first ? *lhs_ : *rhs_;
     const Expr& index = pointer_first ? *rhs_ : *lhs_;
@@ -180,6 +224,26 @@ std::optional<ConstValue> BinaryArith::EvalConstValue(
     long step = PointeeSize(*pointer.ValueType(ctx)) * *n;
     base->offset += (kind == PointerOp::PtrMinusInt) ? -step : step;
     return base;
+}
+
+// A constant the integer-only EvalConst cannot see: floating arithmetic, or
+// integer arithmetic on a cast of a floating constant. Both operands are
+// converted to the result type first, as at run time.
+std::optional<ConstValue> BinaryArith::FoldArithmetic(Context& ctx) const {
+    TypePtr result = GetType(ctx);
+    TypePtr rhs_type = IsShift(op_) ? Promote(rhs_->ValueType(ctx)) : result;
+    std::optional<ConstValue> a = ConstOperandAs(ctx, *lhs_, *result);
+    std::optional<ConstValue> b = ConstOperandAs(ctx, *rhs_, *rhs_type);
+    if (!a || !b || !a->label.empty() || !b->label.empty()) return std::nullopt;
+    if (!result->IsFloating()) {
+        std::optional<long> n = FoldBinary(op_, a->offset, b->offset);
+        if (!n) return std::nullopt;
+        return ConstValue{"", WrapToType(*n, *result)};
+    }
+    ConstValue out;
+    out.is_real = true;
+    out.real = FoldReal(op_, a->real, b->real);
+    return ConvertConst(out, *result);
 }
 
 void BinaryArith::EmitRISC(std::ostream& os, Context& ctx) const {
@@ -208,12 +272,17 @@ void BinaryArith::EmitRISC(std::ostream& os, Context& ctx) const {
 
 // ---- BinaryCompare ----
 
-// Pointers compare as unsigned numbers; usual arithmetic conversions apply
-// only when both operands are integers.
+// Pointers compare as unsigned numbers; the usual arithmetic conversions
+// apply when both operands are arithmetic.
 static TypePtr CompareType(const TypePtr& l, const TypePtr& r) {
     RequireScalar(l);
     RequireScalar(r);
-    if (l->IsPointer() || r->IsPointer()) return Type::UInt();
+    if (l->IsPointer() || r->IsPointer()) {
+        if (l->IsFloating() || r->IsFloating()) {
+            throw std::runtime_error("comparison of pointer and floating value");
+        }
+        return Type::UInt();
+    }
     return UsualArithmetic(l, r);
 }
 
@@ -222,9 +291,49 @@ TypePtr BinaryCompare::GetType(const Context& ctx) const {
     return Type::Int();
 }
 
+template <typename T>
+static bool Compare(CmpOp op, T a, T b) {
+    switch (op) {
+        case CmpOp::Lt: return a < b;
+        case CmpOp::Gt: return a > b;
+        case CmpOp::Le: return a <= b;
+        case CmpOp::Ge: return a >= b;
+        case CmpOp::Eq: return a == b;
+        case CmpOp::Ne: return a != b;
+    }
+    return false;
+}
+
+std::optional<ConstValue> BinaryCompare::EvalConstValue(Context& ctx) const {
+    TypePtr common = CompareType(lhs_->ValueType(ctx), rhs_->ValueType(ctx));
+    std::optional<ConstValue> a = ConstOperandAs(ctx, *lhs_, *common);
+    std::optional<ConstValue> b = ConstOperandAs(ctx, *rhs_, *common);
+    if (!a || !b || !a->label.empty() || !b->label.empty()) return std::nullopt;
+    bool result = common->IsFloating() ? Compare(op_, a->real, b->real)
+                                       : Compare(op_, a->offset, b->offset);
+    return ConstValue{"", result ? 1 : 0};
+}
+
+// NaN makes every ordered compare false and != true: Gt and Ge are flt/fle
+// with the operands swapped, Ne is the inverse of feq.
+static void EmitFloatCompare(std::ostream& os, CmpOp op, const Type& common) {
+    std::string s = common.Size() == 4 ? ".s" : ".d";
+    switch (op) {
+        case CmpOp::Lt: os << "\tflt" << s << " a0, fa0, ft0\n"; break;
+        case CmpOp::Gt: os << "\tflt" << s << " a0, ft0, fa0\n"; break;
+        case CmpOp::Le: os << "\tfle" << s << " a0, fa0, ft0\n"; break;
+        case CmpOp::Ge: os << "\tfle" << s << " a0, ft0, fa0\n"; break;
+        case CmpOp::Eq: os << "\tfeq" << s << " a0, fa0, ft0\n"; break;
+        case CmpOp::Ne:
+            os << "\tfeq" << s << " a0, fa0, ft0\n\txori a0, a0, 1\n";
+            break;
+    }
+}
+
 void BinaryCompare::EmitRISC(std::ostream& os, Context& ctx) const {
     TypePtr common = CompareType(lhs_->ValueType(ctx), rhs_->ValueType(ctx));
     EmitOperands(os, ctx, *lhs_, common, *rhs_, common);
+    if (common->IsFloating()) return EmitFloatCompare(os, op_, *common);
     const char* slt = common->IsSigned() ? "slt" : "sltu";
     switch (op_) {
         case CmpOp::Lt: os << "\t" << slt << " a0, a0, t0\n"; break;
@@ -276,29 +385,67 @@ TypePtr UnaryOp::GetType(const Context& ctx) const {
         RequireScalar(t);
         return Type::Int();
     }
+    if (t->IsFloating() && (op_ == UnOp::Plus || op_ == UnOp::Neg)) return t;
     return Promote(RequireInteger(t));
 }
+
+namespace {
+std::optional<long> FoldUnary(UnOp op, long v) {
+    switch (op) {
+        case UnOp::Plus: return v;
+        case UnOp::Neg: return -v;
+        case UnOp::BitNot: return ~v;
+        case UnOp::LogNot: return v == 0 ? 1 : 0;
+    }
+    return std::nullopt;
+}
+}  // namespace
 
 std::optional<long> UnaryOp::EvalConst(const Context& ctx) const {
     std::optional<long> v = operand_->EvalConst(ctx);
     if (!v) return std::nullopt;
-    switch (op_) {
-        case UnOp::Plus: return *v;
-        case UnOp::Neg: return -*v;
-        case UnOp::BitNot: return ~*v;
-        case UnOp::LogNot: return *v == 0 ? 1 : 0;
+    return FoldUnary(op_, *v);
+}
+
+// Also the constants EvalConst cannot see: a floating operand, or a cast of
+// one.
+std::optional<ConstValue> UnaryOp::EvalConstValue(Context& ctx) const {
+    if (std::optional<long> n = EvalConst(ctx)) return ConstValue{"", *n};
+    TypePtr result = GetType(ctx);
+    if (op_ == UnOp::LogNot) {
+        std::optional<ConstValue> v = operand_->EvalConstValue(ctx);
+        if (!v || !v->label.empty()) return std::nullopt;
+        bool zero = v->is_real ? v->real == 0 : v->offset == 0;
+        return ConstValue{"", zero ? 1 : 0};
     }
-    return std::nullopt;
+    std::optional<ConstValue> v = ConstOperandAs(ctx, *operand_, *result);
+    if (!v || !v->label.empty()) return std::nullopt;
+    if (result->IsFloating()) {
+        if (op_ == UnOp::Neg) v->real = -v->real;
+        return v;
+    }
+    std::optional<long> n = FoldUnary(op_, v->offset);
+    return ConstValue{"", WrapToType(*n, *result)};
 }
 
 void UnaryOp::EmitRISC(std::ostream& os, Context& ctx) const {
+    if (op_ == UnOp::LogNot) {
+        EmitCondition(os, ctx, *operand_);
+        os << "\tseqz a0, a0\n";
+        return;
+    }
     operand_->EmitRISC(os, ctx);
-    EmitConvert(os, *operand_->ValueType(ctx), *GetType(ctx));
+    TypePtr result = GetType(ctx);
+    EmitConvert(os, *operand_->ValueType(ctx), *result);
+    if (op_ == UnOp::Neg && result->IsFloating()) {
+        os << "\tfneg." << (result->Size() == 4 ? 's' : 'd') << " fa0, fa0\n";
+        return;
+    }
     switch (op_) {
         case UnOp::Plus: break;
         case UnOp::Neg: os << "\tneg a0, a0\n"; break;
         case UnOp::BitNot: os << "\tnot a0, a0\n"; break;
-        case UnOp::LogNot: os << "\tseqz a0, a0\n"; break;
+        case UnOp::LogNot: break;
     }
 }
 
@@ -310,7 +457,7 @@ TypePtr Ternary::GetType(const Context& ctx) const {
     RequireScalar(cond_->ValueType(ctx));
     TypePtr a = RequireScalar(then_->ValueType(ctx));
     TypePtr b = RequireScalar(else_->ValueType(ctx));
-    if (a->IsInteger() && b->IsInteger()) return UsualArithmetic(a, b);
+    if (a->IsArithmetic() && b->IsArithmetic()) return UsualArithmetic(a, b);
     if (a->IsPointer() && b->IsPointer()) {
         if (!a->Equals(*b)) throw std::runtime_error("incompatible pointers in ?:");
         return a;

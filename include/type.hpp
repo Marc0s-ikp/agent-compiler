@@ -2,20 +2,24 @@
 #include <memory>
 #include <vector>
 
-// Types are immutable shared value objects (D3). Floating and record kinds
-// are added with their features; everything else asks the Type for size,
+// Types are immutable shared value objects (D3). Record kinds are added with
+// their feature; everything else asks the Type for size,
 // alignment and kind.
 class Type;
 using TypePtr = std::shared_ptr<const Type>;
 
 class Type {
 public:
-    enum class Kind { Void, Integer, Pointer, Array, Function };
+    enum class Kind { Void, Integer, Floating, Pointer, Array, Function };
 
     static TypePtr Void();
     static TypePtr Integer(int size, bool is_signed);
     static TypePtr Int() { return Integer(4, true); }
     static TypePtr UInt() { return Integer(4, false); }
+    // size 4 is float, size 8 is double.
+    static TypePtr Floating(int size);
+    static TypePtr Float() { return Floating(4); }
+    static TypePtr Double() { return Floating(8); }
     static TypePtr Pointer(TypePtr pointee);
     // length 0 means "unspecified" (only legal for parameters).
     static TypePtr Array(TypePtr element, int length);
@@ -31,8 +35,11 @@ public:
     bool IsPointer() const { return kind_ == Kind::Pointer; }
     bool IsArray() const { return kind_ == Kind::Array; }
     bool IsFunction() const { return kind_ == Kind::Function; }
+    bool IsFloating() const { return kind_ == Kind::Floating; }
+    // Integer or floating: the types the usual arithmetic conversions cover.
+    bool IsArithmetic() const { return IsInteger() || IsFloating(); }
     // Scalars can be loaded into a register and tested for truth.
-    bool IsScalar() const { return IsInteger() || IsPointer(); }
+    bool IsScalar() const { return IsArithmetic() || IsPointer(); }
 
     // Pointee, array element or function return type.
     const TypePtr& Base() const { return base_; }
@@ -47,7 +54,7 @@ private:
         : kind_(kind), size_(size), signed_(is_signed) {}
 
     Kind kind_;
-    int size_;      // Integer only; other kinds compute their size
+    int size_;      // Integer and Floating only; other kinds compute their size
     bool signed_;
     TypePtr base_;
     int length_ = 0;

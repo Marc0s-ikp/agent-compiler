@@ -6,6 +6,10 @@ TypePtr Type::Integer(int size, bool is_signed) {
     return TypePtr(new Type(Kind::Integer, size, is_signed));
 }
 
+TypePtr Type::Floating(int size) {
+    return TypePtr(new Type(Kind::Floating, size, true));
+}
+
 TypePtr Type::Pointer(TypePtr pointee) {
     Type* t = new Type(Kind::Pointer, 4, false);
     t->base_ = std::move(pointee);
@@ -41,6 +45,7 @@ bool Type::Equals(const Type& o) const {
     if (kind_ != o.kind_) return false;
     switch (kind_) {
         case Kind::Void: return true;
+        case Kind::Floating: return size_ == o.size_;
         case Kind::Integer: return size_ == o.size_ && signed_ == o.signed_;
         case Kind::Pointer: return base_->Equals(*o.base_);
         case Kind::Array:
@@ -64,7 +69,13 @@ TypePtr Promote(const TypePtr& t) {
 }
 
 // The common type both operands are converted to before an arithmetic op.
+// A floating operand wins; of two, the wider one.
 TypePtr UsualArithmetic(const TypePtr& a, const TypePtr& b) {
+    if (a->IsFloating() || b->IsFloating()) {
+        bool wide = (a->IsFloating() && a->Size() == 8) ||
+                    (b->IsFloating() && b->Size() == 8);
+        return wide ? Type::Double() : Type::Float();
+    }
     TypePtr pa = Promote(a);
     TypePtr pb = Promote(b);
     if (pa->Size() != pb->Size()) return pa->Size() > pb->Size() ? pa : pb;

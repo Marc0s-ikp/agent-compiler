@@ -22,9 +22,10 @@ TypePtr Pointee(const TypePtr& pointer) {
     return target;
 }
 
-// Value of the object whose address is in a0 (arrays yield the address).
+// Value of the object whose address is in a0 (arrays yield the address), in
+// the accumulator for its type.
 void EmitLoadThroughA0(std::ostream& os, const Type& type) {
-    EmitLoad(os, type, "a0", "a0", 0);
+    EmitLoad(os, type, AccReg(type), "a0", 0);
 }
 
 }  // namespace

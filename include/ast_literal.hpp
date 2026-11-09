@@ -24,6 +24,26 @@ private:
     std::string text_;
 };
 
+// 1.5, 2e3, .5f. No suffix is a double, f or F is a float. The value is
+// rounded once, to the literal's own type, and loaded from the data pool
+// (Context::AddFloat). A long double (L suffix) is not supported.
+class FloatLiteral : public Expr {
+public:
+    explicit FloatLiteral(const std::string& text);
+    TypePtr GetType(const Context& ctx) const override;
+    std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
+    void EmitRISC(std::ostream& os, Context& ctx) const override;
+
+private:
+    // Throws for the L suffix. Checked at code generation so the parser
+    // never throws.
+    void CheckSuffix() const;
+
+    double value_;       // exactly the literal's type's value
+    bool is_float_;
+    bool is_long_;
+};
+
 // 'a', '\n', '\x41'. Its type is int (C), and plain char is unsigned (D8), so
 // '\377' is 255.
 class CharLiteral : public Expr {
