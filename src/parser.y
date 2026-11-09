@@ -50,7 +50,8 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 }
 
 %token <str> IDENTIFIER INT_LITERAL T_TYPE_NAME
-%token T_INT T_UNSIGNED T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
+%token <str> CHAR_LITERAL STRING_LITERAL
+%token T_INT T_UNSIGNED T_SIGNED T_CHAR T_SIZEOF T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
 %token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM T_TYPEDEF T_SWITCH T_CASE T_DEFAULT
 %token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
@@ -61,7 +62,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <stmt> statement declaration
 %type <compound> compound_stmt
 %type <external> external_decl
-%type <param> param_decl
+%type <param> param_decl type_name
 %type <declarator> init_declarator
 %type <stmts> statement_list
 %type <args> argument_list argument_list_opt
@@ -72,7 +73,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <enum_spec> enum_spec
 %type <enumerator> enumerator
 %type <enumerators> enumerator_list
-%type <name_decl> declarator direct_declarator
+%type <name_decl> declarator direct_declarator abstract_declarator direct_abstract
 %type <stars> pointer
 %type <storage> storage local_storage
 %type <str> name
@@ -156,6 +157,11 @@ type_spec
     : T_INT              { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Int); }
     | T_UNSIGNED         { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Unsigned); }
     | T_UNSIGNED T_INT   { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Unsigned); }
+    | T_SIGNED           { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Int); }
+    | T_SIGNED T_INT     { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Int); }
+    | T_CHAR             { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Char); }
+    | T_SIGNED T_CHAR    { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::SignedChar); }
+    | T_UNSIGNED T_CHAR  { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::UnsignedChar); }
     | T_VOID             { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Void); }
     | T_TYPE_NAME        { $$ = new ast::TypeSpecifier(std::move(*$1)); delete $1; }
     | enum_spec {
@@ -257,6 +263,51 @@ direct_declarator
         $$ = new ast::Declarator(ast::Declarator::Function(
             std::unique_ptr<ast::Declarator>($1), std::move(*$3)));
         delete $3;
+    }
+    ;
+
+/* A type name, as in sizeof(int *[5]): a specifier and an abstract
+   declarator (a declarator without the identifier). Function declarators
+   are not supported here. */
+type_name
+    : type_spec {
+        $$ = new ast::Param{*$1, ast::Declarator::Name("")};
+        delete $1;
+    }
+    | type_spec abstract_declarator {
+        $$ = new ast::Param{*$1, std::move(*$2)};
+        delete $1;
+        delete $2;
+    }
+    ;
+
+abstract_declarator
+    : pointer {
+        $$ = new ast::Declarator(ast::Declarator::Name(""));
+        for (int i = 0; i < $1; ++i) {
+            $$ = new ast::Declarator(ast::Declarator::Pointer(
+                std::unique_ptr<ast::Declarator>($$)));
+        }
+    }
+    | direct_abstract
+    | pointer direct_abstract {
+        $$ = $2;
+        for (int i = 0; i < $1; ++i) {
+            $$ = new ast::Declarator(ast::Declarator::Pointer(
+                std::unique_ptr<ast::Declarator>($$)));
+        }
+    }
+    ;
+
+direct_abstract
+    : '(' abstract_declarator ')' { $$ = $2; }
+    | '[' conditional_expr ']' {
+        $$ = new ast::Declarator(ast::Declarator::Array(
+            std::make_unique<ast::Declarator>(ast::Declarator::Name("")), Own($2)));
+    }
+    | direct_abstract '[' conditional_expr ']' {
+        $$ = new ast::Declarator(ast::Declarator::Array(
+            std::unique_ptr<ast::Declarator>($1), Own($3)));
     }
     ;
 
@@ -491,6 +542,11 @@ unary_expr
     | '!' unary_expr     { $$ = new ast::UnaryOp(ast::UnOp::LogNot, Own($2)); }
     | '*' unary_expr     { $$ = new ast::Deref(Own($2)); }
     | '&' unary_expr     { $$ = new ast::AddressOf(Own($2)); }
+    | T_SIZEOF unary_expr { $$ = new ast::SizeofExpr(Own($2)); }
+    | T_SIZEOF '(' type_name ')' {
+        $$ = new ast::SizeofType(std::move(*$3));
+        delete $3;
+    }
     ;
 
 postfix_expr
@@ -524,6 +580,10 @@ argument_list
 primary_expr
     : IDENTIFIER   { $$ = new ast::Identifier(std::move(*$1)); delete $1; }
     | INT_LITERAL  { $$ = new ast::IntLiteral(*$1); delete $1; }
+    | CHAR_LITERAL {
+        $$ = new ast::CharLiteral(static_cast<unsigned char>((*$1)[0]));
+        delete $1;
+    }
     | '(' expr ')' { $$ = $2; }
     ;
 

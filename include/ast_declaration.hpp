@@ -28,10 +28,11 @@ struct EnumSpec {
     std::vector<Enumerator> items;
 };
 
-// The type-specifier words of a declaration: int, unsigned, void, enum.
+// The type-specifier words of a declaration: int, unsigned, char, void, enum.
 class TypeSpecifier {
 public:
-    enum class Kind { Int, Unsigned, Void, Enum, TypedefName };
+    enum class Kind { Int, Unsigned, Char, SignedChar, UnsignedChar, Void, Enum,
+                      TypedefName };
     explicit TypeSpecifier(Kind kind) : kind_(kind) {}
     explicit TypeSpecifier(std::shared_ptr<const EnumSpec> spec)
         : kind_(Kind::Enum), enum_(std::move(spec)) {}
@@ -40,9 +41,12 @@ public:
     // Resolving an enum with a body declares its tag and constants in the
     // current scope, so call it once per declaration.
     TypePtr Resolve(Context& ctx) const;
+    // The same type without declaring anything, for places that only need
+    // the type (sizeof, GetType); an enum body is rejected there.
+    TypePtr Lookup(const Context& ctx) const;
 
 private:
-    TypePtr ResolveEnum(Context& ctx) const;
+    TypePtr DeclareEnum(Context& ctx) const;
 
     Kind kind_;
     std::shared_ptr<const EnumSpec> enum_;
@@ -75,7 +79,7 @@ public:
 
     // Builds the declared type from the base type; returns (name, type).
     std::pair<std::string, TypePtr> Apply(const TypePtr& base,
-                                          Context& ctx) const;
+                                          const Context& ctx) const;
 
     // The identifier being declared (empty for an abstract declarator).
     const std::string& DeclaredName() const;
@@ -132,6 +136,7 @@ struct ResolvedParams {
     std::vector<TypePtr> types;
 };
 
-ResolvedParams ResolveParams(const std::vector<Param>& params, Context& ctx);
+ResolvedParams ResolveParams(const std::vector<Param>& params,
+                             const Context& ctx);
 
 }  // namespace ast

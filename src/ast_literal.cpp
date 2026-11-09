@@ -34,4 +34,8 @@ void IntLiteral::EmitRISC(std::ostream& os, Context&) const {
        << "\n";
 }
 
+void CharLiteral::EmitRISC(std::ostream& os, Context&) const {
+    os << "\tli a0, " << static_cast<int>(value_) << "\n";
+}
+
 }  // namespace ast

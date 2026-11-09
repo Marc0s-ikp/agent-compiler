@@ -7,11 +7,7 @@ namespace ast {
 
 // Enums are int (design section 2). Each constant is declared as soon as its
 // value is known, so later enumerators can use earlier ones.
-TypePtr TypeSpecifier::ResolveEnum(Context& ctx) const {
-    if (!enum_->has_body) {
-        if (!enum_->tag.empty()) ctx.LookupTag(enum_->tag);
-        return Type::Int();
-    }
+TypePtr TypeSpecifier::DeclareEnum(Context& ctx) const {
     long next = 0;
     for (const Enumerator& e : enum_->items) {
         if (e.value) {
@@ -30,8 +26,18 @@ TypePtr TypeSpecifier::ResolveEnum(Context& ctx) const {
 }
 
 TypePtr TypeSpecifier::Resolve(Context& ctx) const {
+    if (kind_ == Kind::Enum && enum_->has_body) return DeclareEnum(ctx);
+    return Lookup(ctx);
+}
+
+TypePtr TypeSpecifier::Lookup(const Context& ctx) const {
     switch (kind_) {
-        case Kind::Enum: return ResolveEnum(ctx);
+        case Kind::Enum:
+            if (enum_->has_body) {
+                throw std::runtime_error("enum definition not allowed here");
+            }
+            if (!enum_->tag.empty()) ctx.LookupTag(enum_->tag);
+            return Type::Int();
         case Kind::TypedefName: {
             const Symbol& sym = ctx.Lookup(name_);
             if (sym.kind != SymbolKind::Typedef) {
@@ -40,6 +46,9 @@ TypePtr TypeSpecifier::Resolve(Context& ctx) const {
             return sym.type;
         }
         case Kind::Unsigned: return Type::UInt();
+        case Kind::Char: return Type::Integer(1, false);  // unsigned (D8)
+        case Kind::UnsignedChar: return Type::Integer(1, false);
+        case Kind::SignedChar: return Type::Integer(1, true);
         case Kind::Void: return Type::Void();
         case Kind::Int: break;
     }
@@ -78,8 +87,8 @@ Declarator Declarator::Function(std::unique_ptr<Declarator> inner,
     return d;
 }
 
-std::pair<std::string, TypePtr> Declarator::Apply(const TypePtr& base,
-                                                  Context& ctx) const {
+std::pair<std::string, TypePtr> Declarator::Apply(
+    const TypePtr& base, const Context& ctx) const {
     switch (kind_) {
         case Kind::Name:
             return {name_, base};
@@ -126,10 +135,11 @@ const std::vector<Param>* Declarator::Parameters() const {
     return nullptr;
 }
 
-ResolvedParams ResolveParams(const std::vector<Param>& params, Context& ctx) {
+ResolvedParams ResolveParams(const std::vector<Param>& params,
+                             const Context& ctx) {
     ResolvedParams out;
     for (const Param& p : params) {
-        auto [name, type] = p.declarator.Apply(p.spec.Resolve(ctx), ctx);
+        auto [name, type] = p.declarator.Apply(p.spec.Lookup(ctx), ctx);
         if (type->IsVoid() && (params.size() > 1 || !name.empty())) {
             throw std::runtime_error("parameter of type void");
         }

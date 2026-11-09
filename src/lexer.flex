@@ -5,6 +5,20 @@
 #include "ast.hpp"
 #include "parser.tab.hpp"
 #include "typedef_table.hpp"
+#include "escapes.hpp"
+#include <cstdlib>
+#include <stdexcept>
+
+// The decoded text between the quotes of yytext. A bad escape ends the
+// compile here, like any other lexical error.
+static std::string* Decoded() {
+    try {
+        return new std::string(DecodeEscapes(std::string(yytext + 1, yyleng - 2)));
+    } catch (const std::exception& e) {
+        fprintf(stderr, "lexer: %s\n", e.what());
+        exit(1);
+    }
+}
 %}
 
 DIGIT   [0-9]
@@ -19,6 +33,9 @@ SUFFIX  [uUlL]*
 
 "int"       { return T_INT; }
 "unsigned"  { return T_UNSIGNED; }
+"signed"    { return T_SIGNED; }
+"char"      { return T_CHAR; }
+"sizeof"    { return T_SIZEOF; }
 "void"      { return T_VOID; }
 "return"    { return T_RETURN; }
 "if"        { return T_IF; }
@@ -38,6 +55,15 @@ SUFFIX  [uUlL]*
 
 0[xX][0-9a-fA-F]+{SUFFIX}  { yylval.str = new std::string(yytext); return INT_LITERAL; }
 {DIGIT}+{SUFFIX}           { yylval.str = new std::string(yytext); return INT_LITERAL; }
+\'([^'\\\n]|\\.)*\'  {
+    yylval.str = Decoded();
+    if (yylval.str->size() != 1) {
+        fprintf(stderr, "lexer: bad character constant %s\n", yytext);
+        exit(1);
+    }
+    return CHAR_LITERAL;
+}
+\"([^"\\\n]|\\.)*\"  { yylval.str = Decoded(); return STRING_LITERAL; }
 {IDSTART}{IDCHAR}*         {
     yylval.str = new std::string(yytext);
     return Typedefs().IsTypeName(yytext) ? T_TYPE_NAME : IDENTIFIER;

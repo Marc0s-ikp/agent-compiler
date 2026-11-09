@@ -24,4 +24,19 @@ private:
     std::string text_;
 };
 
+// 'a', '\n', '\x41'. Its type is int (C), and plain char is unsigned (D8), so
+// '\377' is 255.
+class CharLiteral : public Expr {
+public:
+    explicit CharLiteral(unsigned char value) : value_(value) {}
+    TypePtr GetType(const Context&) const override { return Type::Int(); }
+    std::optional<long> EvalConst(const Context&) const override {
+        return value_;
+    }
+    void EmitRISC(std::ostream& os, Context& ctx) const override;
+
+private:
+    unsigned char value_;
+};
+
 }  // namespace ast

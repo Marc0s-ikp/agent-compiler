@@ -10,4 +10,5 @@
 #include "ast_node.hpp"
 #include "ast_operators.hpp"
 #include "ast_pointer.hpp"
+#include "ast_sizeof.hpp"
 #include "ast_stmt.hpp"
