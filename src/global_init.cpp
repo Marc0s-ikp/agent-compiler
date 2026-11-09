@@ -4,76 +4,49 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "escapes.hpp"
+#include "init_layout.hpp"
+
 namespace ast {
 
 namespace {
 
-// Writes the directives for one object, walking the initialiser tree. This
-// is the one place that knows how a type's bytes are laid out in .data;
-// floating types (feature 7) and records (feature 8) become new cases of
-// Scalar and Object.
+// Writes the directives for one laid-out object. This is the one place that
+// knows how values are written into .data; floating types (feature 7) become
+// a new case of Scalar.
 class InitWriter {
 public:
-    explicit InitWriter(const Context& ctx) : ctx_(ctx) {}
+    explicit InitWriter(Context& ctx) : ctx_(ctx) {}
     std::string Text() const { return out_.str(); }
 
-    // One scalar from a bare expression or a braced single value.
-    void Scalar(const TypePtr& type, const Initializer& item) {
-        if (item.IsList()) {
-            const Initializer::List& inner = item.Items();
-            if (inner.size() != 1 || inner[0]->IsList()) {
-                throw std::runtime_error("invalid scalar initialiser");
+    // Writes the whole object of 'size' bytes: items in order, zeros between.
+    void Object(const FlatInit& flat) {
+        int cursor = 0;
+        for (const InitItem& item : flat.items) {
+            Zero(item.offset - cursor);
+            if (item.value) {
+                Scalar(*item.type, *item.value);
+            } else {
+                Bytes(item.type->Size(), item.bytes);
             }
-            return Scalar(type, *inner[0]);
+            cursor = item.offset + item.type->Size();
         }
-        if (!type->IsScalar()) {
-            throw std::runtime_error("unsupported initialiser type");
-        }
-        std::optional<ConstValue> value = item.Value().EvalConstValue(ctx_);
-        if (!value) {
-            throw std::runtime_error("initialiser is not a constant");
-        }
-        Word(type->Size(), *value);
-    }
-
-    // The object that starts at list[pos]; advances pos past what it used.
-    void Object(const TypePtr& type, const Initializer::List& list,
-                size_t& pos) {
-        const Initializer& item = *list[pos];
-        if (!type->IsArray()) {
-            Scalar(type, item);
-            ++pos;
-        } else if (item.IsList()) {
-            size_t inner_pos = 0;
-            Array(type, item.Items(), inner_pos, true);
-            ++pos;
-        } else {
-            Array(type, list, pos, false);  // brace elision: {1, 2, 3, 4}
-        }
-    }
-
-    // Fills an array from list[pos...] and pads with zeros. 'braced' means
-    // the list belongs to this array, so leftovers are an error. A length of
-    // 0 is unspecified: all elements are taken. Returns the element count.
-    int Array(const TypePtr& type, const Initializer::List& list, size_t& pos,
-              bool braced) {
-        int length = type->Length();
-        int count = 0;
-        while (pos < list.size() && (length == 0 || count < length)) {
-            Object(type->Base(), list, pos);
-            ++count;
-        }
-        if (length == 0 && count == 0) {
-            throw std::runtime_error("empty initialiser for unsized array");
-        }
-        if (braced && pos < list.size()) {
-            throw std::runtime_error("excess elements in array initialiser");
-        }
-        if (length > count) Zero((length - count) * type->Base()->Size());
-        return count;
+        Zero(flat.type->Size() - cursor);
     }
 
 private:
+    void Scalar(const Type& type, const Expr& expr) {
+        std::optional<ConstValue> value = expr.EvalConstValue(ctx_);
+        if (!value) throw std::runtime_error("initialiser is not a constant");
+        Word(type.Size(), *value);
+    }
+
+    // The chars of a string initialiser, then zeros up to 'size' bytes.
+    void Bytes(int size, const std::string& bytes) {
+        if (!bytes.empty()) out_ << "\t.ascii " << AsmQuoted(bytes) << "\n";
+        Zero(size - static_cast<int>(bytes.size()));
+    }
+
     void Zero(int bytes) {
         if (bytes > 0) out_ << "\t.zero " << bytes << "\n";
     }
@@ -89,31 +62,23 @@ private:
         }
         uint32_t bits = static_cast<uint32_t>(value.offset);
         if (size == 1) out_ << "\t.byte " << (bits & 0xff) << "\n";
-        if (size == 2) out_ << "\t.half " << (bits & 0xffff) << "\n";
-        if (size == 4) out_ << "\t.word " << bits << "\n";
+        else if (size == 2) out_ << "\t.half " << (bits & 0xffff) << "\n";
+        else if (size == 4) out_ << "\t.word " << bits << "\n";
+        else throw std::runtime_error("unsupported initialiser size");
     }
 
-    const Context& ctx_;
+    Context& ctx_;
     std::ostringstream out_;
 };
 
 }  // namespace
 
 GlobalInit BuildGlobalInit(const TypePtr& type, const Initializer& init,
-                           const Context& ctx) {
+                           Context& ctx) {
+    FlatInit flat = FlattenInit(type, init);
     InitWriter writer(ctx);
-    TypePtr result = type;
-    if (type->IsArray()) {
-        if (!init.IsList()) {
-            throw std::runtime_error("array initialiser must be a brace list");
-        }
-        size_t pos = 0;
-        int count = writer.Array(type, init.Items(), pos, true);
-        if (type->Length() == 0) result = Type::Array(type->Base(), count);
-    } else {
-        writer.Scalar(type, init);
-    }
-    return GlobalInit{result, writer.Text()};
+    writer.Object(flat);
+    return GlobalInit{flat.type, writer.Text()};
 }
 
 }  // namespace ast

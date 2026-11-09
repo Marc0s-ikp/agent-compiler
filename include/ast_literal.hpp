@@ -39,4 +39,21 @@ private:
     unsigned char value_;
 };
 
+// "text". Adjacent literals are joined by the parser. Its type is an array of
+// char with room for the NUL, so sizeof("hi") is 3; it decays like any array
+// (D10). The bytes live in the read-only data pool (Context::AddString).
+class StringLiteral : public Expr {
+public:
+    explicit StringLiteral(std::string bytes) : bytes_(std::move(bytes)) {}
+    TypePtr GetType(const Context&) const override;
+    std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
+    std::optional<ConstValue> EvalConstAddress(Context& ctx) const override;
+    const std::string* StringBytes() const override { return &bytes_; }
+    void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitAddress(std::ostream& os, Context& ctx) const override;
+
+private:
+    std::string bytes_;
+};
+
 }  // namespace ast

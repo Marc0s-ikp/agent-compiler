@@ -1,5 +1,7 @@
 #include "context.hpp"
 
+#include "escapes.hpp"
+
 #include <cstdint>
 #include <stdexcept>
 
@@ -252,4 +254,20 @@ std::string Context::AddDefault() {
     }
     info.default_label = NewLabel("default");
     return info.default_label;
+}
+
+std::string Context::AddString(const std::string& bytes) {
+    for (const auto& s : strings_) {
+        if (s.second == bytes) return s.first;
+    }
+    strings_.emplace_back(NewLabel("str"), bytes);
+    return strings_.back().first;
+}
+
+void Context::EmitStrings(std::ostream& os) const {
+    if (strings_.empty()) return;
+    os << "\t.section .rodata\n";
+    for (const auto& s : strings_) {
+        os << s.first << ":\n\t.ascii " << AsmQuoted(s.second) << "\n\t.byte 0\n";
+    }
 }

@@ -4,7 +4,7 @@
 
 namespace ast {
 
-std::optional<ConstValue> Expr::EvalConstValue(const Context& ctx) const {
+std::optional<ConstValue> Expr::EvalConstValue(Context& ctx) const {
     std::optional<long> n = EvalConst(ctx);
     if (!n) return std::nullopt;
     return ConstValue{"", *n};

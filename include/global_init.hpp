@@ -14,10 +14,11 @@ struct GlobalInit {
 };
 
 // Every value must be a link-time constant: an integer constant expression,
-// or an address constant (label plus offset, Expr::EvalConstValue). Brace
+// or an address constant (label plus offset, Expr::EvalConstValue, which may
+// add a string literal to the pool, so the context is mutable). Brace
 // lists may be nested, partial (the rest is zero) or flat (brace elision).
 // Throws a std::runtime_error if the initialiser is not constant.
 GlobalInit BuildGlobalInit(const TypePtr& type, const Initializer& init,
-                           const Context& ctx);
+                           Context& ctx);
 
 }  // namespace ast

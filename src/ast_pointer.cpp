@@ -55,7 +55,7 @@ void AddressOf::EmitRISC(std::ostream& os, Context& ctx) const {
     operand_->EmitAddress(os, ctx);
 }
 
-std::optional<ConstValue> AddressOf::EvalConstValue(const Context& ctx) const {
+std::optional<ConstValue> AddressOf::EvalConstValue(Context& ctx) const {
     return operand_->EvalConstAddress(ctx);
 }
 
@@ -71,11 +71,11 @@ TypePtr Index::GetType(const Context& ctx) const {
 
 // &base[i] is the constant base + i; an element that is itself an array
 // has that address as its value.
-std::optional<ConstValue> Index::EvalConstAddress(const Context& ctx) const {
+std::optional<ConstValue> Index::EvalConstAddress(Context& ctx) const {
     return sum_->EvalConstValue(ctx);
 }
 
-std::optional<ConstValue> Index::EvalConstValue(const Context& ctx) const {
+std::optional<ConstValue> Index::EvalConstValue(Context& ctx) const {
     if (!GetType(ctx)->IsArray()) return std::nullopt;
     return EvalConstAddress(ctx);
 }

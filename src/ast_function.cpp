@@ -128,6 +128,7 @@ void TranslationUnit::EmitRISC(std::ostream& os, Context& ctx) const {
     ctx.PushScope();
     for (const ExternalDeclPtr& decl : decls_) decl->EmitRISC(os, ctx);
     ctx.EmitGlobals(os);
+    ctx.EmitStrings(os);
     ctx.PopScope();
 }
 

@@ -73,6 +73,11 @@ public:
     void MakeGlobalInternal(const std::string& name);
     void EmitGlobals(std::ostream& os) const;
 
+    // String literals (read-only data). The same bytes get the same label, so
+    // evaluating one literal twice adds nothing. A NUL is written after them.
+    std::string AddString(const std::string& bytes);
+    void EmitStrings(std::ostream& os) const;
+
     // Frame. Slots grow downwards from s0, below the saved ra and s0.
     void BeginFunction(const TypePtr& return_type);
     int AllocLocal(const TypePtr& type);
@@ -136,5 +141,6 @@ private:
     std::string return_label_;
     TypePtr return_type_;
     std::vector<GlobalVar> globals_;
+    std::vector<std::pair<std::string, std::string>> strings_;  // label, bytes
     int label_count_ = 0;
 };

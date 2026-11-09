@@ -38,4 +38,25 @@ void CharLiteral::EmitRISC(std::ostream& os, Context&) const {
     os << "\tli a0, " << static_cast<int>(value_) << "\n";
 }
 
+TypePtr StringLiteral::GetType(const Context&) const {
+    return Type::Array(Type::Integer(1, false), static_cast<int>(bytes_.size()) + 1);
+}
+
+std::optional<ConstValue> StringLiteral::EvalConstAddress(Context& ctx) const {
+    return ConstValue{ctx.AddString(bytes_), 0};
+}
+
+// The literal is an array, so its value is its address.
+std::optional<ConstValue> StringLiteral::EvalConstValue(Context& ctx) const {
+    return EvalConstAddress(ctx);
+}
+
+void StringLiteral::EmitAddress(std::ostream& os, Context& ctx) const {
+    os << "\tla a0, " << ctx.AddString(bytes_) << "\n";
+}
+
+void StringLiteral::EmitRISC(std::ostream& os, Context& ctx) const {
+    EmitAddress(os, ctx);
+}
+
 }  // namespace ast

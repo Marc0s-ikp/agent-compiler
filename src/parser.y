@@ -76,7 +76,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <name_decl> declarator direct_declarator abstract_declarator direct_abstract
 %type <stars> pointer
 %type <storage> storage local_storage
-%type <str> name
+%type <str> name string_literal
 %type <name_decl> declarator_head
 %type <init> initializer
 %type <inits> initializer_list
@@ -577,9 +577,23 @@ argument_list
     }
     ;
 
+/* Adjacent string literals are one literal (translation phase 6). */
+string_literal
+    : STRING_LITERAL
+    | string_literal STRING_LITERAL {
+        $$ = $1;
+        $$->append(*$2);
+        delete $2;
+    }
+    ;
+
 primary_expr
     : IDENTIFIER   { $$ = new ast::Identifier(std::move(*$1)); delete $1; }
     | INT_LITERAL  { $$ = new ast::IntLiteral(*$1); delete $1; }
+    | string_literal {
+        $$ = new ast::StringLiteral(std::move(*$1));
+        delete $1;
+    }
     | CHAR_LITERAL {
         $$ = new ast::CharLiteral(static_cast<unsigned char>((*$1)[0]));
         delete $1;

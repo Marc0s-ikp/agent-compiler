@@ -39,11 +39,16 @@ public:
     }
     // The value as a constant that may name a global's address ('&x', 'arr',
     // 'arr + 1'). Defaults to EvalConst, so integer constants need no override.
-    virtual std::optional<ConstValue> EvalConstValue(const Context& ctx) const;
+    // The context is mutable because a string literal's address constant
+    // interns the string in the data pool (D17).
+    virtual std::optional<ConstValue> EvalConstValue(Context& ctx) const;
     // For lvalues: the constant address of the object (what '&' yields).
-    virtual std::optional<ConstValue> EvalConstAddress(const Context&) const {
+    virtual std::optional<ConstValue> EvalConstAddress(Context&) const {
         return std::nullopt;
     }
+    // The bytes of a string literal (without the NUL), else null. Lets an
+    // initialiser tell 'char s[] = "ab"' from 'char *s = "ab"'.
+    virtual const std::string* StringBytes() const { return nullptr; }
     // For lvalues: leave the object's address in a0 (D4).
     // Default: the expression is not an lvalue.
     virtual void EmitAddress(std::ostream& os, Context& ctx) const;

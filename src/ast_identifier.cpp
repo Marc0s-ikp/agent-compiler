@@ -29,14 +29,14 @@ std::optional<long> Identifier::EvalConst(const Context& ctx) const {
 
 // Only a global has a constant address. An array's value is that address.
 std::optional<ConstValue> Identifier::EvalConstAddress(
-    const Context& ctx) const {
+    Context& ctx) const {
     const Symbol& sym = LookupName(ctx, name_);
     if (sym.kind != SymbolKind::Global) return std::nullopt;
     return ConstValue{sym.label, 0};
 }
 
 std::optional<ConstValue> Identifier::EvalConstValue(
-    const Context& ctx) const {
+    Context& ctx) const {
     if (std::optional<long> n = EvalConst(ctx)) return ConstValue{"", *n};
     if (!GetType(ctx)->IsArray()) return std::nullopt;
     return EvalConstAddress(ctx);

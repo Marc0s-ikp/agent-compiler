@@ -165,7 +165,7 @@ std::optional<long> BinaryArith::EvalConst(const Context& ctx) const {
 // Integer constants fold as usual; 'address +/- integer' keeps the label and
 // moves the offset by whole elements.
 std::optional<ConstValue> BinaryArith::EvalConstValue(
-    const Context& ctx) const {
+    Context& ctx) const {
     if (std::optional<long> n = EvalConst(ctx)) return ConstValue{"", *n};
     PointerOp kind = ClassifyPointerOp(op_, lhs_->ValueType(ctx), rhs_->ValueType(ctx));
     if (kind == PointerOp::None || kind == PointerOp::PtrMinusPtr) {
