@@ -24,16 +24,17 @@ void ExprStmt::EmitRISC(std::ostream& os, Context& ctx) const {
 void DeclarationStmt::DeclareStatic(const std::string& name, const TypePtr& type,
                                     const Initializer* init,
                                     Context& ctx) const {
-    TypePtr final_type = type;
-    std::string data;
-    if (init) {
-        GlobalInit built = BuildGlobalInit(type, *init, ctx);
-        final_type = built.type;
-        data = built.data;
+    // Declared before the initialiser is built, so that it can name itself.
+    std::string label = ctx.AddStaticLocal(type);
+    ctx.Declare(name, Symbol::Global(type, label));
+    if (!init) {
+        if (type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
+        return;
     }
-    if (final_type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
-    std::string label = ctx.AddStaticLocal(final_type, init ? &data : nullptr);
-    ctx.Declare(name, Symbol::Global(final_type, label));
+    GlobalInit built = BuildGlobalInit(type, *init, ctx);
+    if (built.type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
+    ctx.CompleteStaticLocal(label, built.type, built.data);
+    ctx.Declare(name, Symbol::Global(built.type, label));
 }
 
 // An ordinary local. The initialiser is laid out first because an array

@@ -113,9 +113,12 @@ void GlobalDeclaration::DeclareVariable(const std::string& name,
         MarkLinkage(name, ctx);
         return;
     }
+    // The name is in scope from the end of its declarator, so the initialiser
+    // may use it. An unsized array is completed afterwards by merging.
+    ctx.DeclareGlobal(name, type, false);
+    MarkLinkage(name, ctx);
     GlobalInit built = BuildGlobalInit(type, *init, ctx);
     ctx.DeclareGlobal(name, built.type, false);
-    MarkLinkage(name, ctx);
     if (ctx.Lookup(name).type->Size() != built.type->Size()) {
         throw std::runtime_error("conflicting declaration of '" + name + "'");
     }

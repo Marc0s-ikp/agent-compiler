@@ -55,7 +55,7 @@ From the feature 5 review (2026-11-08). None of these blocked the merge. Item 3 
    inherit internal linkage from the earlier declaration.
 3. DONE (feature 6). `src/global_init.cpp:91-93`: `Word` silently emits nothing for sizes other than 1, 2 or 4. Unreachable today, but
    `double` would shift the data after it. Add a throw.
-4. `src/ast_function.cpp:76-77`: the initialiser is built before the name is declared, so `int **q = &q[0];` fails
+4. DONE (feature 8 cleanup). `src/ast_function.cpp:76-77`: the initialiser is built before the name is declared, so `int **q = &q[0];` fails
    with "undeclared identifier". Feature 8's `struct n a = {&a}` would hit the same error.
 5. `src/ast_pointer.cpp`: `Deref` has no constant-address override, so `int *p = *m;` and `&*a` are rejected.
 6. `LogicalAnd`, `LogicalOr` and `Ternary` have no `EvalConst` (`BinaryCompare` got `EvalConstValue` in feature 7, so global initialisers can use it, but `enum { A = 1 < 2 }` still fails), so `enum { A = 1 < 2 }` is rejected.
@@ -138,7 +138,7 @@ For feature 8: DONE (D19). `src/local_init.cpp` now zeroes structs and unions as
 
 From the feature 8 review (2026-11-10). None of these blocked the merge, and none is fixed yet.
 
-1. `src/ast_function.cpp:116`: a global whose initialiser takes its own address fails. `struct L { struct L *n; int v; }; struct L a = {&a, 3};` gives "undeclared identifier 'a'", while GCC compiles it and the local form works. Same root as item 4 of the feature 5 review. `src/ast_stmt.cpp:30` has the same order for static locals (from reading the code). Fix: declare the name before building the initialiser, handling unsized arrays.
+1. DONE (cleanup). `src/ast_function.cpp:116`: a global whose initialiser takes its own address fails. `struct L { struct L *n; int v; }; struct L a = {&a, 3};` gives "undeclared identifier 'a'", while GCC compiles it and the local form works. Same root as item 4 of the feature 5 review. `src/ast_stmt.cpp:30` has the same order for static locals (from reading the code). Fix: declare the name before building the initialiser, handling unsized arrays.
 2. `src/ast_operators.cpp:467-468`: `q = c ? p : (void*)0;` with `struct S *p` is rejected as "incompatible pointers in ?:", while GCC accepts it. Fix: let `void *` combine with any object pointer and return the non-void pointer type.
 3. `src/ast_member.cpp:45-49`: `Member::EmitAddress` accepts a non-lvalue base, so `f().a = 3;` and `(c ? a : b).a = 3;` compile where GCC rejects them. Only invalid programs are affected.
 4. `src/ast_function.cpp:78`, `src/ast_call.cpp:116`: an incomplete by-value parameter or return type gets a size-0 slot instead of an error (`struct S; int f(struct S x) { return 0; }`). Only invalid programs are affected.

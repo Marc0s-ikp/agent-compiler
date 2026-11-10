@@ -81,8 +81,11 @@ public:
                        bool is_extern);
     void InitGlobal(const std::string& name, const std::string& data);
     // A 'static' local: storage under a fresh label, never exported. Returns
-    // the label; 'data' is the initialiser directives, or null for zeros.
-    std::string AddStaticLocal(const TypePtr& type, const std::string* data);
+    // the label. It is zero-filled until CompleteStaticLocal gives it its
+    // final type (an unsized array) and initialiser directives.
+    std::string AddStaticLocal(const TypePtr& type);
+    void CompleteStaticLocal(const std::string& label, const TypePtr& type,
+                             const std::string& data);
     // Marks an already declared global as having internal linkage.
     void MakeGlobalInternal(const std::string& name);
     void EmitGlobals(std::ostream& os) const;

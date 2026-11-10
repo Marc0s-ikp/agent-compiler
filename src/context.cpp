@@ -217,12 +217,18 @@ void Context::InitGlobal(const std::string& name, const std::string& data) {
     var.data = data;
 }
 
-std::string Context::AddStaticLocal(const TypePtr& type,
-                                    const std::string* data) {
+std::string Context::AddStaticLocal(const TypePtr& type) {
     std::string label = NewLabel("static");
-    globals_.push_back(
-        GlobalVar{label, type, true, true, data != nullptr, data ? *data : ""});
+    globals_.push_back(GlobalVar{label, type, true, true, false, ""});
     return label;
+}
+
+void Context::CompleteStaticLocal(const std::string& label, const TypePtr& type,
+                                  const std::string& data) {
+    GlobalVar& var = FindGlobal(label);
+    var.type = type;
+    var.initialised = true;
+    var.data = data;
 }
 
 void Context::MakeGlobalInternal(const std::string& name) {
