@@ -49,7 +49,7 @@ The fix above has not been made.
 
 From the feature 5 review (2026-11-08). None of these blocked the merge. Item 3 was fixed in feature 6 and item 4 in the cleanup session. The others are still open.
 
-1. `src/ast_operators.cpp:121`: `FoldBinary` folds in untyped 64-bit `long`, so `unsigned a = ~0u >> 1;` and
+1. DONE (constant folding, D20). `src/ast_operators.cpp:121`: `FoldBinary` folds in untyped 64-bit `long`, so `unsigned a = ~0u >> 1;` and
    `case (0u-2)/2:` compile to the wrong value. Runtime evaluation is correct. Fix: fold using `GetType` and wrap to 32 bits.
 2. `src/ast_function.cpp:118`: `static int f(int); int f(int x){...}` still emits `.globl f`. The definition should
    inherit internal linkage from the earlier declaration.
@@ -159,5 +159,16 @@ From the cleanup review (2026-11-10). None of these blocked the merge, and none 
 6. `src/context.cpp:172-179`: `int a[3]; int a[] = {1,2};` is rejected as a conflicting declaration. GCC accepts it and keeps `int[3]`.
 7. `src/ast_operators.cpp:488`: `Ternary::GetType` does not reject a floating operand with a pointer, so `sizeof(*(c ? 0.0 : ip))` compiles to 4 where GCC errors. Only invalid programs are affected.
 8. `extern int x; static int x = 3;` compiles, GCC rejects it. `DeclareGlobal` does not check for a linkage change. Only invalid programs are affected.
-9. Constant folding still differs from GCC on unsigned division and `int` overflow: this is item 1 of the feature 5 review. The cleanup fuzz hit it 16 times in about 8000 output lines (12 reduced to that cause, 4 `case` label misses of the same kind not reduced).
+9. DONE (constant folding, D20). Constant folding still differs from GCC on unsigned division and `int` overflow: this is item 1 of the feature 5 review. The cleanup fuzz hit it 16 times in about 8000 output lines (12 reduced to that cause, 4 `case` label misses of the same kind not reduced).
 10. `src/ast_node.cpp`: one stray extra blank line after `IsNullPointerConstant`. `CompleteStaticLocal` and `InitGlobal` are two entry points for the same incomplete-to-complete step and could be unified.
+
+## Nice to have from the constant folding review
+
+From the constant folding review (2026-11-10, approved). None of these blocked the merge, and none is fixed yet. Line numbers are at the merge.
+
+1. `src/ast_operators.cpp:335`: the `IsPointer` test is dead, because `CompareType` returns `UInt` for pointers. The guards at lines 221 and 443 are also unreachable, since non-null `EvalConst` operands are always integers. Remove them or say why they stay.
+2. `src/ast_operators.cpp:245`: the `UInt` versus `Int` choice for a pointer offset needs a comment. A label offset stays signed so `a - 1` prints `.word a-4`, while an absolute address is unsigned. `(char *)-1` still has offset -1, so the canonical form of a pointer constant is undefined. Consumers wrap, so this is harmless.
+3. Duplication: `IsShift(op_) ? Promote(...) : result` appears three times (`src/ast_operators.cpp:222, 254, 289`). `BinaryCompare::EvalConst` and `EvalConstValue` could share a wrap-then-compare helper. `src/context.cpp:272` repeats the int wrap by hand.
+4. `tests/custom/const_fold_case_labels.c:20`: `case -7 / 2` is never driven, because the driver has no `sw_i(-3)`.
+5. No test covers the integer branch of `FoldArithmetic` (cast-of-float operands such as `(int)1.5 + 2147483647`) or unsigned-to-double conversion. Both gave correct values in the reviewer's probes.
+6. Still not constants, as before this change: `&&`, `||` and `?:` (`int g = 1 && 2;`, `case 1 ? 2 : 3:`), and casts of floats in `case`, enum and array-size contexts (`char a[(int)2.5]`).

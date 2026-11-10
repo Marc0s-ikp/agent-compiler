@@ -11,11 +11,11 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: 262/262 before, 272/272 after (86 of 86 compiler_tests, 186 of 186 custom). No test that passed before now fails.
-Fixed: cleanup session (reviewer approved 2026-11-10): a name is in scope in its own initialiser, null pointer constants and `void *` in `?:`, and `short` / `unsigned short`, with signed 2-byte struct fields and full-word outgoing stack arguments. 10 new custom tests.
-Blocked: no new blockers. Non-blocking items are in BLOCKERS "Nice to have from the cleanup review". Marcus accepted D19 on 2026-11-10.
+Pass count: 272/272 before, 283/283 after (86 of 86 compiler_tests, 197 of 197 custom). No test that passed before now fails.
+Fixed: compile-time constant folding (`EvalConst`) now follows run-time semantics: 32-bit wraparound, unsigned division, modulo and right shift, `!` of a wrapped value, and comparisons as integer constant expressions in `case`, enum and array sizes. Tests were written first and 8 of the 11 failed on the old compiler. 11 new custom tests: `const_fold_*` (int_wrap, unsigned_arith, shifts, bitwise_unary, compare, case_labels, enum_values, enum_wrap, array_size, contexts_compare, ptr_offset).
+Blocked: no new blockers.
 Remaining failures: none.
-Next: nothing planned. All 8 features and the cleanup are done; the open items are in docs/BLOCKERS.md.
+Next: nothing planned. The open items are in docs/BLOCKERS.md.
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -35,7 +35,7 @@ Next: nothing planned. All 8 features and the cleanup are done; the open items a
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 186 | 186 |
+| custom (written by tester, D13) | 197 | 197 |
 
 ## History
 | Date | Passing | Change |
@@ -50,3 +50,4 @@ Next: nothing planned. All 8 features and the cleanup are done; the open items a
 | 2026-11-09 | 219/224 | float: float and double, casts, floating ABI (195→219) |
 | 2026-11-10 | 262/262 | feature 8: structs, unions, by-value struct ABI (219→262) |
 | 2026-11-10 | 272/272 | cleanup: self-referencing initialisers, pointers in ?:, short (262→272) |
+| 2026-11-10 | 283/283 | constant folding: typed 32-bit folding for initialisers, case, enum, array sizes (272→283) |
