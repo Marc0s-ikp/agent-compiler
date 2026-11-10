@@ -163,7 +163,8 @@ std::optional<long> FoldBinary(BinOp op, long a, long b) {
     switch (op) {
         case BinOp::Add: return a + b;
         case BinOp::Sub: return a - b;
-        case BinOp::Mul: return a * b;
+        case BinOp::Mul:  // unsigned operands reach 2^32: multiply without signed overflow
+            return static_cast<long>(static_cast<uint64_t>(a) * static_cast<uint64_t>(b));
         case BinOp::Div: return b == 0 ? std::nullopt : std::optional<long>(a / b);
         case BinOp::Mod: return b == 0 ? std::nullopt : std::optional<long>(a % b);
         case BinOp::Shl: return (b < 0 || b > 31) ? std::nullopt : std::optional<long>(a << b);
@@ -173,6 +174,18 @@ std::optional<long> FoldBinary(BinOp op, long a, long b) {
         case BinOp::Xor: return a ^ b;
     }
     return std::nullopt;
+}
+
+// The one place integer binary folding happens. Both operands are canonical
+// (WrapToType form); they are converted to the types the instruction would
+// see, folded on long, and the result is wrapped to the result type, so the
+// value matches what the run-time code computes.
+std::optional<long> FoldIntBinary(BinOp op, long a, long b, const Type& result,
+                                  const Type& rhs_type) {
+    std::optional<long> n =
+        FoldBinary(op, WrapToType(a, result), WrapToType(b, rhs_type));
+    if (!n) return std::nullopt;
+    return WrapToType(*n, result);
 }
 
 }  // namespace
@@ -204,7 +217,10 @@ std::optional<long> BinaryArith::EvalConst(const Context& ctx) const {
     std::optional<long> a = lhs_->EvalConst(ctx);
     std::optional<long> b = rhs_->EvalConst(ctx);
     if (!a || !b) return std::nullopt;
-    return FoldBinary(op_, *a, *b);
+    TypePtr result = GetType(ctx);
+    if (!result->IsInteger()) return std::nullopt;
+    TypePtr rhs_type = IsShift(op_) ? Promote(rhs_->ValueType(ctx)) : result;
+    return FoldIntBinary(op_, *a, *b, *result, *rhs_type);
 }
 
 // Integer constants fold as usual; 'address +/- integer' keeps the label and
@@ -221,8 +237,12 @@ std::optional<ConstValue> BinaryArith::EvalConstValue(
     std::optional<ConstValue> base = pointer.EvalConstValue(ctx);
     std::optional<long> n = index.EvalConst(ctx);
     if (!base || !n) return std::nullopt;
-    long step = PointeeSize(*pointer.ValueType(ctx)) * *n;
-    base->offset += (kind == PointerOp::PtrMinusInt) ? -step : step;
+    // 32-bit arithmetic, as the run-time pointer add does.
+    uint32_t step = static_cast<uint32_t>(PointeeSize(*pointer.ValueType(ctx))) *
+                    static_cast<uint32_t>(*n);
+    uint32_t offset = static_cast<uint32_t>(base->offset);
+    offset += (kind == PointerOp::PtrMinusInt) ? 0u - step : step;
+    base->offset = WrapToType(offset, base->label.empty() ? *Type::UInt() : *Type::Int());
     return base;
 }
 
@@ -236,9 +256,10 @@ std::optional<ConstValue> BinaryArith::FoldArithmetic(Context& ctx) const {
     std::optional<ConstValue> b = ConstOperandAs(ctx, *rhs_, *rhs_type);
     if (!a || !b || !a->label.empty() || !b->label.empty()) return std::nullopt;
     if (!result->IsFloating()) {
-        std::optional<long> n = FoldBinary(op_, a->offset, b->offset);
+        std::optional<long> n =
+            FoldIntBinary(op_, a->offset, b->offset, *result, *rhs_type);
         if (!n) return std::nullopt;
-        return ConstValue{"", WrapToType(*n, *result)};
+        return ConstValue{"", *n};
     }
     ConstValue out;
     out.is_real = true;
@@ -302,6 +323,17 @@ static bool Compare(CmpOp op, T a, T b) {
         case CmpOp::Ne: return a != b;
     }
     return false;
+}
+
+// Integer operands only: canonical values converted to the common type
+// compare correctly as long, signed or unsigned.
+std::optional<long> BinaryCompare::EvalConst(const Context& ctx) const {
+    std::optional<long> a = lhs_->EvalConst(ctx);
+    std::optional<long> b = rhs_->EvalConst(ctx);
+    if (!a || !b) return std::nullopt;
+    TypePtr common = CompareType(lhs_->ValueType(ctx), rhs_->ValueType(ctx));
+    if (!common->IsInteger() && !common->IsPointer()) return std::nullopt;
+    return Compare(op_, WrapToType(*a, *common), WrapToType(*b, *common)) ? 1 : 0;
 }
 
 std::optional<ConstValue> BinaryCompare::EvalConstValue(Context& ctx) const {
@@ -390,21 +422,26 @@ TypePtr UnaryOp::GetType(const Context& ctx) const {
 }
 
 namespace {
-std::optional<long> FoldUnary(UnOp op, long v) {
+// The operand is converted to the result type, folded, and wrapped. '!' tests
+// the converted operand and yields an int.
+long FoldUnary(UnOp op, long v, const Type& result) {
+    long a = WrapToType(v, result);
     switch (op) {
-        case UnOp::Plus: return v;
-        case UnOp::Neg: return -v;
-        case UnOp::BitNot: return ~v;
-        case UnOp::LogNot: return v == 0 ? 1 : 0;
+        case UnOp::Plus: return a;
+        case UnOp::Neg: return WrapToType(-a, result);
+        case UnOp::BitNot: return WrapToType(~a, result);
+        case UnOp::LogNot: return a == 0 ? 1 : 0;
     }
-    return std::nullopt;
+    return a;
 }
 }  // namespace
 
 std::optional<long> UnaryOp::EvalConst(const Context& ctx) const {
     std::optional<long> v = operand_->EvalConst(ctx);
     if (!v) return std::nullopt;
-    return FoldUnary(op_, *v);
+    TypePtr result = GetType(ctx);
+    if (!result->IsInteger()) return std::nullopt;
+    return FoldUnary(op_, *v, *result);
 }
 
 // Also the constants EvalConst cannot see: a floating operand, or a cast of
@@ -424,8 +461,7 @@ std::optional<ConstValue> UnaryOp::EvalConstValue(Context& ctx) const {
         if (op_ == UnOp::Neg) v->real = -v->real;
         return v;
     }
-    std::optional<long> n = FoldUnary(op_, v->offset);
-    return ConstValue{"", WrapToType(*n, *result)};
+    return ConstValue{"", FoldUnary(op_, v->offset, *result)};
 }
 
 void UnaryOp::EmitRISC(std::ostream& os, Context& ctx) const {

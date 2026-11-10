@@ -3,6 +3,8 @@
 #include <climits>
 #include <stdexcept>
 
+#include "const_value.hpp"
+
 namespace ast {
 
 // Enums are int (design section 2). Each constant is declared as soon as its
@@ -13,9 +15,9 @@ TypePtr TypeSpecifier::DeclareEnum(Context& ctx) const {
         if (e.value) {
             std::optional<long> v = e.value->EvalConst(ctx);
             if (!v) throw std::runtime_error("enumerator value is not constant");
-            next = *v;
+            next = WrapToType(*v, *Type::Int());  // an int constant
         }
-        if (next < INT_MIN || next > INT_MAX) {
+        if (next > INT_MAX) {  // only '++' past INT_MAX can leave the range
             throw std::runtime_error("enumerator value out of range");
         }
         ctx.Declare(e.name, Symbol::EnumConst(next));
