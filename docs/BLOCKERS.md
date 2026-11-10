@@ -78,7 +78,7 @@ From the same review. Items 1-3 were done in feature 6 (D17). Local brace initia
    and `char a[2][4] = {"ab","cd"}`.
 4. DONE (feature 7, D18). D15 understated the float work. `ConstValue` needs a floating field, `FloatLiteral`, `UnaryOp`, `BinaryArith` and
    `Cast` need overrides, and `Scalar` must convert to the target type (`float f = 1;`, single-precision `0.1`).
-5. Feature 8: struct member rules must not call `EndDeclaration()` (`src/parser.y:17`), member declarators must not
+5. DONE (feature 8, D19). Feature 8: struct member rules must not call `EndDeclaration()` (`src/parser.y:17`), member declarators must not
    go through `declarator_head`, `.`/`->` must accept `T_TYPE_NAME`, and Records must compare by identity, because
    structural `Equals` would recurse forever on `struct node { struct node *next; }`.
 
@@ -111,7 +111,7 @@ From the feature 6 review (2026-11-09). None of these blocked the merge, and non
 
 Deliberate: `src/init_layout.cpp:36` rejects `char s[2]="abc"` and line 94 rejects excess elements, where gcc only warns.
 
-For feature 8: `src/local_init.cpp:32` zeroes only arrays, so partial struct initialisers need that extended. (The `fa0` store for floats was done in feature 7.)
+For feature 8: DONE (D19). `src/local_init.cpp` now zeroes structs and unions as well as arrays.
 
 ## Known limits left by feature 7
 
@@ -123,3 +123,13 @@ For feature 8: `src/local_init.cpp:32` zeroes only arrays, so partial struct ini
   saturating, and a literal beyond double's range becomes infinity without a warning.
 - Nice to have (feature 7 review): `Cast::EvalConst` only folds integer operands, so a cast of a floating constant is
   rejected where an integer constant is required (`int a[(int)2.5];`, `enum {A=(int)2.5};`, `case (int)1.5:`). GCC accepts all three.
+
+## Known limits left by feature 8
+
+- A `struct` or `union` body is rejected inside a type name or parameter list (`sizeof(struct { int a; })`, `int f(struct { int a; } s)`), as enum bodies are (D17). A tag that is not yet declared in a parameter list (`int f(struct Unknown *p);`) is an "unknown tag" error where C declares it in the prototype's scope. Name the struct in a declaration first.
+- No bit-fields, no anonymous struct or union members (C11), no `short` members (`short` is not a keyword), no function-pointer members, no flexible array members.
+- Struct values cannot be compared (`==`), used in a condition, cast, or have `&&`/`||` applied; each is a compile error as in C.
+- Every struct-returning call site keeps its own result slot until the function ends (D19 c), so a function with many such calls has a larger frame than needed.
+- A by-reference struct parameter is copied twice (the caller's copy, then the callee's home slot).
+- Constant addresses (`&global.member`) work for `.`, not `->`.
+- `tests/custom/struct_fp_split_double` checks our caller against our callee only (GCC's callee misreads a split double under spike pk), as for `float_split_double`.

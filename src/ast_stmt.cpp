@@ -5,6 +5,7 @@
 #include "emit.hpp"
 #include "global_init.hpp"
 #include "local_init.hpp"
+#include "record_abi.hpp"
 
 namespace ast {
 
@@ -74,7 +75,9 @@ void DeclarationStmt::EmitRISC(std::ostream& os, Context& ctx) const {
 void ReturnStmt::EmitRISC(std::ostream& os, Context& ctx) const {
     if (value_) {
         value_->EmitRISC(os, ctx);
-        EmitConvert(os, *value_->ValueType(ctx), *ctx.ReturnType());
+        const TypePtr& to = ctx.ReturnType();
+        EmitConvert(os, *value_->ValueType(ctx), *to);
+        if (to->IsRecord()) EmitReturnRecord(os, ctx, *to);
     }
     os << "\tj " << ctx.ReturnLabel() << "\n";
 }

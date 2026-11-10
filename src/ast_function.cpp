@@ -6,6 +6,7 @@
 #include "abi.hpp"
 #include "emit.hpp"
 #include "global_init.hpp"
+#include "record_abi.hpp"
 
 namespace ast {
 
@@ -30,6 +31,7 @@ void EmitEpilogue(std::ostream& os) {
 // the bits of a float or half of a double.
 void StoreParamHome(std::ostream& os, const ArgLoc& loc, const TypePtr& type,
                     int home) {
+    if (type->IsRecord()) return EmitStoreRecordParam(os, loc, *type, home);
     TypePtr word = Type::Int();
     std::string reg = std::to_string(loc.reg);
     switch (loc.kind) {
@@ -50,17 +52,26 @@ void StoreParamHome(std::ostream& os, const ArgLoc& loc, const TypePtr& type,
             EmitLoad(os, *word, "t0", "s0", loc.offset);
             EmitStore(os, *word, "t0", "s0", home + 4);
             break;
-        case ArgLoc::Kind::Stack: break;
+        case ArgLoc::Kind::Stack:
+        case ArgLoc::Kind::Fields: break;  // Fields: structs only
     }
 }
 
 // Register parameters are copied to local home slots; after that they are
 // ordinary locals. Stack parameters stay where the caller put them.
 void EmitParams(std::ostream& os, Context& ctx, const ResolvedParams& params) {
-    std::vector<ArgLoc> locs = ClassifyArgs(params.types);
+    // A struct returned through a hidden pointer receives it in a0, and the
+    // pointer is kept for 'return'.
+    bool hidden = ReturnsThroughPointer(*ctx.ReturnType());
+    if (hidden) {
+        int slot = ctx.AllocLocal(Type::Int());
+        EmitStore(os, *Type::Int(), "a0", "s0", slot);
+        ctx.SetReturnPointerSlot(slot);
+    }
+    std::vector<ArgLoc> locs = ClassifyArgs(params.types, hidden);
     for (size_t i = 0; i < params.types.size(); ++i) {
         const TypePtr& type = params.types[i];
-        if (locs[i].kind == ArgLoc::Kind::Stack) {
+        if (locs[i].kind == ArgLoc::Kind::Stack && !locs[i].by_reference) {
             ctx.Declare(params.names[i], Symbol::Local(type, locs[i].offset));
             continue;
         }
