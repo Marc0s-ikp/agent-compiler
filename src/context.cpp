@@ -2,6 +2,7 @@
 
 #include "escapes.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 
@@ -12,6 +13,15 @@ int RoundUp(int value, int multiple) {
     return (value + multiple - 1) / multiple * multiple;
 }
 }  // namespace
+
+Context::~Context() {
+    for (const TypePtr& record : records_) Type::ReleaseRecord(record);
+}
+
+TypePtr Context::NewRecord(bool is_union, const std::string& tag) {
+    records_.push_back(Type::Record(is_union, tag));
+    return records_.back();
+}
 
 void Context::PushScope() {
     scopes_.emplace_back();
@@ -27,13 +37,24 @@ void Context::DeclareTag(const std::string& tag, const TypePtr& type) {
     tag_scopes_.back()[tag] = type;
 }
 
-TypePtr Context::LookupTag(const std::string& tag) const {
+TypePtr Context::FindTag(const std::string& tag) const {
     for (auto scope = tag_scopes_.rbegin(); scope != tag_scopes_.rend();
          ++scope) {
         auto found = scope->find(tag);
         if (found != scope->end()) return found->second;
     }
-    throw std::runtime_error("unknown tag '" + tag + "'");
+    return nullptr;
+}
+
+TypePtr Context::FindTagHere(const std::string& tag) const {
+    auto found = tag_scopes_.back().find(tag);
+    return found == tag_scopes_.back().end() ? nullptr : found->second;
+}
+
+TypePtr Context::LookupTag(const std::string& tag) const {
+    TypePtr type = FindTag(tag);
+    if (!type) throw std::runtime_error("unknown tag '" + tag + "'");
+    return type;
 }
 
 void Context::Declare(const std::string& name, const Symbol& symbol) {
@@ -79,6 +100,7 @@ void Context::DeclareFunction(const std::string& name,
 void Context::BeginFunction(const TypePtr& return_type) {
     used_ = kSavedBytes;
     max_used_ = kSavedBytes;
+    floor_ = kSavedBytes;
     outgoing_ = 0;
     temp_marks_.clear();
     return_type_ = return_type;
@@ -92,7 +114,11 @@ int Context::Allocate(const TypePtr& type) {
     return -used_;
 }
 
-int Context::AllocLocal(const TypePtr& type) { return Allocate(type); }
+int Context::AllocLocal(const TypePtr& type) {
+    int offset = Allocate(type);
+    floor_ = used_;
+    return offset;
+}
 
 // Temps are a stack: PopTemp releases the most recent PushTemp.
 int Context::PushTemp(const TypePtr& type) {
@@ -101,7 +127,7 @@ int Context::PushTemp(const TypePtr& type) {
 }
 
 void Context::PopTemp() {
-    used_ = temp_marks_.back();
+    used_ = std::max(temp_marks_.back(), floor_);
     temp_marks_.pop_back();
 }
 

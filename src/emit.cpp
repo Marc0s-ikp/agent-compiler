@@ -38,8 +38,9 @@ void EmitMoveToScratch(std::ostream& os, const Type& type) {
 
 void EmitLoad(std::ostream& os, const Type& type, const std::string& reg,
               const std::string& base, int off) {
-    // An array has no scalar value: its value is its address (D10).
-    if (type.IsArray()) {
+    // An array has no scalar value: its value is its address (D10). So does
+    // a struct or union (D19).
+    if (type.IsArray() || type.IsRecord()) {
         EmitAddrOffset(os, reg, base, off);
         return;
     }

@@ -36,6 +36,11 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
     ast::Declarator* name_decl;
     ast::Enumerator* enumerator;
     ast::EnumSpec* enum_spec;
+    ast::RecordSpec* record_spec;
+    ast::MemberDecl* member_decl;
+    std::vector<ast::MemberDecl>* member_decls;
+    std::vector<ast::Declarator>* member_declarators;
+    bool is_union;
     std::vector<ast::Enumerator>* enumerators;
     ast::Initializer* init;
     ast::Initializer::List* inits;
@@ -52,8 +57,8 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %token <str> IDENTIFIER INT_LITERAL FLOAT_LITERAL T_TYPE_NAME
 %token <str> CHAR_LITERAL STRING_LITERAL
 %token T_INT T_UNSIGNED T_SIGNED T_CHAR T_FLOAT T_DOUBLE T_SIZEOF T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
-%token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM T_TYPEDEF T_SWITCH T_CASE T_DEFAULT
-%token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP
+%token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM T_TYPEDEF T_SWITCH T_CASE T_DEFAULT T_STRUCT T_UNION
+%token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP PTR_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
 %token LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
 
@@ -71,6 +76,11 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <declarators> init_declarator_list
 %type <spec> type_spec
 %type <enum_spec> enum_spec
+%type <record_spec> record_spec
+%type <is_union> struct_or_union
+%type <member_decl> member_decl
+%type <member_decls> member_list
+%type <member_declarators> member_declarator_list
 %type <enumerator> enumerator
 %type <enumerators> enumerator_list
 %type <name_decl> declarator direct_declarator abstract_declarator direct_abstract
@@ -81,8 +91,8 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 %type <init> initializer
 %type <inits> initializer_list
 
-%destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl> <init> <enum_spec> <enumerator>
-%destructor { delete $$; } <stmts> <externals> <params> <declarators> <str> <args> <inits> <enumerators>
+%destructor { delete $$; } <expr> <stmt> <compound> <external> <param> <declarator> <spec> <name_decl> <init> <enum_spec> <enumerator> <record_spec> <member_decl>
+%destructor { delete $$; } <stmts> <externals> <params> <declarators> <str> <args> <inits> <enumerators> <member_decls> <member_declarators>
 
 /* Dangling else: shift the 'else' so it binds to the nearest 'if'. */
 %nonassoc LOWER_THAN_ELSE
@@ -131,6 +141,7 @@ external_decl
     }
     | storage type_spec ';' {
         EndDeclaration();
+        $2->MarkDeclarationOnly();
         $$ = new ast::GlobalDeclaration(*$2, {}, $1);
         delete $2;
     }
@@ -168,6 +179,75 @@ type_spec
     | T_TYPE_NAME        { $$ = new ast::TypeSpecifier(std::move(*$1)); delete $1; }
     | enum_spec {
         $$ = new ast::TypeSpecifier(std::shared_ptr<const ast::EnumSpec>($1));
+    }
+    | record_spec {
+        $$ = new ast::TypeSpecifier(std::shared_ptr<const ast::RecordSpec>($1));
+    }
+    ;
+
+struct_or_union
+    : T_STRUCT  { $$ = false; }
+    | T_UNION   { $$ = true; }
+    ;
+
+record_spec
+    : struct_or_union name {
+        $$ = new ast::RecordSpec();
+        $$->is_union = $1;
+        $$->tag = std::move(*$2);
+        delete $2;
+    }
+    | struct_or_union '{' member_list '}' {
+        $$ = new ast::RecordSpec();
+        $$->is_union = $1;
+        $$->has_body = true;
+        $$->members = std::move(*$3);
+        delete $3;
+    }
+    | struct_or_union name '{' member_list '}' {
+        $$ = new ast::RecordSpec();
+        $$->is_union = $1;
+        $$->tag = std::move(*$2);
+        $$->has_body = true;
+        $$->members = std::move(*$4);
+        delete $2;
+        delete $4;
+    }
+    ;
+
+/* Members are not declared in any scope, so these rules neither call
+   EndDeclaration nor go through declarator_head. */
+member_list
+    : member_decl {
+        $$ = new std::vector<ast::MemberDecl>();
+        $$->push_back(std::move(*$1));
+        delete $1;
+    }
+    | member_list member_decl {
+        $$ = $1;
+        $$->push_back(std::move(*$2));
+        delete $2;
+    }
+    ;
+
+member_decl
+    : type_spec member_declarator_list ';' {
+        $$ = new ast::MemberDecl{*$1, std::move(*$2)};
+        delete $1;
+        delete $2;
+    }
+    ;
+
+member_declarator_list
+    : declarator {
+        $$ = new std::vector<ast::Declarator>();
+        $$->push_back(std::move(*$1));
+        delete $1;
+    }
+    | member_declarator_list ',' declarator {
+        $$ = $1;
+        $$->push_back(std::move(*$3));
+        delete $3;
     }
     ;
 
@@ -415,6 +495,7 @@ declaration
     }
     | type_spec ';' {
         EndDeclaration();
+        $1->MarkDeclarationOnly();
         $$ = new ast::DeclarationStmt(*$1, {}, ast::Storage::None);
         delete $1;
     }
@@ -570,6 +651,14 @@ postfix_expr
         delete $3;
     }
     | postfix_expr '[' expr ']' { $$ = new ast::Index(Own($1), Own($3)); }
+    | postfix_expr '.' name {
+        $$ = new ast::Member(Own($1), std::move(*$3), false);
+        delete $3;
+    }
+    | postfix_expr PTR_OP name {
+        $$ = new ast::Member(Own($1), std::move(*$3), true);
+        delete $3;
+    }
     | postfix_expr INC_OP { $$ = new ast::IncDec(true, false, Own($1)); }
     | postfix_expr DEC_OP { $$ = new ast::IncDec(false, false, Own($1)); }
     ;

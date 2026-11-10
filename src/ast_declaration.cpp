@@ -25,9 +25,56 @@ TypePtr TypeSpecifier::DeclareEnum(Context& ctx) const {
     return Type::Int();
 }
 
+// The record type a tag names. Without a body, any visible tag will do and an
+// unknown one is declared incomplete (so 'struct node *next' works inside
+// 'struct node'). With a body, or in 'struct T;', only the current scope is
+// searched, so an inner definition hides an outer tag instead of changing it.
+TypePtr TypeSpecifier::FindOrDeclareTag(Context& ctx) const {
+    if (record_->tag.empty()) return ctx.NewRecord(record_->is_union, "");
+    bool here_only = record_->has_body || declaration_only_;
+    TypePtr found = here_only ? ctx.FindTagHere(record_->tag)
+                              : ctx.FindTag(record_->tag);
+    if (found) return found;
+    TypePtr created = ctx.NewRecord(record_->is_union, record_->tag);
+    ctx.DeclareTag(record_->tag, created);
+    return created;
+}
+
+// The tag is declared before the members are resolved, so a member may point
+// to the record being defined.
+TypePtr TypeSpecifier::ResolveRecord(Context& ctx) const {
+    TypePtr record = FindOrDeclareTag(ctx);
+    if (!record->IsRecord() || record->IsUnion() != record_->is_union) {
+        throw std::runtime_error("'" + record_->tag + "' is a different kind of tag");
+    }
+    if (!record_->has_body) return record;
+    std::vector<RecordMember> members;
+    for (const MemberDecl& line : record_->members) {
+        TypePtr base = line.spec.Resolve(ctx);
+        for (const Declarator& d : line.declarators) {
+            auto [name, type] = d.Apply(base, ctx);
+            members.push_back(RecordMember{name, type, 0});
+        }
+    }
+    Type::DefineRecord(record, std::move(members));
+    return record;
+}
+
 TypePtr TypeSpecifier::Resolve(Context& ctx) const {
     if (kind_ == Kind::Enum && enum_->has_body) return DeclareEnum(ctx);
+    if (kind_ == Kind::Record) return ResolveRecord(ctx);
     return Lookup(ctx);
+}
+
+TypePtr TypeSpecifier::LookupRecord(const Context& ctx) const {
+    if (record_->has_body) {
+        throw std::runtime_error("struct or union definition not allowed here");
+    }
+    TypePtr record = ctx.LookupTag(record_->tag);
+    if (!record->IsRecord() || record->IsUnion() != record_->is_union) {
+        throw std::runtime_error("'" + record_->tag + "' is a different kind of tag");
+    }
+    return record;
 }
 
 TypePtr TypeSpecifier::Lookup(const Context& ctx) const {
@@ -38,6 +85,7 @@ TypePtr TypeSpecifier::Lookup(const Context& ctx) const {
             }
             if (!enum_->tag.empty()) ctx.LookupTag(enum_->tag);
             return Type::Int();
+        case Kind::Record: return LookupRecord(ctx);
         case Kind::TypedefName: {
             const Symbol& sym = ctx.Lookup(name_);
             if (sym.kind != SymbolKind::Typedef) {

@@ -52,6 +52,8 @@ FSUFFIX [fFlL]
 "extern"    { return T_EXTERN; }
 "static"    { return T_STATIC; }
 "enum"      { return T_ENUM; }
+"struct"    { return T_STRUCT; }
+"union"     { return T_UNION; }
 "typedef"   { return T_TYPEDEF; }
 "switch"    { return T_SWITCH; }
 "case"      { return T_CASE; }
@@ -96,6 +98,8 @@ FSUFFIX [fFlL]
 "||"   { return OR_OP; }
 "++"   { return INC_OP; }
 "--"   { return DEC_OP; }
+"->"   { return PTR_OP; }
+"."    { return '.'; }
 
 [-+*/%<>=!~&|^?:;,(){}\[\]]  { return yytext[0]; }
 

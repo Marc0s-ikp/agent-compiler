@@ -45,6 +45,16 @@ struct Symbol {
 // and label generation. See design sections 3 and 4.
 class Context {
 public:
+    Context() = default;
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
+    // Releases the members of every record made by NewRecord, which break
+    // the reference cycles of self-referential records.
+    ~Context();
+
+    // A new, incomplete struct or union, owned (for cleanup) by this context.
+    TypePtr NewRecord(bool is_union, const std::string& tag);
+
     // Scopes. Lookup searches the innermost scope first.
     void PushScope();
     void PopScope();
@@ -55,6 +65,9 @@ public:
     // ordinary names. Declare in the innermost scope; Lookup searches outwards.
     void DeclareTag(const std::string& tag, const TypePtr& type);
     TypePtr LookupTag(const std::string& tag) const;  // throws if unknown
+    TypePtr FindTag(const std::string& tag) const;    // null if unknown
+    // Only the innermost scope: a tag declared there, else null.
+    TypePtr FindTagHere(const std::string& tag) const;
     // Record a function in file scope; throws if it clashes with an earlier
     // declaration of the same name.
     void DeclareFunction(const std::string& name, const TypePtr& function_type);
@@ -86,6 +99,8 @@ public:
 
     // Frame. Slots grow downwards from s0, below the saved ra and s0.
     void BeginFunction(const TypePtr& return_type);
+    // A slot that lasts until the function ends. PopTemp never releases it,
+    // even if it was allocated while temps were live (D19).
     int AllocLocal(const TypePtr& type);
     int PushTemp(const TypePtr& type);
     void PopTemp();
@@ -118,6 +133,10 @@ public:
     // Function-level information.
     const std::string& ReturnLabel() const { return return_label_; }
     const TypePtr& ReturnType() const { return return_type_; }
+    // Where a function returning a struct through a hidden pointer keeps that
+    // pointer (an s0 offset); set by the prologue code, read by 'return'.
+    void SetReturnPointerSlot(int offset) { return_pointer_slot_ = offset; }
+    int ReturnPointerSlot() const { return return_pointer_slot_; }
 
     // Labels are unique across the whole file.
     std::string NewLabel(const std::string& prefix);
@@ -137,8 +156,11 @@ private:
 
     std::vector<std::map<std::string, Symbol>> scopes_;
     std::vector<std::map<std::string, TypePtr>> tag_scopes_;
+    std::vector<TypePtr> records_;
     int used_ = 0;                  // bytes currently allocated below s0
     int max_used_ = 0;              // high-water mark, decides the frame size
+    int floor_ = 0;                 // bytes that PopTemp must never release
+    int return_pointer_slot_ = 0;
     int outgoing_ = 0;              // outgoing stack-argument area (feature 3)
     std::vector<int> temp_marks_;   // 'used_' before each live temp
     std::vector<std::string> break_labels_;

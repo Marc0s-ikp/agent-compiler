@@ -1,5 +1,17 @@
 #include "type.hpp"
 
+#include <algorithm>
+#include <stdexcept>
+
+struct Type::RecordData {
+    bool is_union;
+    std::string tag;
+    bool complete = false;
+    std::vector<RecordMember> members;
+    int size = 0;
+    int align = 1;
+};
+
 TypePtr Type::Void() { return TypePtr(new Type(Kind::Void, 0, false)); }
 
 TypePtr Type::Integer(int size, bool is_signed) {
@@ -30,14 +42,83 @@ TypePtr Type::Function(TypePtr return_type, std::vector<TypePtr> params) {
     return TypePtr(t);
 }
 
+TypePtr Type::Record(bool is_union, std::string tag) {
+    Type* t = new Type(Kind::Record, 0, false);
+    t->record_ = std::make_shared<RecordData>();
+    t->record_->is_union = is_union;
+    t->record_->tag = std::move(tag);
+    return TypePtr(t);
+}
+
+namespace {
+int RoundUpTo(int value, int multiple) {
+    return (value + multiple - 1) / multiple * multiple;
+}
+}  // namespace
+
+// A struct places each member at the next offset its alignment allows; a
+// union puts every member at 0. The size is rounded up to the alignment so
+// that arrays of the record keep every element aligned.
+void Type::DefineRecord(const TypePtr& record, std::vector<RecordMember> members) {
+    RecordData& data = *record->record_;
+    if (data.complete) throw std::runtime_error("redefinition of struct or union");
+    int offset = 0;
+    int size = 0;
+    int align = 1;
+    for (size_t i = 0; i < members.size(); ++i) {
+        RecordMember& m = members[i];
+        if (m.type->IsVoid() || m.type->IsFunction() || m.type->Size() == 0) {
+            throw std::runtime_error("member '" + m.name + "' has incomplete type");
+        }
+        for (size_t j = 0; j < i; ++j) {
+            if (members[j].name == m.name) {
+                throw std::runtime_error("duplicate member '" + m.name + "'");
+            }
+        }
+        align = std::max(align, m.type->Align());
+        if (data.is_union) {
+            m.offset = 0;
+            size = std::max(size, m.type->Size());
+        } else {
+            offset = RoundUpTo(offset, m.type->Align());
+            m.offset = offset;
+            offset += m.type->Size();
+            size = offset;
+        }
+    }
+    if (members.empty()) throw std::runtime_error("struct or union has no members");
+    data.members = std::move(members);
+    data.size = RoundUpTo(size, align);
+    data.align = align;
+    data.complete = true;
+}
+
+void Type::ReleaseRecord(const TypePtr& record) {
+    record->record_->members.clear();
+}
+
+bool Type::IsUnion() const { return record_->is_union; }
+const std::string& Type::Tag() const { return record_->tag; }
+bool Type::IsComplete() const { return record_->complete; }
+const std::vector<RecordMember>& Type::Members() const { return record_->members; }
+
+const RecordMember* Type::FindMember(const std::string& name) const {
+    for (const RecordMember& m : record_->members) {
+        if (m.name == name) return &m;
+    }
+    return nullptr;
+}
+
 int Type::Size() const {
     if (kind_ == Kind::Array) return base_->Size() * length_;
+    if (kind_ == Kind::Record) return record_->size;
     return size_;
 }
 
-// An array aligns as its element.
+// An array aligns as its element, a record as its most aligned member.
 int Type::Align() const {
     if (kind_ == Kind::Array) return base_->Align();
+    if (kind_ == Kind::Record) return record_->align;
     return size_ == 0 ? 1 : size_;
 }
 
@@ -58,6 +139,7 @@ bool Type::Equals(const Type& o) const {
                 if (!params_[i]->Equals(*o.params_[i])) return false;
             }
             return true;
+        case Kind::Record: return record_ == o.record_;
     }
     return false;
 }

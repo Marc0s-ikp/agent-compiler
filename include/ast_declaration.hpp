@@ -28,29 +28,41 @@ struct EnumSpec {
     std::vector<Enumerator> items;
 };
 
+struct RecordSpec;
+
 // The type-specifier words of a declaration: int, unsigned, char, float, double, void,
-// enum.
+// enum, struct, union.
 class TypeSpecifier {
 public:
     enum class Kind { Int, Unsigned, Char, SignedChar, UnsignedChar, Float,
-                      Double, Void, Enum, TypedefName };
+                      Double, Void, Enum, Record, TypedefName };
     explicit TypeSpecifier(Kind kind) : kind_(kind) {}
     explicit TypeSpecifier(std::shared_ptr<const EnumSpec> spec)
         : kind_(Kind::Enum), enum_(std::move(spec)) {}
+    explicit TypeSpecifier(std::shared_ptr<const RecordSpec> spec)
+        : kind_(Kind::Record), record_(std::move(spec)) {}
     explicit TypeSpecifier(std::string typedef_name)
         : kind_(Kind::TypedefName), name_(std::move(typedef_name)) {}
-    // Resolving an enum with a body declares its tag and constants in the
-    // current scope, so call it once per declaration.
+    // The declaration is just 'struct T;': it declares T in the current scope
+    // even if an outer scope already has a T.
+    void MarkDeclarationOnly() { declaration_only_ = true; }
+    // Resolving an enum or record with a body declares its tag (and an enum's
+    // constants) in the current scope, so call it once per declaration.
     TypePtr Resolve(Context& ctx) const;
     // The same type without declaring anything, for places that only need
-    // the type (sizeof, GetType); an enum body is rejected there.
+    // the type (sizeof, GetType); an enum or record body is rejected there.
     TypePtr Lookup(const Context& ctx) const;
 
 private:
     TypePtr DeclareEnum(Context& ctx) const;
+    TypePtr ResolveRecord(Context& ctx) const;
+    TypePtr FindOrDeclareTag(Context& ctx) const;
+    TypePtr LookupRecord(const Context& ctx) const;
 
     Kind kind_;
+    bool declaration_only_ = false;
     std::shared_ptr<const EnumSpec> enum_;
+    std::shared_ptr<const RecordSpec> record_;
     std::string name_;  // TypedefName only
 };
 
@@ -127,6 +139,20 @@ struct InitDeclarator {
 struct Param {
     TypeSpecifier spec;
     Declarator declarator;
+};
+
+// One line of a struct body: a specifier and the members declared with it.
+struct MemberDecl {
+    TypeSpecifier spec;
+    std::vector<Declarator> declarators;
+};
+
+// 'struct tag { ... }', 'union { ... }' or just 'struct tag'.
+struct RecordSpec {
+    bool is_union = false;
+    std::string tag;  // empty if anonymous
+    bool has_body = false;
+    std::vector<MemberDecl> members;
 };
 
 // Parameter names and types after applying the declarators. A lone unnamed
