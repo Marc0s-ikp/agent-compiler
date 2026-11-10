@@ -11,11 +11,11 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: 219/224 before, 262/262 after (86 of 86 compiler_tests, 176 of 176 custom). No test that passed before now fails.
-Fixed: feature 8 (reviewer approved 2026-11-10): `struct` and `union` types, tags, member access, copy and assignment, initialisers, and by-value arguments and returns in the ilp32d ABI, including the hardware floating-point rules and hidden result pointers. Reference struct is 5/5. 38 new custom tests (36 from the tester, plus `struct_edge_abi` and `struct_big_frame`).
-Blocked: no new blockers. Non-blocking items from the review are in BLOCKERS "Nice to have from the feature 8 review". D19 awaits Marcus's acceptance.
+Pass count: 262/262 before, 272/272 after (86 of 86 compiler_tests, 186 of 186 custom). No test that passed before now fails.
+Fixed: cleanup session (reviewer approved 2026-11-10): a name is in scope in its own initialiser, null pointer constants and `void *` in `?:`, and `short` / `unsigned short`, with signed 2-byte struct fields and full-word outgoing stack arguments. 10 new custom tests.
+Blocked: no new blockers. Non-blocking items are in BLOCKERS "Nice to have from the cleanup review". Marcus accepted D19 on 2026-11-10.
 Remaining failures: none.
-Next: all 8 features are done. Marcus decides what follows; the open items are in docs/BLOCKERS.md.
+Next: nothing planned. All 8 features and the cleanup are done; the open items are in docs/BLOCKERS.md.
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -35,7 +35,7 @@ Next: all 8 features are done. Marcus decides what follows; the open items are i
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 176 | 176 |
+| custom (written by tester, D13) | 186 | 186 |
 
 ## History
 | Date | Passing | Change |
@@ -49,3 +49,4 @@ Next: all 8 features are done. Marcus decides what follows; the open items are i
 | 2026-11-09 | 195/207 | feature 6: char, strings, sizeof, local and global initialisers (159→195) |
 | 2026-11-09 | 219/224 | float: float and double, casts, floating ABI (195→219) |
 | 2026-11-10 | 262/262 | feature 8: structs, unions, by-value struct ABI (219→262) |
+| 2026-11-10 | 272/272 | cleanup: self-referencing initialisers, pointers in ?:, short (262→272) |
