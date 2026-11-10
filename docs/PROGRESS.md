@@ -8,14 +8,14 @@
 - [x] 5. Globals, static, enum, typedef, switch
 - [x] 6. char, strings, sizeof
 - [x] 7. float / double
-- [ ] 8. structs, unions
+- [x] 8. structs, unions
 
 ## Latest session
-Pass count: 195/207 before, 219/224 after (81 of 86 compiler_tests, 138 of 138 custom). No test that passed before now fails.
-Fixed: feature 7 (reviewed 2026-11-09: approved, no blocking findings; 71 edge-case values matched GCC -O0; merged by Marcus's approval): `float` and `double` types, floating literals, arithmetic, comparisons and conditions, conversions, cast expressions (integer casts too), the floating ABI rows including the split double, and floating global and local initialisers. Reference float is 7/7. 17 new custom tests (14 float tests from the tester, plus `float_split_double`, `float_nan_truth`, `cast_integer`).
-Blocked: no new blockers. The frame-size item stays open. Marcus accepted D17 and D18 on 2026-11-09.
-Remaining failures: struct (5), all compiler crashes because the feature does not exist yet.
-Next: feature 8, structs and unions. See BLOCKERS "Do first" item 5.
+Pass count: 219/224 before, 262/262 after (86 of 86 compiler_tests, 176 of 176 custom). No test that passed before now fails.
+Fixed: feature 8 (reviewer approved 2026-11-10): `struct` and `union` types, tags, member access, copy and assignment, initialisers, and by-value arguments and returns in the ilp32d ABI, including the hardware floating-point rules and hidden result pointers. Reference struct is 5/5. 38 new custom tests (36 from the tester, plus `struct_edge_abi` and `struct_big_frame`).
+Blocked: no new blockers. Non-blocking items from the review are in BLOCKERS "Nice to have from the feature 8 review". D19 awaits Marcus's acceptance.
+Remaining failures: none.
+Next: all 8 features are done. Marcus decides what follows; the open items are in docs/BLOCKERS.md.
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -32,10 +32,10 @@ Next: feature 8, structs and unions. See BLOCKERS "Do first" item 5.
 | pointer | 5 | 5 |
 | programs | 3 | 3 |
 | strings | 5 | 5 |
-| struct | 0 | 5 |
+| struct | 5 | 5 |
 | types | 5 | 5 |
-| **Reference total** | **81** | **86** |
-| custom (written by tester, D13) | 138 | 138 |
+| **Reference total** | **86** | **86** |
+| custom (written by tester, D13) | 176 | 176 |
 
 ## History
 | Date | Passing | Change |
@@ -48,3 +48,4 @@ Next: feature 8, structs and unions. See BLOCKERS "Do first" item 5.
 | 2026-11-08 | 159/180 | feature 5: globals, static, enum, typedef, switch (127→159) |
 | 2026-11-09 | 195/207 | feature 6: char, strings, sizeof, local and global initialisers (159→195) |
 | 2026-11-09 | 219/224 | float: float and double, casts, floating ABI (195→219) |
+| 2026-11-10 | 262/262 | feature 8: structs, unions, by-value struct ABI (219→262) |
