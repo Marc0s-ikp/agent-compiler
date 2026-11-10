@@ -50,7 +50,10 @@ void PlaceArg(std::ostream& os, const ArgLoc& loc, const TypePtr& type,
             break;
         case ArgLoc::Kind::Stack:
             EmitLoad(os, *type, ScratchReg(*type), "s0", slot);
-            EmitStore(os, *type, ScratchReg(*type), "sp", loc.offset);
+            // A narrow integer was extended by the load; the psABI wants the
+            // whole 4-byte slot written.
+            EmitStore(os, type->IsInteger() ? *word : *type,
+                      ScratchReg(*type), "sp", loc.offset);
             break;
         case ArgLoc::Kind::Fields: break;  // structs only
     }

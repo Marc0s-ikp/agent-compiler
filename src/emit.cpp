@@ -201,7 +201,10 @@ void EmitLoadBytes(std::ostream& os, const std::string& reg, int bytes,
     if (bytes == 1) return EmitMem(os, is_signed ? "lb" : "lbu", reg, base, off);
     EmitMem(os, "lbu", reg, base, off);
     for (int i = 1; i < bytes; ++i) {
-        EmitMem(os, "lbu", "t0", base, off + i);
+        // The top byte of a signed 2-byte value is loaded signed, which
+        // extends the sign through the register.
+        bool top_signed = is_signed && bytes == 2 && i == 1;
+        EmitMem(os, top_signed ? "lb" : "lbu", "t0", base, off + i);
         os << "\tslli t0, t0, " << 8 * i << "\n\tor " << reg << ", " << reg
            << ", t0\n";
     }

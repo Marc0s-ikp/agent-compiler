@@ -37,6 +37,7 @@ FSUFFIX [fFlL]
 "unsigned"  { return T_UNSIGNED; }
 "signed"    { return T_SIGNED; }
 "char"      { return T_CHAR; }
+"short"     { return T_SHORT; }
 "float"     { return T_FLOAT; }
 "double"    { return T_DOUBLE; }
 "sizeof"    { return T_SIZEOF; }

@@ -88,7 +88,7 @@ From the same review. Items 1-3 were done in feature 6 (D17). Local brace initia
   declarators (`sizeof(int (*)(int))`, `(int (*)(int))p`).
 - An `enum { ... }` body inside a parameter list or a type name is rejected ("enum definition not allowed here"),
   because those paths only look types up (D17). Enums declared as ordinary declarations are unaffected.
-- `short` is still not a keyword.
+- `short` is now a keyword (cleanup session): `short`, `short int`, `signed short [int]`, `unsigned short [int]`.
 - A local initialiser zeroes the whole array before storing, even when the list covers it. Correct, slightly wasteful.
 
 ## Nice to have from the feature 6 review
@@ -97,7 +97,7 @@ From the feature 6 review (2026-11-09). None of these blocked the merge, and non
 
 1. `src/ast_operators.cpp:337`: `Comma::GetType` returns `rhs_->GetType`, so the array does not decay.
    `int a[3]; sizeof(0, a)` gives 12, gcc gives 4. Fix: return `rhs_->ValueType(ctx)`.
-2. `src/ast_call.cpp:74`: narrow stack arguments are written with `sb`, but the psABI widens them to the full 4-byte
+2. DONE (cleanup). `src/ast_call.cpp:74`: narrow stack arguments are written with `sb`, but the psABI widens them to the full 4-byte
    slot. No visible effect today, because gcc's callee reads with `lbu`/`lb`. Fix: store the extended register with `sw`.
 3. `src/parser.y:332-354`: unnamed array parameters in prototypes are a syntax error, as in `int g(char [], int []);`.
    Not new in feature 6. Fix: try `type_spec abstract_declarator` in `param_decl` and check for conflicts.
@@ -127,7 +127,7 @@ For feature 8: DONE (D19). `src/local_init.cpp` now zeroes structs and unions as
 ## Known limits left by feature 8
 
 - A `struct` or `union` body is rejected inside a type name or parameter list (`sizeof(struct { int a; })`, `int f(struct { int a; } s)`), as enum bodies are (D17). A tag that is not yet declared in a parameter list (`int f(struct Unknown *p);`) is an "unknown tag" error where C declares it in the prototype's scope. Name the struct in a declaration first.
-- No bit-fields, no anonymous struct or union members (C11), no `short` members (`short` is not a keyword), no function-pointer members, no flexible array members.
+- No bit-fields, no anonymous struct or union members (C11), no function-pointer members, no flexible array members.
 - Struct values cannot be compared (`==`), used in a condition, cast, or have `&&`/`||` applied; each is a compile error as in C.
 - Every struct-returning call site keeps its own result slot until the function ends (D19 c), so a function with many such calls has a larger frame than needed.
 - A by-reference struct parameter is copied twice (the caller's copy, then the callee's home slot).
@@ -142,7 +142,7 @@ From the feature 8 review (2026-11-10). None of these blocked the merge, and non
 2. DONE (cleanup). `src/ast_operators.cpp:467-468`: `q = c ? p : (void*)0;` with `struct S *p` is rejected as "incompatible pointers in ?:", while GCC accepts it. Fix: let `void *` combine with any object pointer and return the non-void pointer type.
 3. `src/ast_member.cpp:45-49`: `Member::EmitAddress` accepts a non-lvalue base, so `f().a = 3;` and `(c ? a : b).a = 3;` compile where GCC rejects them. Only invalid programs are affected.
 4. `src/ast_function.cpp:78`, `src/ast_call.cpp:116`: an incomplete by-value parameter or return type gets a size-0 slot instead of an error (`struct S; int f(struct S x) { return 0; }`). Only invalid programs are affected.
-5. `src/emit.cpp:198-208`: `EmitLoadBytes` ignores `is_signed` for 2 and 3 bytes, although `include/emit.hpp` says it sign-extends. Unreachable while `short` is not a keyword.
+5. DONE (cleanup). `src/emit.cpp:198-208`: `EmitLoadBytes` ignores `is_signed` for 2 and 3 bytes, although `include/emit.hpp` says it sign-extends. Unreachable while `short` is not a keyword.
 6. Duplicated helpers: `RoundUp` in `src/context.cpp:12` and `src/abi.cpp:49`, `RoundUpTo` in `src/type.cpp:54`. The integer register name helper is in `src/record_abi.cpp:7` and, as `IntArgReg`, `src/ast_call.cpp:25`.
 7. Clarity: `Cursor::TakeWordPair` (`src/abi.cpp:102`) is a one-line alias for `TakeDoubleAsInts`; `Flatten` rebuilds a scalar `Type` to get a `TypePtr` (`src/abi.cpp:28-30`); the comment at `include/type.hpp:6-8` is stale.
 8. Simpler ownership option for records: `Type` holds a non-owning `RecordData*` and `Context` owns `vector<unique_ptr<RecordData>>`, which removes `ReleaseRecord`. `Type::Record` would then need the owner passed in. The reviewer considered the current shape sound.

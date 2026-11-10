@@ -56,7 +56,7 @@ static ast::StmtPtr Own(ast::Stmt* s) { return ast::StmtPtr(s); }
 
 %token <str> IDENTIFIER INT_LITERAL FLOAT_LITERAL T_TYPE_NAME
 %token <str> CHAR_LITERAL STRING_LITERAL
-%token T_INT T_UNSIGNED T_SIGNED T_CHAR T_FLOAT T_DOUBLE T_SIZEOF T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
+%token T_INT T_UNSIGNED T_SIGNED T_CHAR T_SHORT T_FLOAT T_DOUBLE T_SIZEOF T_VOID T_RETURN T_IF T_ELSE T_WHILE T_DO T_FOR
 %token T_BREAK T_CONTINUE T_EXTERN T_STATIC T_ENUM T_TYPEDEF T_SWITCH T_CASE T_DEFAULT T_STRUCT T_UNION
 %token LE_OP GE_OP EQ_OP NE_OP AND_OP OR_OP LEFT_OP RIGHT_OP INC_OP DEC_OP PTR_OP
 %token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
@@ -175,6 +175,12 @@ type_spec
     | T_DOUBLE           { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Double); }
     | T_SIGNED T_CHAR    { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::SignedChar); }
     | T_UNSIGNED T_CHAR  { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::UnsignedChar); }
+    | T_SHORT            { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Short); }
+    | T_SHORT T_INT      { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Short); }
+    | T_SIGNED T_SHORT   { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Short); }
+    | T_SIGNED T_SHORT T_INT { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Short); }
+    | T_UNSIGNED T_SHORT { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::UnsignedShort); }
+    | T_UNSIGNED T_SHORT T_INT { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::UnsignedShort); }
     | T_VOID             { $$ = new ast::TypeSpecifier(ast::TypeSpecifier::Kind::Void); }
     | T_TYPE_NAME        { $$ = new ast::TypeSpecifier(std::move(*$1)); delete $1; }
     | enum_spec {

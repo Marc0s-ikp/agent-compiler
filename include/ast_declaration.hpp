@@ -34,7 +34,8 @@ struct RecordSpec;
 // enum, struct, union.
 class TypeSpecifier {
 public:
-    enum class Kind { Int, Unsigned, Char, SignedChar, UnsignedChar, Float,
+    enum class Kind { Int, Unsigned, Char, SignedChar, UnsignedChar, Short,
+                      UnsignedShort, Float,
                       Double, Void, Enum, Record, TypedefName };
     explicit TypeSpecifier(Kind kind) : kind_(kind) {}
     explicit TypeSpecifier(std::shared_ptr<const EnumSpec> spec)
