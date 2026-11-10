@@ -50,3 +50,22 @@ void EmitFloatTruth(std::ostream& os, const Type& type);
 // Both must be scalar (a source array must be decayed by the caller first),
 // or both void. A pointer cannot convert to or from a floating type.
 void EmitConvert(std::ostream& os, const Type& from, const Type& to);
+
+// Copies a struct or union of 'bytes' bytes and alignment 'align' from the
+// address in 'src' to the address in 'dst' (D19). Handles any size; a large
+// one uses a loop. Clobbers t0, t3, t4 and t5, so 'dst' and 'src' must be
+// other registers; both stay unchanged.
+void EmitCopyMem(std::ostream& os, const std::string& dst,
+                 const std::string& src, int bytes, int align);
+
+// Loads 'bytes' (1 to 4) bytes of an integer piece of a struct, zero- or
+// sign-extended, into 'reg' from off(base). A whole aligned word is one 'lw';
+// anything else is built byte by byte, so it never reads past the object or
+// reads a misaligned word. 'align' is the alignment of the struct. Clobbers
+// t0; 'reg' and 'base' must not be t0.
+void EmitLoadBytes(std::ostream& os, const std::string& reg, int bytes,
+                   bool is_signed, int align, const std::string& base, int off);
+// The matching store of the low 'bytes' bytes of 'reg'. Clobbers t0; 'reg'
+// and 'base' must not be t0.
+void EmitStoreBytes(std::ostream& os, const std::string& reg, int bytes,
+                    int align, const std::string& base, int off);

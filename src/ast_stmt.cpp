@@ -30,7 +30,7 @@ void DeclarationStmt::DeclareStatic(const std::string& name, const TypePtr& type
         final_type = built.type;
         data = built.data;
     }
-    if (final_type->Size() == 0) throw std::runtime_error("array size missing");
+    if (final_type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
     std::string label = ctx.AddStaticLocal(final_type, init ? &data : nullptr);
     ctx.Declare(name, Symbol::Global(final_type, label));
 }
@@ -42,10 +42,10 @@ void DeclarationStmt::DeclareLocal(std::ostream& os, const std::string& name,
                                    Context& ctx) const {
     FlatInit flat;
     if (init) {
-        flat = FlattenInit(type, *init);
+        flat = FlattenInit(type, *init, ctx);
         type = flat.type;
     }
-    if (type->Size() == 0) throw std::runtime_error("array size missing");
+    if (type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
     int offset = ctx.AllocLocal(type);
     ctx.Declare(name, Symbol::Local(type, offset));
     if (init) EmitLocalInit(os, ctx, flat, offset);

@@ -6,8 +6,17 @@ namespace ast {
 
 namespace {
 
+// A struct-valued expression is the address of the source; copy it in.
+void EmitRecordItem(std::ostream& os, Context& ctx, const InitItem& item,
+                    int offset) {
+    item.value->EmitRISC(os, ctx);
+    EmitAddrOffset(os, "t1", "s0", offset + item.offset);
+    EmitCopyMem(os, "t1", "a0", item.type->Size(), item.type->Align());
+}
+
 void EmitScalarItem(std::ostream& os, Context& ctx, const InitItem& item,
                     int offset) {
+    if (item.type->IsRecord()) return EmitRecordItem(os, ctx, item, offset);
     item.value->EmitRISC(os, ctx);
     EmitConvert(os, *item.value->ValueType(ctx), *item.type);
     EmitStore(os, *item.type, AccReg(*item.type), "s0", offset + item.offset);
@@ -29,7 +38,7 @@ void EmitStringItem(std::ostream& os, const InitItem& item, int offset) {
 
 void EmitLocalInit(std::ostream& os, Context& ctx, const FlatInit& flat,
                    int offset) {
-    if (flat.type->IsArray()) EmitZeroMem(os, "s0", offset, flat.type->Size());
+    if (flat.type->IsArray() || flat.type->IsRecord()) EmitZeroMem(os, "s0", offset, flat.type->Size());
     for (const InitItem& item : flat.items) {
         if (item.value) {
             EmitScalarItem(os, ctx, item, offset);

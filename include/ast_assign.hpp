@@ -13,6 +13,8 @@ public:
     void EmitRISC(std::ostream& os, Context& ctx) const override;
 
 private:
+    void EmitRecordCopy(std::ostream& os, const Type& type, int address_slot) const;
+
     ExprPtr lhs_, rhs_;
 };
 

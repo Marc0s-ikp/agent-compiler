@@ -104,6 +104,8 @@ void EmitFloatToInt(std::ostream& os, const Type& from, const Type& to) {
 
 void EmitConvert(std::ostream& os, const Type& from, const Type& to) {
     if (from.IsVoid() && to.IsVoid()) return;
+    // A struct value is its address (D19), and only the same record converts.
+    if (from.IsRecord() && from.Equals(to)) return;
     if (!from.IsScalar() || !to.IsScalar()) {
         throw std::runtime_error("invalid type conversion");
     }
@@ -164,4 +166,53 @@ void EmitBranchIfNonZero(std::ostream& os, const std::string& label) {
     os << "\tbeqz a0, 1f\n";
     EmitJump(os, label);
     os << "1:\n";
+}
+
+namespace {
+// A struct whose alignment is 4 or more is copied a word at a time (its size
+// is a multiple of its alignment), any other a byte at a time.
+int CopyUnit(int align) { return align >= 4 ? 4 : 1; }
+}  // namespace
+
+void EmitCopyMem(std::ostream& os, const std::string& dst,
+                 const std::string& src, int bytes, int align) {
+    const int kUnrolledMax = 16;  // units copied with straight-line code
+    int unit = CopyUnit(align);
+    const char* load = unit == 4 ? "lw" : "lbu";
+    const char* store = unit == 4 ? "sw" : "sb";
+    int count = bytes / unit;
+    if (count <= kUnrolledMax) {
+        for (int i = 0; i < count; ++i) {
+            os << "\t" << load << " t0, " << i * unit << "(" << src << ")\n";
+            os << "\t" << store << " t0, " << i * unit << "(" << dst << ")\n";
+        }
+        return;
+    }
+    os << "\tmv t3, " << dst << "\n\tmv t4, " << src << "\n";
+    os << "\tli t5, " << bytes << "\n\tadd t5, t3, t5\n";
+    os << "1:\n\t" << load << " t0, 0(t4)\n\t" << store << " t0, 0(t3)\n";
+    os << "\taddi t3, t3, " << unit << "\n\taddi t4, t4, " << unit << "\n";
+    os << "\tbne t3, t5, 1b\n";
+}
+
+void EmitLoadBytes(std::ostream& os, const std::string& reg, int bytes,
+                   bool is_signed, int align, const std::string& base, int off) {
+    if (bytes == 4 && align >= 4) return EmitMem(os, "lw", reg, base, off);
+    if (bytes == 1) return EmitMem(os, is_signed ? "lb" : "lbu", reg, base, off);
+    EmitMem(os, "lbu", reg, base, off);
+    for (int i = 1; i < bytes; ++i) {
+        EmitMem(os, "lbu", "t0", base, off + i);
+        os << "\tslli t0, t0, " << 8 * i << "\n\tor " << reg << ", " << reg
+           << ", t0\n";
+    }
+}
+
+void EmitStoreBytes(std::ostream& os, const std::string& reg, int bytes,
+                    int align, const std::string& base, int off) {
+    if (bytes == 4 && align >= 4) return EmitMem(os, "sw", reg, base, off);
+    EmitMem(os, "sb", reg, base, off);
+    for (int i = 1; i < bytes; ++i) {
+        os << "\tsrli t0, " << reg << ", " << 8 * i << "\n";
+        EmitMem(os, "sb", "t0", base, off + i);
+    }
 }

@@ -11,10 +11,11 @@ bool IsCharArray(const Type& t) {
 }
 
 // Walks the initialiser tree and records the items. This is the one place
-// that knows how a type's elements are laid out; records (feature 8) become
-// new cases of Scalar and Object.
+// that knows how a type's elements and members are laid out.
 class Flattener {
 public:
+    explicit Flattener(const Context& ctx) : ctx_(ctx) {}
+
     std::vector<InitItem> TakeItems() { return std::move(items_); }
 
     // The string literal that initialises this char array: 'item' is "ab" or
@@ -41,6 +42,18 @@ public:
         return length;
     }
 
+    // A whole struct or union object: 'T x = { ... }' or 'T x = other'.
+    void TopRecord(const TypePtr& type, const Initializer& init) {
+        if (init.IsList()) {
+            size_t pos = 0;
+            return Record(type, init.Items(), pos, true, 0);
+        }
+        if (!IsRecordValue(type, init)) {
+            throw std::runtime_error("invalid initialiser for a struct or union");
+        }
+        items_.push_back(InitItem{0, type, &init.Value(), ""});
+    }
+
     // One scalar from a bare expression or a braced single value.
     void Scalar(const TypePtr& type, const Initializer& item, int offset) {
         if (item.IsList()) {
@@ -56,11 +69,50 @@ public:
         items_.push_back(InitItem{offset, type, &item.Value(), ""});
     }
 
+    // True if 'item' is an expression whose type is exactly this record.
+    bool IsRecordValue(const TypePtr& type, const Initializer& item) const {
+        return !item.IsList() && item.Value().ValueType(ctx_)->Equals(*type);
+    }
+
+    // Fills a struct or union from list[pos...], the way Array does. A union
+    // takes only its first member.
+    void Record(const TypePtr& type, const Initializer::List& list, size_t& pos,
+                bool braced, int offset) {
+        if (!type->IsComplete()) throw std::runtime_error("initialiser for an incomplete type");
+        const std::vector<RecordMember>& members = type->Members();
+        size_t used = type->IsUnion() ? 1 : members.size();
+        for (size_t i = 0; i < used && pos < list.size(); ++i) {
+            Object(members[i].type, list, pos, offset + members[i].offset);
+        }
+        if (braced && pos < list.size()) {
+            throw std::runtime_error("excess elements in struct initialiser");
+        }
+    }
+
+    // A struct at list[pos]: a struct-valued expression, a braced list for
+    // it, or (brace elision) the start of its members in the enclosing list.
+    void RecordObject(const TypePtr& type, const Initializer::List& list,
+                      size_t& pos, int offset) {
+        const Initializer& item = *list[pos];
+        if (IsRecordValue(type, item)) {
+            items_.push_back(InitItem{offset, type, &item.Value(), ""});
+            ++pos;
+        } else if (item.IsList()) {
+            size_t inner_pos = 0;
+            Record(type, item.Items(), inner_pos, true, offset);
+            ++pos;
+        } else {
+            Record(type, list, pos, false, offset);
+        }
+    }
+
     // The object that starts at list[pos]; advances pos past what it used.
     void Object(const TypePtr& type, const Initializer::List& list,
                 size_t& pos, int offset) {
         const Initializer& item = *list[pos];
-        if (!type->IsArray()) {
+        if (type->IsRecord()) {
+            RecordObject(type, list, pos, offset);
+        } else if (!type->IsArray()) {
             Scalar(type, item, offset);
             ++pos;
         } else if (const std::string* s = StringFor(type, item)) {
@@ -97,15 +149,19 @@ public:
     }
 
 private:
+    const Context& ctx_;
     std::vector<InitItem> items_;
 };
 
 }  // namespace
 
-FlatInit FlattenInit(const TypePtr& type, const Initializer& init) {
-    Flattener flat;
+FlatInit FlattenInit(const TypePtr& type, const Initializer& init,
+                     const Context& ctx) {
+    Flattener flat(ctx);
     TypePtr result = type;
-    if (!type->IsArray()) {
+    if (type->IsRecord()) {
+        flat.TopRecord(type, init);
+    } else if (!type->IsArray()) {
         flat.Scalar(type, init, 0);
     } else if (const std::string* s = flat.StringFor(type, init)) {
         int length = flat.Bytes(type, *s, 0);

@@ -455,8 +455,14 @@ void UnaryOp::EmitRISC(std::ostream& os, Context& ctx) const {
 // (null pointer constants), and two pointers must agree.
 TypePtr Ternary::GetType(const Context& ctx) const {
     RequireScalar(cond_->ValueType(ctx));
-    TypePtr a = RequireScalar(then_->ValueType(ctx));
-    TypePtr b = RequireScalar(else_->ValueType(ctx));
+    TypePtr a = then_->ValueType(ctx);
+    TypePtr b = else_->ValueType(ctx);
+    if (a->IsRecord() || b->IsRecord()) {
+        if (!a->Equals(*b)) throw std::runtime_error("different structs in ?:");
+        return a;
+    }
+    RequireScalar(a);
+    RequireScalar(b);
     if (a->IsArithmetic() && b->IsArithmetic()) return UsualArithmetic(a, b);
     if (a->IsPointer() && b->IsPointer()) {
         if (!a->Equals(*b)) throw std::runtime_error("incompatible pointers in ?:");

@@ -18,6 +18,14 @@ TypePtr TargetType(const Expr& lhs, const Context& ctx) {
     return RequireScalar(type);
 }
 
+// A plain assignment may also copy a whole struct or union.
+TypePtr AssignTargetType(const Expr& lhs, const Context& ctx) {
+    TypePtr type = lhs.GetType(ctx);
+    if (!type->IsRecord()) return TargetType(lhs, ctx);
+    if (!type->IsComplete()) throw std::runtime_error("assignment to an incomplete type");
+    return type;
+}
+
 // Bytes ++ and -- add: 1, or the pointee size for a pointer.
 int StepSize(const Type& type) {
     return type.IsPointer() ? PointeeSize(type) : 1;
@@ -28,7 +36,16 @@ int StepSize(const Type& type) {
 // ---- Assign ----
 
 TypePtr Assign::GetType(const Context& ctx) const {
-    return TargetType(*lhs_, ctx);
+    return AssignTargetType(*lhs_, ctx);
+}
+
+// The right side is a struct's address; the bytes are copied to the target,
+// whose address is also the value of the assignment.
+void Assign::EmitRecordCopy(std::ostream& os, const Type& type,
+                            int address_slot) const {
+    EmitLoad(os, *AddressType(), "t1", "s0", address_slot);
+    EmitCopyMem(os, "t1", "a0", type.Size(), type.Align());
+    os << "\tmv a0, t1\n";
 }
 
 void Assign::EmitRISC(std::ostream& os, Context& ctx) const {
@@ -38,8 +55,12 @@ void Assign::EmitRISC(std::ostream& os, Context& ctx) const {
     EmitStore(os, *AddressType(), "a0", "s0", slot);
     rhs_->EmitRISC(os, ctx);
     EmitConvert(os, *rhs_->ValueType(ctx), *type);
-    EmitLoad(os, *AddressType(), "t0", "s0", slot);
-    EmitStore(os, *type, AccReg(*type), "t0", 0);
+    if (type->IsRecord()) {
+        EmitRecordCopy(os, *type, slot);
+    } else {
+        EmitLoad(os, *AddressType(), "t0", "s0", slot);
+        EmitStore(os, *type, AccReg(*type), "t0", 0);
+    }
     ctx.PopTemp();
 }
 

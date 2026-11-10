@@ -98,7 +98,7 @@ private:
 
 GlobalInit BuildGlobalInit(const TypePtr& type, const Initializer& init,
                            Context& ctx) {
-    FlatInit flat = FlattenInit(type, init);
+    FlatInit flat = FlattenInit(type, init, ctx);
     InitWriter writer(ctx);
     writer.Object(flat);
     return GlobalInit{flat.type, writer.Text()};
