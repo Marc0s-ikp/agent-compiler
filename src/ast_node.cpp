@@ -4,6 +4,11 @@
 
 namespace ast {
 
+bool Expr::IsNullPointerConstant(const Context& ctx) const {
+    return GetType(ctx)->IsInteger() && EvalConst(ctx) == 0L;
+}
+
+
 std::optional<ConstValue> Expr::EvalConstValue(Context& ctx) const {
     std::optional<long> n = EvalConst(ctx);
     if (!n) return std::nullopt;

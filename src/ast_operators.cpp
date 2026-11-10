@@ -451,8 +451,26 @@ void UnaryOp::EmitRISC(std::ostream& os, Context& ctx) const {
 
 // ---- Ternary ----
 
+namespace {
+
+// The C rule for two pointer operands of ?: . A null pointer constant takes
+// the other operand's type; 'void *' with an object pointer gives 'void *';
+// otherwise the types must be identical.
+TypePtr CombinePointers(const Context& ctx, const Expr& e1, const Expr& e2) {
+    TypePtr a = e1.ValueType(ctx);
+    TypePtr b = e2.ValueType(ctx);
+    if (e1.IsNullPointerConstant(ctx)) return b;
+    if (e2.IsNullPointerConstant(ctx)) return a;
+    if (a->Equals(*b)) return a;
+    if (a->Base()->IsVoid()) return a;
+    if (b->Base()->IsVoid()) return b;
+    throw std::runtime_error("incompatible pointers in ?:");
+}
+
+}  // namespace
+
 // Integers use the usual arithmetic type; a pointer wins over an integer
-// (null pointer constants), and two pointers must agree.
+// (null pointer constants), and two pointers combine by CombinePointers.
 TypePtr Ternary::GetType(const Context& ctx) const {
     RequireScalar(cond_->ValueType(ctx));
     TypePtr a = then_->ValueType(ctx);
@@ -465,8 +483,7 @@ TypePtr Ternary::GetType(const Context& ctx) const {
     RequireScalar(b);
     if (a->IsArithmetic() && b->IsArithmetic()) return UsualArithmetic(a, b);
     if (a->IsPointer() && b->IsPointer()) {
-        if (!a->Equals(*b)) throw std::runtime_error("incompatible pointers in ?:");
-        return a;
+        return CombinePointers(ctx, *then_, *else_);
     }
     return a->IsPointer() ? a : b;
 }

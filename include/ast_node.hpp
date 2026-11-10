@@ -42,6 +42,9 @@ public:
     virtual std::optional<long> EvalConst(const Context&) const {
         return std::nullopt;
     }
+    // True for an integer constant expression of value 0, or such a constant
+    // cast to 'void *'. The C rule for what may stand for a null pointer.
+    virtual bool IsNullPointerConstant(const Context& ctx) const;
     // The value as a constant that may name a global's address ('&x', 'arr',
     // 'arr + 1'). Defaults to EvalConst, so integer constants need no override.
     // The context is mutable because a string literal's address constant

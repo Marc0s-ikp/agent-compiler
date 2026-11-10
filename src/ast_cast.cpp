@@ -29,6 +29,13 @@ std::optional<long> Cast::EvalConst(const Context& ctx) const {
     return WrapToType(*n, *to);
 }
 
+bool Cast::IsNullPointerConstant(const Context& ctx) const {
+    TypePtr to = GetType(ctx);
+    if (to->IsInteger()) return Expr::IsNullPointerConstant(ctx);
+    return to->IsPointer() && to->Base()->IsVoid() &&
+           operand_->IsNullPointerConstant(ctx);
+}
+
 std::optional<ConstValue> Cast::EvalConstValue(Context& ctx) const {
     TypePtr to = GetType(ctx);
     if (to->IsVoid()) return std::nullopt;
