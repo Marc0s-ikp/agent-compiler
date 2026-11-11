@@ -311,7 +311,10 @@ migration.
 **IR checker.** `CheckIR(const ir::Module&)` runs on every module before the backend sees it,
 every time the compiler runs with `--ir` (and with `--emit-ir`), in every build. It is not behind
 `#ifdef DEBUG`. So every `COMPILER_FLAGS=--ir` suite run checks the IR of all 283 tests. A failure
-stops the compile with an error that names the function and instruction. It checks:
+stops the compile with an error that names the function and instruction. With `--emit-ir` the order
+is reversed (Marcus, 2026-11-11, step 1): the dump is written first, then the checker runs and its
+errors are printed after the dump, and the compile still fails. A broken module can then still be
+inspected. With `--ir` alone the checker runs before the backend, as above. It checks:
 - every temporary is defined before it is used, in the order of the instruction list (the two
   definition sites of a `?:` temp both come before its use)
 - operand types are consistent: the operands of an arithmetic or compare instruction have the same IR
@@ -499,6 +502,8 @@ The prologue then copies each incoming register piece to its parameter's home, e
    error and never falls back to a default (21.3).
 3. One slot per temporary, with no reuse. Slot reuse is noted as a possible later optimisation (21.4).
 4. Added: `--emit-ir` and the IR checker, both in step 1 (21.2). The checker runs on every `--ir`
-   compile, in every build, not only in `DEBUG` builds (Marcus, 2026-11-11).
+   compile, in every build, not only in `DEBUG` builds (Marcus, 2026-11-11). With `--emit-ir` the
+   dump is written before the checker runs, and the checker's errors follow it (Marcus, 2026-11-11,
+   recorded in step 1).
 5. Added: module-level data (globals from `ConstValue`, strings, float constants) as IR entries that
    the backend writes to `.data`/`.rodata` (21.2a).
