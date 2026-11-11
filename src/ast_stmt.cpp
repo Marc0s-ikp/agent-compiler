@@ -1,4 +1,6 @@
 #include "ast_stmt.hpp"
+#include "ir_gen.hpp"
+#include "ast_lower.hpp"
 
 #include <stdexcept>
 
@@ -81,6 +83,52 @@ void ReturnStmt::EmitRISC(std::ostream& os, Context& ctx) const {
         if (to->IsRecord()) EmitReturnRecord(os, ctx, *to);
     }
     os << "\tj " << ctx.ReturnLabel() << "\n";
+}
+
+
+// ---- --ir lowering ----
+
+using ir::Operand;
+
+void CompoundStmt::EmitIR(IRGen& gen) const {
+    gen.Ctx().PushScope();
+    for (const StmtPtr& stmt : body_) stmt->EmitIR(gen);
+    gen.Ctx().PopScope();
+}
+
+void ExprStmt::EmitIR(IRGen& gen) const {
+    if (expr_) expr_->EmitValue(gen);
+}
+
+void DeclarationStmt::EmitIR(IRGen& gen) const {
+    Context& ctx = gen.Ctx();
+    TypePtr base = spec_.Resolve(ctx);
+    for (const InitDeclarator& d : declarators_) {
+        auto [name, type] = d.declarator.Apply(base, ctx);
+        if (storage_ == Storage::Typedef) {
+            ctx.Declare(name, Symbol::Typedef(type));
+            continue;
+        }
+        if (storage_ == Storage::Static) throw std::runtime_error("not in IR yet: static local");
+        if (type->IsVoid() || type->IsFunction()) {
+            throw std::runtime_error("invalid type for variable '" + name + "'");
+        }
+        RequireIrInteger(*type);
+        if (d.init && d.init->IsList()) throw std::runtime_error("not in IR yet: initialiser list");
+        Operand object = gen.AddFrameObject(name, *type);
+        ctx.Declare(name, Symbol::IrLocal(type, object.name));
+        if (d.init) {
+            Operand value = ValueAs(gen, d.init->Value(), *type);
+            gen.Store(IRGen::ToIr(*type), value, gen.AddressOf(object));
+        }
+    }
+}
+
+void ReturnStmt::EmitIR(IRGen& gen) const {
+    if (!value_) return gen.Return();
+    const TypePtr& to = gen.Ctx().ReturnType();
+    RequireIrInteger(*to);
+    gen.Return(ValueAs(gen, *value_, *to));
 }
 
 }  // namespace ast

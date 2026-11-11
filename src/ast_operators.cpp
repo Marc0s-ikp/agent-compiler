@@ -1,4 +1,6 @@
 #include "ast_operators.hpp"
+#include "ir_gen.hpp"
+#include "ast_lower.hpp"
 
 #include <stdexcept>
 
@@ -548,6 +550,79 @@ TypePtr Comma::GetType(const Context& ctx) const { return rhs_->GetType(ctx); }
 void Comma::EmitRISC(std::ostream& os, Context& ctx) const {
     lhs_->EmitRISC(os, ctx);
     rhs_->EmitRISC(os, ctx);
+}
+
+
+// ---- --ir lowering ----
+
+using ir::IrType;
+using ir::Op;
+using ir::Operand;
+
+namespace {
+
+// The usual arithmetic type of a compare's operands (integers only for now).
+TypePtr CompareCommonType(const Context& ctx, const Expr& lhs, const Expr& rhs) {
+    TypePtr l = lhs.ValueType(ctx);
+    TypePtr r = rhs.ValueType(ctx);
+    RequireIrInteger(*l);
+    RequireIrInteger(*r);
+    return UsualArithmetic(l, r);
+}
+
+}  // namespace
+
+Operand BinaryArith::EmitValue(IRGen& gen) const {
+    Context& ctx = gen.Ctx();
+    RequireIrInteger(*lhs_->ValueType(ctx));
+    RequireIrInteger(*rhs_->ValueType(ctx));
+    TypePtr result = GetType(ctx);
+    bool shift = op_ == BinOp::Shl || op_ == BinOp::Shr;
+    TypePtr rhs_type = shift ? Promote(rhs_->ValueType(ctx)) : result;
+    Operand a = ValueAs(gen, *lhs_, *result);
+    Operand b = ValueAs(gen, *rhs_, *rhs_type);
+    return Arith(gen, op_, *result, a, b);
+}
+
+Operand BinaryCompare::EmitValue(IRGen& gen) const {
+    TypePtr common = CompareCommonType(gen.Ctx(), *lhs_, *rhs_);
+    Operand a = ValueAs(gen, *lhs_, *common);
+    Operand b = ValueAs(gen, *rhs_, *common);
+    IrType type = IRGen::ToIr(*common);
+    bool s = common->IsSigned();
+    Op less = s ? Op::Lt : Op::LtU, less_eq = s ? Op::Le : Op::LeU;
+    switch (op_) {
+        case CmpOp::Lt: return gen.Compare(less, type, a, b);
+        case CmpOp::Gt: return gen.Compare(less, type, b, a);
+        case CmpOp::Le: return gen.Compare(less_eq, type, a, b);
+        case CmpOp::Ge: return gen.Compare(less_eq, type, b, a);
+        case CmpOp::Eq: return gen.Compare(Op::Eq, type, a, b);
+        case CmpOp::Ne: return gen.Compare(Op::Ne, type, a, b);
+    }
+    return a;
+}
+
+Operand UnaryOp::EmitValue(IRGen& gen) const {
+    Context& ctx = gen.Ctx();
+    TypePtr operand_type = operand_->ValueType(ctx);
+    RequireIrInteger(*operand_type);
+    if (op_ == UnOp::LogNot) {  // !x is x == 0
+        IrType type = IRGen::ToIr(*operand_type);
+        return gen.Compare(Op::Eq, type, operand_->EmitValue(gen), Operand::Int(0, type));
+    }
+    TypePtr result = GetType(ctx);
+    Operand v = ValueAs(gen, *operand_, *result);
+    IrType type = IRGen::ToIr(*result);
+    switch (op_) {
+        case UnOp::Neg: return gen.Unary(Op::Neg, type, v);
+        case UnOp::BitNot: return gen.Unary(Op::Not, type, v);
+        default: return v;
+    }
+}
+
+Operand Comma::EmitValue(IRGen& gen) const {
+    lhs_->EmitValue(gen);
+    return rhs_->EmitValue(gen);
 }
 
 }  // namespace ast

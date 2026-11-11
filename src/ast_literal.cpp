@@ -1,4 +1,5 @@
 #include "ast_literal.hpp"
+#include "ir_gen.hpp"
 
 #include <climits>
 #include <cstdlib>
@@ -103,6 +104,20 @@ void StringLiteral::EmitAddress(std::ostream& os, Context& ctx) const {
 
 void StringLiteral::EmitRISC(std::ostream& os, Context& ctx) const {
     EmitAddress(os, ctx);
+}
+
+
+// ---- --ir lowering ----
+
+using ir::Operand;
+
+Operand IntLiteral::EmitValue(IRGen& gen) const {
+    CheckRange();
+    return Operand::Int(*EvalConst(gen.Ctx()), IRGen::ToIr(*GetType(gen.Ctx())));
+}
+
+Operand CharLiteral::EmitValue(IRGen&) const {
+    return Operand::Int(value_, IRGen::ToIr(*Type::Int()));
 }
 
 }  // namespace ast

@@ -1,4 +1,6 @@
 #include "ast_assign.hpp"
+#include "ir_gen.hpp"
+#include "ast_lower.hpp"
 
 #include <stdexcept>
 
@@ -158,6 +160,59 @@ void IncDec::EmitRISC(std::ostream& os, Context& ctx) const {
     EmitStore(os, *type, "a0", "t0", 0);
     if (!prefix_) os << "\tmv a0, t1\n";
     ctx.PopTemp();
+}
+
+
+// ---- --ir lowering ----
+
+using ir::IrType;
+using ir::Operand;
+
+
+// The address is evaluated first, then the right side, as on the old path.
+Operand Assign::EmitValue(IRGen& gen) const {
+    TypePtr type = GetType(gen.Ctx());
+    RequireIrInteger(*type);
+    Operand address = lhs_->EmitIRAddress(gen);
+    Operand value = ValueAs(gen, *rhs_, *type);
+    gen.Store(IRGen::ToIr(*type), value, address);
+    return value;
+}
+
+// lhs op= rhs: the old value is converted to the operation's type, combined
+// with the right side, and converted back for the store.
+Operand CompoundAssign::EmitValue(IRGen& gen) const {
+    Context& ctx = gen.Ctx();
+    TypePtr type = GetType(ctx);
+    TypePtr rhs_type = rhs_->ValueType(ctx);
+    RequireIrInteger(*type);
+    RequireIrInteger(*rhs_type);
+    bool shift = op_ == BinOp::Shl || op_ == BinOp::Shr;
+    TypePtr common = shift ? Promote(type) : UsualArithmetic(type, rhs_type);
+    TypePtr rhs_to = shift ? Promote(rhs_type) : common;
+    IrType ir_type = IRGen::ToIr(*type);
+
+    Operand address = lhs_->EmitIRAddress(gen);
+    Operand old = gen.ConvertInt(gen.Load(ir_type, address), *type, *common);
+    Operand rhs = ValueAs(gen, *rhs_, *rhs_to);
+    Operand result = gen.ConvertInt(Arith(gen, op_, *common, old, rhs), *common, *type);
+    gen.Store(ir_type, result, address);
+    return result;
+}
+
+Operand IncDec::EmitValue(IRGen& gen) const {
+    TypePtr type = GetType(gen.Ctx());
+    RequireIrInteger(*type);
+    TypePtr wide = Promote(type);
+    IrType ir_type = IRGen::ToIr(*type);
+
+    Operand address = operand_->EmitIRAddress(gen);
+    Operand old = gen.Load(ir_type, address);
+    Operand step = Operand::Int(increment_ ? 1 : -1, IRGen::ToIr(*wide));
+    Operand sum = Arith(gen, BinOp::Add, *wide, gen.ConvertInt(old, *type, *wide), step);
+    Operand updated = gen.ConvertInt(sum, *wide, *type);
+    gen.Store(ir_type, updated, address);
+    return prefix_ ? updated : old;
 }
 
 }  // namespace ast

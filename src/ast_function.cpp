@@ -1,4 +1,7 @@
 #include "ast_function.hpp"
+#include "ir_gen.hpp"
+#include "target.hpp"
+#include "ast_lower.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -174,6 +177,59 @@ void TranslationUnit::EmitRISC(std::ostream& os, Context& ctx) const {
     ctx.EmitStrings(os);
     ctx.EmitFloats(os);
     ctx.PopScope();
+}
+
+
+// ---- --ir lowering ----
+
+// Prototypes and typedefs are declarations only; variables need data entries
+// (step 4).
+void GlobalDeclaration::EmitIR(IRGen& gen) const {
+    Context& ctx = gen.Ctx();
+    TypePtr base = spec_.Resolve(ctx);
+    for (const InitDeclarator& d : declarators_) {
+        auto [name, type] = d.declarator.Apply(base, ctx);
+        if (storage_ == Storage::Typedef) {
+            ctx.Declare(name, Symbol::Typedef(type));
+        } else if (type->IsFunction() && !d.init) {
+            ctx.DeclareFunction(name, type);
+        } else {
+            throw std::runtime_error("not in IR yet: global variable");
+        }
+    }
+}
+
+// Parameters wait for the calling convention (step 3).
+void FunctionDefinition::EmitIR(IRGen& gen) const {
+    Context& ctx = gen.Ctx();
+    auto [name, type] = declarator_.Apply(spec_.Resolve(ctx), ctx);
+    if (!type->IsFunction()) throw std::runtime_error("not a function");
+    const std::vector<Param>* declared = declarator_.Parameters();
+    if (!declared) throw std::runtime_error("'" + name + "' is not a function");
+    if (!ResolveParams(*declared, ctx).types.empty()) {
+        throw std::runtime_error("not in IR yet: function parameters");
+    }
+    if (!type->Base()->IsVoid()) {
+        RequireIrInteger(*type->Base());
+        // A narrow return value must be extended to the caller's convention,
+        // which is the step 3 classifier's job; fail loudly until then.
+        if (type->Base()->Size() < Target().int_size) {
+            throw std::runtime_error("not in IR yet: return type narrower than int");
+        }
+    }
+    ctx.DeclareFunction(name, type);
+    ctx.BeginFunction(type->Base());
+    gen.BeginFunction(name, storage_ != Storage::Static, type->Base());
+    ctx.PushScope();
+    body_->EmitIR(gen);
+    ctx.PopScope();
+    gen.EndFunction();
+}
+
+void TranslationUnit::EmitIR(IRGen& gen) const {
+    gen.Ctx().PushScope();
+    for (const ExternalDeclPtr& decl : decls_) decl->EmitIR(gen);
+    gen.Ctx().PopScope();
 }
 
 }  // namespace ast

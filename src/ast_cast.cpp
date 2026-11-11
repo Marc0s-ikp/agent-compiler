@@ -1,4 +1,6 @@
 #include "ast_cast.hpp"
+#include "ir_gen.hpp"
+#include "ast_lower.hpp"
 
 #include <stdexcept>
 
@@ -46,6 +48,17 @@ void Cast::EmitRISC(std::ostream& os, Context& ctx) const {
     TypePtr to = GetType(ctx);
     operand_->EmitRISC(os, ctx);
     if (!to->IsVoid()) EmitConvert(os, *operand_->ValueType(ctx), *to);
+}
+
+
+// ---- --ir lowering ----
+
+using ir::Operand;
+
+Operand Cast::EmitValue(IRGen& gen) const {
+    TypePtr to = GetType(gen.Ctx());
+    RequireIrInteger(*to);
+    return ValueAs(gen, *operand_, *to);
 }
 
 }  // namespace ast
