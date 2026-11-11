@@ -190,3 +190,14 @@ From the step 1 review (2026-11-11, approved in round 2). These are design quest
 ## Required before an AArch64 backend
 
 1. Move `.L` label naming to the backend. Today `Context::NewLabel` (`src/context.cpp:142`) adds the `.L` prefix in the frontend, which is RISC-V assembler syntax. IR labels should be plain names, and each backend adds its own local-label prefix (Marcus, 2026-11-11, D23 d).
+
+## Nice to have from the v3 step 2 review
+
+From the step 2 review (2026-11-11, approved in round 1). None of these blocked the merge.
+
+1. **Checker does not enforce the one-site rule** (`src/ir_check.cpp:85-98`, `Define`). Any instruction may redefine a temp, where 21.2 allows only the `?:` temp two sites. Rule to add: a temp defined more than once must be defined only by `copy`/`const`. It holds today but is unchecked. Recommended before step 3.
+2. `&&`/`||` `EmitValue` (`src/ast_operators.cpp`) hard-code `IrType::I32` instead of `IRGen::ToIr(*GetType(ctx))`, the D22(b) contract. Harmless while `int` is 32 bits.
+3. `Context::AddCase` (`src/context.cpp:270-280`) wraps case values to `Type::Int()`, not to the promoted controlling type. Wrong once `long` is parsed and is `I64` on a 64-bit target.
+4. **Step 7 must keep or move, not delete as dead:** the IR path now uses `Context::PushLoop`/`PopLoop`/`BreakLabel`/`ContinueLabel`, `PushSwitch`/`PopSwitch`/`AddCase`/`AddDefault`/`SwitchInfo`, and `NewLabel`. The backend's `beqz t0, 1f` relies on GNU numeric local labels (relevant to the AArch64 label item).
+5. Commit `3252e7f`'s message says "large immediates in the RISC-V backend", but the backend already handled them; the commit adds a comment and a test. Left as is, to avoid rewriting history.
+6. Tidiness: a whitespace-only line before `Condition` in `src/ast_lower.cpp`; `src/ast_lower.cpp` repeats the comments in `include/ast_lower.hpp`; an odd line break in the comment in `CompileViaIR` (`src/main.cpp:70-75`).

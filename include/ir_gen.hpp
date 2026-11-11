@@ -18,6 +18,9 @@ public:
     // ---- functions ----
     void BeginFunction(const std::string& name, bool is_global, const TypePtr& return_type);
     void EndFunction();  // adds an implicit return, then appends the function
+    // After a lowering error: appends the function being built as it stands,
+    // so --emit-ir can dump it (D23 c). Does nothing between functions.
+    void AppendPartialFunction();
 
     // A frame object for a local. The returned operand names it uniquely
     // ('x' and a shadowing 'x' become $x.0 and $x.1).
@@ -27,6 +30,10 @@ public:
     ir::Operand Binary(ir::Op op, ir::IrType type, ir::Operand a, ir::Operand b);
     ir::Operand Compare(ir::Op op, ir::IrType type, ir::Operand a, ir::Operand b);
     ir::Operand Unary(ir::Op op, ir::IrType type, ir::Operand a);
+    // A temporary with no instruction yet: the result of '&&', '||' and '?:'
+    // gets its value from Move at two sites (21.2).
+    ir::Operand NewTemp(ir::IrType type);
+    void Move(ir::Operand dst, ir::Operand src);  // 'const' for a constant, else 'copy'
     ir::Operand AddressOf(ir::Operand object_or_symbol, long offset = 0);
     ir::Operand Load(ir::IrType type, ir::Operand address);
     void Store(ir::IrType type, ir::Operand value, ir::Operand address);
@@ -47,7 +54,6 @@ public:
     ir::Operand ConvertInt(ir::Operand value, const Type& from, const Type& to);
 
 private:
-    ir::Operand NewTemp(ir::IrType type);
     ir::Operand Emit(ir::Instruction in, ir::IrType result);
     void Append(const ir::Instruction& in);
 

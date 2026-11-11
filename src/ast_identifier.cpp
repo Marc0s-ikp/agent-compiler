@@ -1,4 +1,6 @@
 #include "ast_identifier.hpp"
+#include "ir_gen.hpp"
+#include "ast_lower.hpp"
 
 #include <stdexcept>
 
@@ -64,6 +66,32 @@ void Identifier::EmitAddress(std::ostream& os, Context& ctx) const {
         return;
     }
     EmitAddrOffset(os, "a0", "s0", sym.offset);
+}
+
+
+// ---- --ir lowering ----
+
+using ir::Operand;
+
+namespace {
+const Symbol& IrVariable(const Context& ctx, const std::string& name) {
+    const Symbol& sym = ctx.Lookup(name);
+    if (sym.kind == SymbolKind::Global) throw std::runtime_error("not in IR yet: global variable");
+    return sym;
+}
+}  // namespace
+
+Operand Identifier::EmitIRAddress(IRGen& gen) const {
+    const Symbol& sym = IrVariable(gen.Ctx(), name_);
+    if (sym.kind != SymbolKind::Local) throw std::runtime_error("'" + name_ + "' is not a variable");
+    return gen.AddressOf(Operand::Object(sym.object));
+}
+
+Operand Identifier::EmitValue(IRGen& gen) const {
+    const Symbol& sym = IrVariable(gen.Ctx(), name_);
+    if (sym.kind == SymbolKind::EnumConst) return Operand::Int(sym.value, IRGen::ToIr(*sym.type));
+    RequireIrInteger(*sym.type);
+    return gen.Load(IRGen::ToIr(*sym.type), EmitIRAddress(gen));
 }
 
 }  // namespace ast

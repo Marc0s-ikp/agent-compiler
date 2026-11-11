@@ -59,6 +59,13 @@ void IRGen::EndFunction() {
         Return();
     }
     module_.functions.push_back(std::move(fn_));
+    fn_ = ir::Function();
+}
+
+void IRGen::AppendPartialFunction() {
+    if (fn_.name.empty()) return;
+    module_.functions.push_back(std::move(fn_));
+    fn_ = ir::Function();
 }
 
 Operand IRGen::AddFrameObject(const std::string& name, const Type& type) {
@@ -80,6 +87,15 @@ Operand IRGen::Emit(Instruction in, IrType result) {
     in.dst = NewTemp(result);
     Append(in);
     return in.dst;
+}
+
+void IRGen::Move(Operand dst, Operand src) {
+    Instruction in;
+    in.op = src.IsConst() ? Op::Const : Op::Copy;
+    in.type = dst.type;
+    in.dst = dst;
+    in.args = {src};
+    Append(in);
 }
 
 Operand IRGen::Binary(Op op, IrType type, Operand a, Operand b) {

@@ -7,6 +7,12 @@
 #include "emit.hpp"
 #include "target.hpp"
 
+// Immediates (21.10): any IR integer is legal. Every constant operand is
+// loaded with 'li', which the assembler expands to lui+addi when it does not
+// fit 12 bits, so no instruction here takes a variable immediate. The fixed
+// ones (shift counts, 'xori 1', 0 offsets) always fit; frame offsets and Addr
+// offsets go through EmitMem / EmitAddrOffset, which fall back to a register.
+//
 // Every IR temporary owns a stack slot (21.4). Each instruction loads its
 // operands into t0 and t1, computes, and stores the result to the
 // destination's slot, so no register holds a value between instructions.
@@ -209,7 +215,8 @@ private:
             case Op::Jump: os_ << "\tj " << in.label << "\n"; return;
             case Op::Branch:
                 Load("t0", in.args[0]);
-                os_ << "\tbnez t0, " << in.label << "\n\tj " << in.label2 << "\n";
+                // 'j' reaches the whole function; a conditional branch only +-4 KiB.
+                os_ << "\tbeqz t0, 1f\n\tj " << in.label << "\n1:\n\tj " << in.label2 << "\n";
                 return;
             case Op::Ret:
                 if (!in.args.empty()) Load("a0", in.args[0]);

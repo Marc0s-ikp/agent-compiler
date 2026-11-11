@@ -11,6 +11,7 @@ public:
           then_(std::move(then_stmt)),
           else_(std::move(else_stmt)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     ExprPtr cond_;
@@ -22,6 +23,7 @@ public:
     WhileStmt(ExprPtr cond, StmtPtr body)
         : cond_(std::move(cond)), body_(std::move(body)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     ExprPtr cond_;
@@ -33,6 +35,7 @@ public:
     DoWhileStmt(StmtPtr body, ExprPtr cond)
         : body_(std::move(body)), cond_(std::move(cond)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     StmtPtr body_;
@@ -48,6 +51,7 @@ public:
           step_(std::move(step)),
           body_(std::move(body)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     ExprPtr init_, cond_, step_;
@@ -61,6 +65,7 @@ public:
     SwitchStmt(ExprPtr cond, StmtPtr body)
         : cond_(std::move(cond)), body_(std::move(body)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     ExprPtr cond_;
@@ -74,6 +79,7 @@ public:
     CaseStmt(ExprPtr value, StmtPtr stmt)
         : value_(std::move(value)), stmt_(std::move(stmt)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     ExprPtr value_;
@@ -84,6 +90,7 @@ class DefaultStmt : public Stmt {
 public:
     explicit DefaultStmt(StmtPtr stmt) : stmt_(std::move(stmt)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     StmtPtr stmt_;
@@ -92,11 +99,13 @@ private:
 class BreakStmt : public Stmt {
 public:
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 };
 
 class ContinueStmt : public Stmt {
 public:
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 };
 
 }  // namespace ast
