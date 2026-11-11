@@ -30,6 +30,10 @@ struct Options {
 bool ParseArgs(int argc, char** argv, Options& opts) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-S") == 0) continue;
+        if (std::strcmp(argv[i], "--target") == 0 && i + 1 >= argc) {
+            std::cerr << "error: --target needs a value\n";
+            return false;
+        }
         if (std::strcmp(argv[i], "--ir") == 0) {
             opts.use_ir = true;
         } else if (std::strcmp(argv[i], "--emit-ir") == 0) {

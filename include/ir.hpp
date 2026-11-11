@@ -91,7 +91,8 @@ struct DataItem {
     enum class Kind { Bytes, Int, Float, Address, Zero };
     Kind kind = Kind::Zero;
     std::string bytes;   // Bytes; Address: the label
-    int size = 0;        // Int, Float; Zero: byte count; Address: offset
+    int size = 0;        // Int, Float: 1, 2, 4 or 8; Zero: byte count
+    long offset = 0;     // Address: byte offset from the label
     long long value = 0; // Int value, Float bits
 };
 

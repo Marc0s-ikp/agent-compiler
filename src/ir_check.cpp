@@ -9,7 +9,6 @@ namespace ir {
 
 namespace {
 
-bool IsInt(IrType t) { return IsIntType(t); }
 bool IsIntOrPtr(IrType t) { return IsIntType(t) || t == IrType::Ptr; }
 
 class FunctionChecker {
@@ -103,7 +102,7 @@ private:
     void CheckArith(const Instruction& in) {
         if (!HasArgs(in, 2)) return;
         bool real_ok = in.op == Op::Add || in.op == Op::Sub || in.op == Op::Mul || in.op == Op::Div;
-        if (!IsInt(in.type) && !(real_ok && IsFloatType(in.type))) Error("operand type not allowed");
+        if (!IsIntType(in.type) && !(real_ok && IsFloatType(in.type))) Error("operand type not allowed");
         RequireType(in.args[0], in.type, "left operand");
         RequireType(in.args[1], in.type, "right operand");
     }
@@ -124,12 +123,12 @@ private:
         bool ok = false;
         switch (in.op) {
             case Op::SExt:
-            case Op::ZExt: ok = IsInt(from) && IsInt(to) && SizeOf(to) > SizeOf(from); break;
-            case Op::Trunc: ok = IsInt(from) && IsInt(to) && SizeOf(to) < SizeOf(from); break;
+            case Op::ZExt: ok = IsIntType(from) && IsIntType(to) && SizeOf(to) > SizeOf(from); break;
+            case Op::Trunc: ok = IsIntType(from) && IsIntType(to) && SizeOf(to) < SizeOf(from); break;
             case Op::IToF:
-            case Op::UToF: ok = IsInt(from) && IsFloatType(to); break;
+            case Op::UToF: ok = IsIntType(from) && IsFloatType(to); break;
             case Op::FToI:
-            case Op::FToU: ok = IsFloatType(from) && IsInt(to); break;
+            case Op::FToU: ok = IsFloatType(from) && IsIntType(to); break;
             case Op::FExt: ok = from == IrType::F32 && to == IrType::F64; break;
             case Op::FTrunc: ok = from == IrType::F64 && to == IrType::F32; break;
             default: break;
@@ -177,15 +176,18 @@ private:
                 if (HasArgs(in, 1)) RequireType(in.args[0], in.type, "operand");
                 return true;
             case Op::Const:
-                if (HasArgs(in, 1) && !in.args[0].IsConst()) Error("operand must be a constant");
-                if (HasArgs(in, 1)) RequireType(in.args[0], in.type, "constant");
+                if (HasArgs(in, 1)) {
+                    if (!in.args[0].IsConst()) Error("operand must be a constant");
+                    RequireType(in.args[0], in.type, "constant");
+                }
                 return true;
-            case Op::Neg:
+            case Op::Neg:  // integers and floats; not Ptr
                 if (HasArgs(in, 1)) RequireType(in.args[0], in.type, "operand");
+                if (!IsIntType(in.type) && !IsFloatType(in.type)) Error("operand type not allowed");
                 return true;
             case Op::Not:
                 if (HasArgs(in, 1)) RequireType(in.args[0], in.type, "operand");
-                if (!IsInt(in.type)) Error("operand type not allowed");
+                if (!IsIntType(in.type)) Error("operand type not allowed");
                 return true;
             case Op::Addr:
                 result = IrType::Ptr;
@@ -216,7 +218,7 @@ private:
                 jumps_.push_back({in.label, index_});
                 return false;
             case Op::Branch:
-                if (HasArgs(in, 1) && !IsInt(in.args[0].type)) Error("branch condition must be an integer");
+                if (HasArgs(in, 1) && !IsIntType(in.args[0].type)) Error("branch condition must be an integer");
                 jumps_.push_back({in.label, index_});
                 jumps_.push_back({in.label2, index_});
                 return false;

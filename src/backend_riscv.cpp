@@ -233,6 +233,12 @@ void WriteItem(const ir::DataItem& item, std::ostream& os) {
             for (unsigned char c : item.bytes) os << "\t.byte " << static_cast<int>(c) << "\n";
             break;
         case Kind::Int:
+            if (item.size == 8) {  // two words, low first (little endian)
+                os << "\t.word " << (item.value & 0xFFFFFFFFLL) << "\n";
+                os << "\t.word " << ((item.value >> 32) & 0xFFFFFFFFLL) << "\n";
+                break;
+            }
+            if (item.size != 1 && item.size != 2 && item.size != 4) NotYet("integer data item size");
             os << (item.size == 1 ? "\t.byte " : item.size == 2 ? "\t.half " : "\t.word ")
                << item.value << "\n";
             break;
@@ -241,7 +247,7 @@ void WriteItem(const ir::DataItem& item, std::ostream& os) {
             if (item.size == 8) os << "\t.word " << ((item.value >> 32) & 0xFFFFFFFFULL) << "\n";
             break;
         case Kind::Address:
-            os << "\t.word " << item.bytes << (item.size ? "+" + std::to_string(item.size) : "") << "\n";
+            os << "\t.word " << item.bytes << (item.offset ? "+" + std::to_string(item.offset) : "") << "\n";
             break;
         case Kind::Zero: os << "\t.zero " << item.size << "\n"; break;
     }

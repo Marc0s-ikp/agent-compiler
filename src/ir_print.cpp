@@ -74,9 +74,23 @@ void PrintFunction(const Function& fn, std::ostream& os) {
     os << "}\n";
 }
 
+std::string ItemText(const DataItem& item) {
+    switch (item.kind) {
+        case DataItem::Kind::Bytes: return "bytes " + std::to_string(item.bytes.size());
+        case DataItem::Kind::Int: return "int" + std::to_string(item.size * 8) + " " + std::to_string(item.value);
+        case DataItem::Kind::Float: return "float" + std::to_string(item.size * 8) + " bits " + std::to_string(item.value);
+        case DataItem::Kind::Address:
+            return "addr @" + item.bytes + (item.offset ? " + " + std::to_string(item.offset) : "");
+        case DataItem::Kind::Zero: return "zero " + std::to_string(item.size);
+    }
+    return "?";
+}
+
 void PrintData(const DataEntry& d, std::ostream& os) {
     os << "data @" << d.label << " size " << d.size << " align " << d.align
        << (d.read_only ? " rodata" : "") << (d.internal ? " internal" : "") << "\n";
+    if (d.items.empty()) os << "  zero " << d.size << "\n";
+    for (const DataItem& item : d.items) os << "  " << ItemText(item) << "\n";
 }
 
 }  // namespace

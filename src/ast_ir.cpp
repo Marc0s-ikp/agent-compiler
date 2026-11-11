@@ -12,6 +12,7 @@
 #include "ast_operators.hpp"
 #include "ast_stmt.hpp"
 #include "ir_gen.hpp"
+#include "target.hpp"
 
 namespace ast {
 
@@ -279,7 +280,14 @@ void FunctionDefinition::EmitIR(IRGen& gen) const {
     if (!ResolveParams(*declared, ctx).types.empty()) {
         throw std::runtime_error("not in IR yet: function parameters");
     }
-    if (!type->Base()->IsVoid()) RequireIrInteger(*type->Base());
+    if (!type->Base()->IsVoid()) {
+        RequireIrInteger(*type->Base());
+        // A narrow return value must be extended to the caller's convention,
+        // which is the step 3 classifier's job; fail loudly until then.
+        if (type->Base()->Size() < Target().int_size) {
+            throw std::runtime_error("not in IR yet: return type narrower than int");
+        }
+    }
     ctx.DeclareFunction(name, type);
     ctx.BeginFunction(type->Base());
     gen.BeginFunction(name, storage_ != Storage::Static, type->Base());

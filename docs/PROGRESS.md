@@ -24,6 +24,7 @@ Next: nothing planned. The open items are in docs/BLOCKERS.md.
 | 1b IR core, --ir/--emit-ir flags, checker, IRGen | 283/283 | 0/283 |
 | 1c RISC-V backend skeleton (frames, prologue, ret, WriteData) | 283/283 | 0/283 |
 | 1d integer operators, assignment, locals, return via EmitIR | 284/284 | 18/284 |
+| 1e review fixes (narrow return guard, data items, checker, main) | 285/285 | 18/285 |
 
 ## Pass count by category
 | Category | Passing | Total |
