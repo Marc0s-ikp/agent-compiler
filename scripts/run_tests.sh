@@ -7,7 +7,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 if ! command -v spike >/dev/null 2>&1 || ! command -v riscv64-unknown-elf-gcc >/dev/null 2>&1; then
-  exec docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT":/w -w /w agent-compiler ./scripts/run_tests.sh "$@"
+  exec docker run --rm -e COMPILER_FLAGS -e TARGET --user "$(id -u):$(id -g)" -v "$ROOT":/w -w /w agent-compiler ./scripts/run_tests.sh "$@"
 fi
 
 GCC="${RISCV_GCC:-riscv64-unknown-elf-gcc}"
@@ -35,7 +35,7 @@ for t in "${TESTS[@]}"; do
   base="$WORK/${rel//\//_}"
   driver="${name}_driver.c"
 
-  if ! timeout "$TIMEOUT" build/c_compiler -S "$t" -o "$base.s" > "$base.compile.log" 2>&1; then
+  if ! timeout "$TIMEOUT" build/c_compiler ${COMPILER_FLAGS:-} -S "$t" -o "$base.s" > "$base.compile.log" 2>&1; then
     echo "CRASH   $rel (compiler)" >> "$OUT"; continue
   fi
   if ! $GCC $ARCH_FLAGS -o "$base.elf" "$base.s" "$driver" > "$base.link.log" 2>&1; then
