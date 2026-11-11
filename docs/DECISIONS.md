@@ -22,8 +22,9 @@
 | 2026-11-09 | D18 (implementer, accepted by Marcus 2026-11-09): feature 7 plumbing, filling in D1, D5, D6, D11 and D15 without changing them. (a) `ConstValue` gains `is_real` and a `double real`; the flag is set exactly when the expression's type is float or double, and a float constant holds a value float can represent. `ConvertConst(value, to)` (`src/const_value.cpp`) is the compile-time twin of `EmitConvert` (truncate toward zero, wrap to width, round to float), and `InitWriter::Scalar` calls it for every scalar, so `float f = 1;`, `int i = 2.9;` and a double constant in a float all convert once, in one place. `FloatLiteral`, `UnaryOp`, `BinaryArith`, `Cast` and now `BinaryCompare` override `EvalConstValue`; `EvalConst` stays integer-only, and `Cast::EvalConst` folds integer-to-integer casts. (b) Accumulator rule: `AccReg(type)` is `fa0` for float/double, else `a0`, and `ScratchReg` is `ft0`/`t0`; `EmitLoad`/`EmitStore` take the register from the caller and pick `flw/fld/fsw/fsd` from the type. Every node asks `AccReg` rather than printing `a0`. (c) `EmitCondition` is the one place that turns a value into a truth test: a float is compared with zero by `feq` then `xori`, so -0.0 is false and NaN is true; `!` goes through it too. Comparisons use `flt/fle/feq` (`>` and `>=` swap operands, `!=` inverts `feq`). (d) `ClassifyArgs` kinds: `IntReg`, `FloatReg`, `IntPair`, `Split`, `Stack`. A double with no fa register takes two consecutive a registers starting wherever the next one is (no even-register alignment: that rule is for varargs, and GCC does the same), or `Split` (a7 low word, one stack word) or an 8-aligned stack slot. A float with no fa register goes to an a register or a 4-byte stack slot as its 32 bits. The callee copies a `Split` double to its 8-aligned home with integer stores, so it never does a misaligned `fld`. (e) Float literals are pooled with `Context::AddFloat(bits, size)` (bits from `strtof` for an `f` suffix, `strtod` otherwise, so a float is rounded once), emitted in `.rodata` after the strings. (f) `Cast` (`src/ast_cast.cpp`) uses `EmitConvert`. The grammar gets a `cast_expr` level between binary and unary operators, as in the standard C grammar, so `sizeof (type)` and `(type) expr` do not conflict. (g) `UsualArithmetic` returns the wider floating type if either operand is floating; `float` is not promoted to `double` except as an argument with no declared parameter. `IsScalar` now includes floating types | Keeps D6 (one conversion routine, run-time and compile-time) and D1 (no live register state): a float temp is stored from `fa0` exactly as an int temp is stored from `a0`. The cast level and the `ClassifyArgs` kinds are the only structural additions, and both are what D5 and the design's section 6 already described | (a) a variant return from `EvalConst`; folding in a separate pass. (d) even-register alignment for pairs, which GCC does not do for named arguments; reassembling a split double with `fld` (misaligned under spike pk)  |
 | 2026-11-10 | D19 (implementer, accepted by Marcus 2026-11-10): feature 8, structs and unions, filling in the design's `Record`, `Member`, tag namespace and struct-as-address convention. (a) **Record identity.** `Type::Record(is_union, tag)` makes an incomplete record; `Type::DefineRecord` lays out the members once (struct: next offset the member's alignment allows, size rounded up to the largest alignment; union: every offset 0). The members live in a shared `RecordData`, so a pointer made before completion sees the members, and `Equals` on two records is identity of that `RecordData`, never structural, so `struct node { struct node *next; }` cannot recurse. A record reaches itself through a member and shared pointers never free a cycle, so `Context::NewRecord` owns every record and its destructor calls `Type::ReleaseRecord` (the Makefile links LeakSanitizer). Tags use `DeclareTag`/`FindTag`/`FindTagHere`: a use without a body searches outwards and declares an unknown tag incomplete in the current scope; a body, or a bare `struct T;`, searches only the current scope, so an inner definition hides an outer one. A struct body is accepted only where `Resolve` can declare (declarations, member declarations); `Lookup` (type names, parameter lists) accepts `struct T` for a known tag and rejects a body, as for enums (D17). Member declarators are parsed by `declarator` without `declarator_head` or `EndDeclaration`, and `.` and `->` accept `T_TYPE_NAME` as the member name. (b) **Values.** An expression of struct or union type evaluates to the address of an object that holds it (`EmitLoad` does nothing for a record, as for an array), so `Member` needs only the base's `EmitRISC` plus an offset, and `f().x`, `(c ? a : b).x`, `(a = b).x` need no special case. A consumer that keeps the value copies it at once: `Assign` (the target's address is the result), an argument temp, `return`, an initialiser. `EmitCopyMem` is the one copy routine (word or byte units from the struct's alignment, unrolled to 16 units, then a loop); the byte-exact piece loads and stores (`EmitLoadBytes`/`EmitStoreBytes`) never read or write past an object or use a misaligned word. (c) **Temp lifetime.** `PushTemp`/`PopTemp` stay strictly nested, so a struct returned by a call cannot live in a temp: `FunctionCall` allocates its result with `AllocLocal`, a slot that lasts to the end of the function, and `PopTemp` never releases below a new `floor_` that `AllocLocal` raises. Each call site has its own slot, so `g(f(1), f(2))` keeps both results, and a loop reuses its site's slot. The cost is frame space, one slot per struct-returning call site; argument copies are still ordinary temps, popped after the call. (d) **`ClassifyArgs`.** `ArgLoc` gains `Kind::Fields` (a floating-convention struct: one `FieldLoc` per flattened scalar with its own `fa`/`a` register), a `by_reference` flag (the one-word pointer to the caller's copy is in `IntReg` or `Stack`), and `ClassifyArgs(types, hidden_return)`, where a hidden result pointer takes a0. Up to 8 bytes in the integer convention reuses `IntReg`, `IntPair`, `Split`, `Stack` exactly as a double does (no even-register alignment). The floating convention (structs only, never unions; one or two scalars after flattening nested structs and arrays; at least one floating; integers up to 4 bytes, and pointers disqualify it, as in GCC) needs every register it asks for, else the whole struct falls back to the integer convention. `ArgPieces` and `ClassifyReturn` turn a location into register `Piece`s (offset, byte count, register); `src/record_abi.cpp` holds the four functions that use them, in caller/callee pairs, so neither side has its own rules. Over 8 bytes in the integer convention is by reference; returns over 8 bytes use the hidden pointer, which the callee keeps in a frame slot and returns in a0. The callee copies a by-reference parameter into its own home slot (one extra copy; the ABI lets it use the caller's directly). (e) **Initialisers.** `FlattenInit` takes the `Context`, since deciding between a struct-valued expression and brace elision needs the expression's type, and gains `Record` (members in order, a union only its first) and `RecordObject`; a struct-valued expression is one `InitItem` of record type, which the local emitter copies and the global writer rejects as not constant. Locals zero the whole struct first, as arrays, so unlisted members and padding are zero | Keeps D1 (nothing live across a sub-expression: a struct is an address and every consumer copies), D3 (types pure), D5 (one classifier for caller and callee) and D17 (one initialiser walk). Identity plus an owner for cleanup is the smallest answer to self-reference. A call-site slot is the simplest lifetime that is obviously right for any nesting | (a) tag lookup that always searches outwards (breaks `struct T { }` shadowing); breaking cycles with `weak_ptr` in members (every `Base()` would need a lock). (b) a separate `EmitStructAddress`; copying a struct into a0/a1 registers as the value. (c) a deeper temp stack with a release point per full expression (more state in every statement node); one hidden local per function reused by every call. (d) representing every struct as one `ArgLoc` per word (loses the floating convention); having the callee use the caller's by-reference copy in place (needs an indirect symbol kind). (e) a second walker for struct initialisers |
 | 2026-11-10 | D20 (implementer, accepted by Marcus 2026-11-10): integer `EvalConst` returns the value in the canonical form for the expression's own `GetType` (`WrapToType`: signed sign-extended, unsigned zero-extended, in a `long`). `BinaryArith::EvalConst`, `FoldArithmetic` and `UnaryOp` fold through one helper (`FoldIntBinary` / `FoldUnary`): convert operands to the result type (a shift's rhs to its own promoted type), fold on `long`, `WrapToType` the result. With canonical operands `/`, `%`, `>>` and comparisons on `long` equal the signed or unsigned run-time result without separate branches; `Mul` multiplies as `uint64_t` so zero-extended operands cannot overflow. `BinaryCompare` gains an integer `EvalConst` (same `CompareType` and `Compare` as `EvalConstValue`), so comparisons work in case labels, enum values and array sizes. Enumerator values are wrapped to int, so `A = 0xFFFFFFFF` is -1. `address + n` offsets wrap in 32 bits. Case labels need no change: `Context::AddCase` already wraps to 32 bits, which is the conversion to the promoted switch type. Division by zero and shift counts outside 0..31 stay non-constant. `&&`, `||`, `?:` and floating folding are still not folded | Compile-time values then match run-time values in one rule, instead of raw 64-bit arithmetic that differed for 32-bit wrap and unsigned types | Separate signed and unsigned fold branches; folding in `long long`/`__int128` without canonicalising |
+| 2026-11-11 | ACCEPTED D21 (Marcus, 2026-11-11) (v3): a linear, typed IR between the AST and code generation, so a second ISA needs only a new backend. AST nodes lower to IR (`EmitIR`) instead of printing RISC-V. Every IR temporary owns a stack slot, and the backend handles each IR instruction on its own: load operands into scratch registers, compute, store the result. Type sizes and alignment come from a `TargetInfo`. The frontend decides which arguments are passed and with which C types, and a per-target classifier decides where each one goes (the RISC-V one is D5/D18/D19). Frame layout, prologue and epilogue move to the backend. Migration happens in steps behind `--ir`, then the old path is deleted. Globals, strings and float constants become IR data entries that the backend writes to `.data`/`.rodata`. `--emit-ir` and an IR checker (debug builds) come in step 1. Additions from the review: `Target()` aborts if it is used before being set, and temp slots are never reused (reuse is a possible later optimisation). Full text in "D21 detail" below | D1 hard-wires RISC-V into every node, so a second ISA would mean a second `EmitX` on every node. One slot per temp keeps D1's rule (no register holds a value between two units of work), and IR instructions take the place of AST nodes as those units, so no register allocator is needed | Retargeting the AST directly (`EmitRISC` and `EmitX` per node, with every C rule written twice); a tree IR (closer to the AST, but the backend still has to walk and sequence it); SSA with an allocator (far more code than these tests need, against D1) |
 
-Status: all of the above was approved by Marcus (D15 to D18 on 2026-11-09, D19 and D20 on 2026-11-10, the rest on 2026-11-08).
+Status: all of the above was approved by Marcus (D15 to D18 on 2026-11-09, D19 and D20 on 2026-11-10, D21 on 2026-11-11, the rest on 2026-11-08). D21 is not built yet. The migration starts in the next session.
 
 ---
 
@@ -247,3 +248,259 @@ cannot represent floating or address values.
 
 When each feature group is reached, `tester` writes `tests/custom/` cases for anything the reference
 tests don't cover (D13).
+
+---
+
+# D21 detail (ACCEPTED, Marcus, 2026-11-11)
+
+Goal of v3: the compiler is retargetable. Adding a second ISA means writing a new backend and a new
+target description. The lexer, parser, AST, types, scopes and C semantics stay untouched.
+
+## 21.1 Pipeline
+
+```
+source -> lexer/parser -> AST -> EmitIR (frontend, target-independent) -> ir::Module
+       -> Backend::Emit (per target: frame layout, ABI placement, instruction choice) -> assembly
+```
+
+- The frontend knows C: scopes, types, conversions, promotions, pointer scaling, constant folding,
+  initialiser layout (D17's `FlattenInit`) and the order of evaluation. It never names a register,
+  an instruction, a frame offset or an assembler directive.
+- The backend knows the machine. It never sees a C type except through the ABI classifier (21.5).
+- `Context` splits along that same line. Scopes, tags, control-flow targets, labels and the string
+  and float pools stay in the frontend. `AllocLocal`, `PushTemp`/`PopTemp`, `ReserveOutgoing`,
+  `FrameSize`, `SetReturnPointerSlot` and every s0 offset move to the backend (21.6).
+
+## 21.2 The IR
+
+A module holds functions and data objects. A function holds its parameters, its frame objects, its
+temporaries and a flat list of instructions with labels.
+
+**IR types** are machine-level: `I8`, `I16`, `I32`, `I64`, `F32`, `F64`, `Ptr`. Signedness is a
+property of the operation, not of the type (`div`/`divu`, `shr`/`sar`, `lt`/`ltu`, `sext`/`zext`).
+`Ptr` is kept separate from the integer types so that a 64-bit target can make it 8 bytes without
+changing the frontend. C `long` maps to `I32` or `I64` according to the `TargetInfo` (21.3). Structs
+and unions are not IR types. Following D19(b), the value of a struct expression is the `Ptr` of an
+object that holds it.
+
+**Operands** are a temporary (`%n`, typed and defined by exactly one instruction *site*, which a
+loop may run many times), an integer or floating constant, a frame object (`$name`, which has a size
+and an alignment but no offset yet) or a symbol (a global, function, string or float-pool label).
+
+**Instructions** (about 20, each in one small class or one `switch` case in the backend):
+
+| Group | Instructions |
+|-------|--------------|
+| Values | `copy`, `const`, `addr` (address of a frame object or symbol, plus a byte offset) |
+| Arithmetic | `add sub mul div divu rem remu and or xor shl shr sar neg not` |
+| Compare | `eq ne lt ltu le leu` (integer), `feq flt fle` (floating), each giving `I32` 0 or 1 |
+| Conversion | `sext`, `zext`, `trunc`, `itof`/`utof`, `ftoi`/`ftou`, `fext`/`ftrunc` |
+| Memory | `load T, addr`, `store T, value, addr`, `memcpy dst, src, bytes, align`, `memzero dst, bytes, align` |
+| Control | `label`, `jump`, `branch value, if_nonzero, if_zero`, `ret [value]` |
+| Calls | `call` (21.5) |
+
+`switch` is lowered by the frontend into a chain of `eq` and `branch`, which is the same dispatch
+that is generated today. `&&`, `||` and `?:` turn into branches, and `?:` writes its result to one
+temp from both arms. That temp has two definition sites, which is the only exception to the
+one-site rule, and the backend needs nothing special for it, because a temp is a slot.
+
+**`--emit-ir`** writes the module as text instead of assembly: each data entry (21.2a), then each
+function one instruction per line. It is the debugging and review tool for every step of the
+migration.
+
+**IR checker.** `CheckIR(const ir::Module&)` runs on every module before the backend sees it,
+whenever the compiler is built with `make DEBUG=1` (`#ifdef DEBUG`) and run with `--ir`. A failure
+stops the compile with an error that names the function and instruction. It checks:
+- every temporary is defined before it is used, in the order of the instruction list (the two
+  definition sites of a `?:` temp both come before its use)
+- operand types are consistent: the operands of an arithmetic or compare instruction have the same IR
+  type, a conversion's source and result types match its kind (`sext` widens an integer, `fext`
+  widens a float, and so on), an address operand is `Ptr`, a branch condition is an integer, all the
+  definition sites of a temp give it the same type, and `ret` matches the function's return type
+- every label that is jumped to is defined exactly once, and every symbol refers to a data entry or
+  a function in the module, or to an external function
+
+`run_tests.sh` runs `make build/c_compiler` without `DEBUG` and does not forward `DEBUG` into Docker,
+so the normal suite run uses a release build, and the checker does not run there. To run the suite
+with the checker, `build/c_compiler` must first be rebuilt with `DEBUG=1`.
+
+## 21.2a Module-level data
+
+Everything that today is written as assembler data becomes an IR **data entry** in the module. The
+backend writes the entries after the functions, into `.data` or `.rodata`, with its own directives.
+The frontend never prints `.word`, `.zero`, `.ascii`, `.globl` or a section name.
+
+```
+struct DataEntry {
+    std::string label;
+    int size, align;
+    bool read_only;       // .rodata vs .data
+    bool internal;        // 'static' (no .globl) or a compiler-made label (string, float, static local)
+    std::vector<DataItem> items;   // empty and not read-only means zero-filled (.bss-like)
+};
+DataItem: Bytes(string) | Int(size, value) | Float(size, bits) | Address(label, offset) | Zero(n)
+```
+
+- **Global initialisers (D11, D15, D17, D18(a)).** `BuildGlobalInit` and `InitWriter` keep the walk
+  over `FlattenInit` and the `EvalConstValue`/`EvalConstAddress` virtuals. What changes is the output:
+  instead of directive text, each scalar `ConstValue` becomes one item. A plain integer becomes
+  `Int(size, value)` after `ConvertConst`. A real value becomes `Float(size, bits)`. A label plus an
+  offset becomes `Address(label, offset)`, whose size is `Target().pointer_size`. String bytes for
+  `char s[] = "hi"` become `Bytes`, and gaps and padding become `Zero`. The rules for merging
+  tentative definitions and `extern` declarations (D15) stay in the frontend's global table, and that
+  table produces exactly one entry per object.
+- **`static` locals** are entries with `internal` set and the label from `AddStaticLocal`.
+- **String literals.** `Context::AddString` keeps the pool and its deduplication. Each pooled string
+  becomes a read-only, internal entry with one `Bytes` item that includes the NUL. Code refers to it
+  with `addr @label`.
+- **Float constants (D18(e)).** `AddFloat(bits, size)` keeps its deduplication. Each constant becomes a
+  read-only, internal entry with one `Float(size, bits)` item. Code loads it with `addr` + `load F32/F64`.
+  The IR also allows a floating `const` operand. The frontend uses the pool, so the backend can
+  print a float constant without knowing how its ISA materialises an immediate. Another backend could
+  later handle a floating `const` differently.
+
+The backend chooses each entry's section from `read_only`, and its alignment directive from `align`,
+in one function (`WriteData`). That function is the only place on the new path that writes data
+directives.
+
+## 21.3 Target description
+
+```
+struct TargetInfo {
+    int char_size, short_size, int_size, long_size, pointer_size;   // align = size unless overridden
+    int float_size, double_size, double_align;
+    bool char_is_signed;        // D8: false on riscv32
+    int stack_align;            // 16 on ilp32d
+};
+void SetTarget(const TargetInfo&);  // called once in main, before parsing
+const TargetInfo& Target();         // aborts if SetTarget has not been called
+```
+
+- `Target()` before `SetTarget` is a compiler bug. It prints an error naming the problem and calls
+  `std::abort()`. It never falls back to a default target, so a missed initialisation cannot quietly
+  produce RISC-V sizes on another target. A second `SetTarget` also aborts.
+- `main` selects the target with `--target` (only `riscv32` exists, and it is the default when the
+  flag is absent). `run_tests.sh` already forwards a `TARGET` variable for later use.
+
+- `Type::Int()`, `Type::Pointer()`, `Type::Align()` for scalars, `Decay`, `UsualArithmetic`,
+  `WrapToType` (D20) and the "address + n wraps in 32 bits" rule in D20 all read `Target()` instead
+  of the literal constants in `type.hpp`/`type.cpp`. The table in "Target facts" above becomes the
+  RISC-V `TargetInfo` value.
+- `Target()` is a set-once global, like `Typedefs()` (D16). The type factories are static, and
+  `GetType`/`EvalConst` take `const Context&`. Threading a target through every one of those
+  signatures would touch all nodes and gain nothing, because a compile only ever has one target.
+- This part also changes the old path. It is done first and is checked by the 283 tests with the
+  default (old) path.
+
+## 21.4 Temporaries and D1
+
+A temporary maps to its own frame slot, with the size and alignment of its IR type. For each
+instruction the backend loads the operands into fixed scratch registers (RISC-V: `t0`, `t1`, `ft0`,
+`ft1`), computes, and stores the result to the destination's slot. Nothing is held in a register
+from one instruction to the next, so a call between two instructions cannot corrupt anything. This
+is D1's rule with "AST node" replaced by "IR instruction". It needs no allocator and no liveness.
+
+**One slot per temporary, with no reuse (accepted by Marcus).** That makes frames larger than today's
+nested `PushTemp`/`PopTemp` frames, and it adds one more correct but slower load and store per
+operation. Large offsets already go through `t6` (design section 4).
+
+*Possible later optimisation, not part of v3:* reuse a slot once its temp is dead. That needs a
+last-use scan per function and lives entirely inside the backend's frame layout, with no change to
+the IR or the frontend. It should be done only if a test or a new target needs smaller frames.
+
+## 21.5 Calls and the ABI
+
+**Target-independent (frontend).** The frontend decides *which* arguments are passed and *with which
+C types*: it evaluates each argument into a temp in source order, decays arrays and functions,
+converts to the declared parameter type, and applies the default promotions where no parameter is
+declared (D18(g): `float` goes to `double`). A struct argument is a `Ptr` to a copy the frontend
+makes in a frame object, as D19(b) does today. The IR instruction is
+
+```
+call  callee, result?, [(value, C type), ...], return C type, result_object?
+```
+
+where `result_object` is the call-site frame object that receives a returned struct (D19(c)).
+
+**Per-target classifier (backend).** Each target implements
+
+```
+CallLayout Classify(const std::vector<TypePtr>& params, const TypePtr& ret);
+struct CallLayout { std::vector<ArgPlace> args; RetPlace ret; int stack_bytes; };
+struct ArgPlace   { bool by_reference; std::vector<Piece> pieces; };
+```
+
+`Piece` is the existing one from `abi.hpp` (offset in the value, byte count, signedness, and an
+integer register, a floating register or a stack offset). Register *numbers* are indices into the
+target's argument registers, and only the backend turns them into names. Every RISC-V kind already
+reduces to pieces: `IntReg`, `FloatReg`, `IntPair`, `Split` (a7 plus one stack word), `Stack` and
+`Fields`. The current `ClassifyArgs`, `ArgPieces`, `ClassifyReturn` and `StackExtent` become the
+RISC-V classifier with their rules unchanged (D5, D18(d), D19(d)), and `record_abi.cpp` becomes its
+caller/callee helpers. D5 still holds, and is now enforced inside each backend: the backend lowers
+the IR `call` and the function's own entry from the same `Classify` call.
+
+The hidden struct-return pointer is decided by the classifier and stays out of the IR, because
+where it goes is target-specific (a0 on RISC-V, a dedicated register on some other ABIs).
+
+## 21.6 Frame layout, prologue and epilogue (backend)
+
+The backend receives a complete `ir::Function`, so the frame size is known before anything is
+printed. D2's buffering trick (emit the body to a string, then the prologue) is no longer needed for
+functions. D2's choices of addressing from `s0`, a fixed `sp` and the outgoing area at `sp`, and D12's
+rounding to 16 with aligned slots, become the RISC-V backend's layout rules:
+
+1. saved `ra`, `s0` (and any callee-saved registers the backend uses, which today is none)
+2. homes for register parameters, and the struct-return pointer slot
+3. frame objects (locals, call-site struct results, argument copies), each aligned
+4. one slot per temp
+5. outgoing argument area = the largest `stack_bytes` over the function's calls
+
+The prologue then copies each incoming register piece to its parameter's home, exactly as today.
+
+## 21.7 Migration
+
+- `main.cpp` gains `--ir`. Without it, the old `EmitRISC` path runs, unchanged. With it:
+  AST → `EmitIR` → RISC-V backend. A node that has no `EmitIR` yet throws "not in IR yet", so a test
+  that uses it fails under `--ir` and keeps passing without it.
+- **Measuring the IR path:** `COMPILER_FLAGS=--ir ./scripts/run_tests.sh`. Marcus added `COMPILER_FLAGS`
+  and `TARGET` to the runner, and both are forwarded into Docker (commit `dbf2bc7`). Agents still may
+  not edit the runner (CLAUDE.md rule 8).
+- **Merge rule, every step:** the default path stays at 283/283, and the `--ir` pass count never
+  goes down. Both numbers go in the commit message and in `docs/PROGRESS.md`.
+- **Steps** (the "v3 migration" order in CLAUDE.md):
+  1. Expressions and locals: `TargetInfo` with the aborting `Target()` (on the old path first), IR
+     core, `--emit-ir`, the IR checker (debug builds), the module's data entries and `WriteData`
+     (empty at first), and a backend skeleton with frame layout, prologue/epilogue and `ret`. Then
+     integer operators, assignment and locals.
+  2. Control flow: `if`, loops, `break`/`continue`, `&&`, `||`, `?:`, `switch`.
+  3. Calls and ABI: the `call` instruction, the classifier interface, `abi.cpp` moves behind it
+     (scalars only), parameters, more than 8 arguments, recursion.
+  4. Arrays, pointers, globals: `addr`, `load`/`store` by type, pointer scaling, global and `static`
+     data entries from `ConstValue` (21.2a), `enum`, string entries, `char`, `sizeof`.
+  5. Floats: `F32`/`F64`, conversions, float-constant entries, the floating rows of the classifier.
+  6. Structs and unions: `memcpy`/`memzero`, struct arguments and returns (`Fields`, by-reference,
+     hidden pointer), local initialisers.
+  7. Delete the old path: make `--ir` the default and require 283/283 on it, then remove `EmitRISC`,
+     the RISC-V parts of `emit.cpp` and `Context`, and the flag. Rewrite the CLAUDE.md "Architecture"
+     section and design sections 3 to 6 to describe the IR.
+- Each step adds `tests/custom/` cases (D13) only where the IR introduces a behaviour that the
+  current tests do not cover, for example a temp that is live across a call inside a loop.
+
+## 21.8 What this does not do
+
+- No optimisation, no register allocator, no SSA. The output is expected to be slower than today's
+  output, not faster.
+- No second backend. v3 ends when RISC-V runs only through the IR. Whether a second target is worth
+  building is a separate decision.
+- The output is not byte-identical to v2. The 283 tests check behaviour, not assembly text.
+
+## 21.9 Resolved in review (Marcus, 2026-11-11)
+
+1. How `--ir` reaches the runner: `COMPILER_FLAGS` (and `TARGET`) in `run_tests.sh`, forwarded into
+   Docker (21.7).
+2. `Target()` is a global set in `main` before parsing. Using it before it is set aborts with an
+   error and never falls back to a default (21.3).
+3. One slot per temporary, with no reuse. Slot reuse is noted as a possible later optimisation (21.4).
+4. Added: `--emit-ir` and the IR checker, both in step 1 (21.2).
+5. Added: module-level data (globals from `ConstValue`, strings, float constants) as IR entries that
+   the backend writes to `.data`/`.rodata` (21.2a).

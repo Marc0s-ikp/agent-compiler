@@ -41,3 +41,30 @@ Previous attempt (v1): 110/160 tests passing. Goal: beat it, then reach 160/160.
 6. char, strings, sizeof
 7. float / double (FP registers + ABI)
 8. structs, unions
+
+## v3 migration (D21, accepted by Marcus 2026-11-11)
+Goal: a linear IR between the AST and code generation, so a second ISA needs only a new backend.
+Design in `docs/DECISIONS.md`, "D21 detail". The old `EmitRISC` path and the new `--ir` path coexist
+until step 7.
+- Merge rule for every step: the default (old) path stays at 283/283, and the `--ir` pass count never
+  goes down. Commit message: `ir/<step>: <what changed> (default 283/283, --ir N→M)`.
+- Record both counts in `docs/PROGRESS.md` after every merge.
+- Measure the IR path with `COMPILER_FLAGS=--ir ./scripts/run_tests.sh`.
+- `Target()` used before `SetTarget` must abort, and must never fall back to a default.
+- One stack slot per IR temporary, never reused (reuse is a possible later optimisation, not v3).
+- The IR checker runs only in `make DEBUG=1` builds. Rebuild with `DEBUG=1` before a suite run that
+  should exercise it, because the runner itself builds without `DEBUG`.
+
+Do these in order, don't skip ahead:
+1. Expressions and locals: `TargetInfo` replaces the size constants (on the old path first), IR core,
+   `--emit-ir`, the IR checker (temps defined before use, operand types consistent), module data
+   entries, backend frame layout, prologue/epilogue, integer ops, assignment, return
+2. Control flow: if/else, loops, break/continue, `&&` `||` `?:`, switch
+3. Calls and ABI: IR `call`, the per-target classifier interface, the RISC-V classifier (D5/D18/D19)
+   moved behind it, >8 args, recursion
+4. Arrays, pointers, globals: addresses, load/store, pointer scaling, global/static data entries
+   from D15 `ConstValue`, enum, char, string entries, sizeof
+5. float / double: FP IR types, conversions, float-constant entries, the classifier's floating rows
+6. structs, unions: memcpy/memzero, struct args and returns, initialisers
+7. Delete the old path: `--ir` becomes the default at 283/283, then remove `EmitRISC`, the flag and
+   the dead `Context`/`emit` code, and update the Architecture section above
