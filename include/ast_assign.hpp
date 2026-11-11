@@ -11,6 +11,7 @@ public:
         : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     void EmitRecordCopy(std::ostream& os, const Type& type, int address_slot) const;
@@ -25,6 +26,7 @@ public:
         : op_(op), lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     BinOp op_;
@@ -40,6 +42,7 @@ public:
           operand_(std::move(operand)) {}
     TypePtr GetType(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     void EmitFloating(std::ostream& os, Context& ctx, const Type& type) const;

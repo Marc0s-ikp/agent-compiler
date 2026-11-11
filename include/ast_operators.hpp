@@ -52,6 +52,7 @@ public:
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     std::optional<ConstValue> FoldArithmetic(Context& ctx) const;
@@ -68,6 +69,7 @@ public:
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     CmpOp op_;
@@ -104,6 +106,7 @@ public:
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     UnOp op_;
@@ -129,6 +132,7 @@ public:
         : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     ExprPtr lhs_, rhs_;

@@ -24,6 +24,7 @@ public:
           declarators_(std::move(declarators)),
           storage_(storage) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     void MarkLinkage(const std::string& name, Context& ctx) const;
@@ -44,6 +45,7 @@ public:
           declarator_(std::move(declarator)),
           body_(std::move(body)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     Storage storage_;
@@ -57,6 +59,7 @@ public:
     explicit TranslationUnit(std::vector<ExternalDeclPtr> decls)
         : decls_(std::move(decls)) {}
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    void EmitIR(IRGen& gen) const override;
 
 private:
     std::vector<ExternalDeclPtr> decls_;
