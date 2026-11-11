@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: default 283/283 before, 285/285 after (86 of 86 compiler_tests, 199 of 199 custom). `--ir` 0 before (the old main.cpp ignored `--ir`, so the 283 a `--ir` run reported was the old path), 18/285 after. No test that passed before now fails.
-Fixed: v3 step 1. `TargetInfo` with an aborting `Target()` on the old path, the IR core, `--ir`, `--emit-ir` (dump first, then checker errors), the IR checker on every IR compile, data entries and `WriteData`, the RISC-V backend skeleton, integer operators, assignment, locals and return. New custom tests: `ir_int_locals`, `ir_narrow_return`.
-Blocked: nothing new in BLOCKERS. Design questions for Marcus are under "Open after v3 step 1" in docs/BLOCKERS.md. D22 is pending Marcus.
-Next: v3 step 2, control flow (if/else, loops, break/continue, `&&` `||` `?:`, switch), after Marcus decides where the lowering code lives.
+Pass count: default 285/285 before, 290/290 after (86 of 86 compiler_tests, 204 of 204 custom). `--ir` 18/285 before, 34/290 after. No previously passing test fails on either path (checked by the reviewer against the baseline).
+Fixed: v3 step 2. Lowering code moved next to each `EmitRISC` (D23 a), partial `--emit-ir` dump on lowering failure (D23 c), large immediates verified with `ir_large_immediates`, and control flow in the IR: if/else, while, do-while, for, break/continue, `&&`, `||`, `?:`, switch. New custom tests: `ir_large_immediates`, `ir_loops`, `ir_short_circuit`, `ir_ternary`, `ir_switch`.
+Blocked: nothing. Review notes are under "Nice to have from the v3 step 2 review" in docs/BLOCKERS.md. D24 is pending Marcus.
+Next: v3 step 3, calls and ABI. Function parameters are the first blocker for 156 of the `--ir` failures.
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
