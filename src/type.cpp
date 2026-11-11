@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include "target.hpp"
+
 struct Type::RecordData {
     bool is_union;
     std::string tag;
@@ -18,12 +20,17 @@ TypePtr Type::Integer(int size, bool is_signed) {
     return TypePtr(new Type(Kind::Integer, size, is_signed));
 }
 
+TypePtr Type::Int() { return Integer(Target().int_size, true); }
+TypePtr Type::UInt() { return Integer(Target().int_size, false); }
+TypePtr Type::Float() { return Floating(Target().float_size); }
+TypePtr Type::Double() { return Floating(Target().double_size); }
+
 TypePtr Type::Floating(int size) {
     return TypePtr(new Type(Kind::Floating, size, true));
 }
 
 TypePtr Type::Pointer(TypePtr pointee) {
-    Type* t = new Type(Kind::Pointer, 4, false);
+    Type* t = new Type(Kind::Pointer, Target().pointer_size, false);
     t->base_ = std::move(pointee);
     return TypePtr(t);
 }
@@ -119,6 +126,9 @@ int Type::Size() const {
 int Type::Align() const {
     if (kind_ == Kind::Array) return base_->Align();
     if (kind_ == Kind::Record) return record_->align;
+    if (kind_ == Kind::Floating && size_ == Target().double_size) {
+        return Target().double_align;
+    }
     return size_ == 0 ? 1 : size_;
 }
 
@@ -146,7 +156,7 @@ bool Type::Equals(const Type& o) const {
 
 // Integer types narrower than int become int.
 TypePtr Promote(const TypePtr& t) {
-    if (t->IsInteger() && t->Size() < 4) return Type::Int();
+    if (t->IsInteger() && t->Size() < Target().int_size) return Type::Int();
     return t;
 }
 
@@ -154,8 +164,8 @@ TypePtr Promote(const TypePtr& t) {
 // A floating operand wins; of two, the wider one.
 TypePtr UsualArithmetic(const TypePtr& a, const TypePtr& b) {
     if (a->IsFloating() || b->IsFloating()) {
-        bool wide = (a->IsFloating() && a->Size() == 8) ||
-                    (b->IsFloating() && b->Size() == 8);
+        bool wide = (a->IsFloating() && a->Size() == Target().double_size) ||
+                    (b->IsFloating() && b->Size() == Target().double_size);
         return wide ? Type::Double() : Type::Float();
     }
     TypePtr pa = Promote(a);

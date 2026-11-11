@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "ast.hpp"
+#include "target.hpp"
 
 
 extern FILE* yyin;
@@ -16,12 +17,15 @@ namespace {
 struct Options {
     const char* input = nullptr;
     const char* output = nullptr;
+    const char* target = "riscv32";  // the default when --target is absent
 };
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-S") == 0) continue;
-        if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+        if (std::strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
+            opts.target = argv[++i];
+        } else if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             opts.output = argv[++i];
         } else {
             opts.input = argv[i];
@@ -49,6 +53,12 @@ int main(int argc, char** argv) {
         std::cerr << "usage: c_compiler -S in.c -o out.s\n";
         return 1;
     }
+    TargetInfo target;
+    if (!FindTarget(opts.target, target)) {
+        std::cerr << "error: unknown target '" << opts.target << "'\n";
+        return 1;
+    }
+    SetTarget(target);  // before parsing: types read Target()
     std::unique_ptr<ast::TranslationUnit> root = Parse(opts.input);
     if (!root) return 1;
 

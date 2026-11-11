@@ -7,11 +7,12 @@
 namespace ast {
 
 long WrapToType(long n, const Type& type) {
-    uint32_t bits = static_cast<uint32_t>(n);
+    uint64_t bits = static_cast<uint64_t>(n);
     switch (type.Size()) {
         case 1: return type.IsSigned() ? static_cast<int8_t>(bits) : static_cast<uint8_t>(bits);
         case 2: return type.IsSigned() ? static_cast<int16_t>(bits) : static_cast<uint16_t>(bits);
-        default: return type.IsSigned() ? static_cast<int32_t>(bits) : static_cast<long>(bits);
+        case 4: return type.IsSigned() ? static_cast<int32_t>(bits) : static_cast<long>(static_cast<uint32_t>(bits));
+        default: return n;  // 8 bytes: the width of long on the host
     }
 }
 

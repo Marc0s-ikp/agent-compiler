@@ -17,6 +17,11 @@ Blocked: no new blockers.
 Remaining failures: none.
 Next: nothing planned. The open items are in docs/BLOCKERS.md.
 
+## v3 migration (IR path)
+| Step | Default | --ir |
+|------|---------|------|
+| 1a TargetInfo, SetTarget, Target() (old path) | 283/283 | 0/283 |
+
 ## Pass count by category
 | Category | Passing | Total |
 |----------|---------|-------|

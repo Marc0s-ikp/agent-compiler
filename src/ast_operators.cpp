@@ -4,6 +4,7 @@
 
 #include "const_value.hpp"
 #include "emit.hpp"
+#include "target.hpp"
 
 namespace ast {
 
@@ -237,12 +238,14 @@ std::optional<ConstValue> BinaryArith::EvalConstValue(
     std::optional<ConstValue> base = pointer.EvalConstValue(ctx);
     std::optional<long> n = index.EvalConst(ctx);
     if (!base || !n) return std::nullopt;
-    // 32-bit arithmetic, as the run-time pointer add does.
-    uint32_t step = static_cast<uint32_t>(PointeeSize(*pointer.ValueType(ctx))) *
-                    static_cast<uint32_t>(*n);
-    uint32_t offset = static_cast<uint32_t>(base->offset);
+    // Pointer-width arithmetic, as the run-time pointer add does (D20).
+    TypePtr ptr_int = Type::Integer(Target().pointer_size, false);
+    uint64_t step = static_cast<uint64_t>(PointeeSize(*pointer.ValueType(ctx))) *
+                    static_cast<uint64_t>(*n);
+    uint64_t offset = static_cast<uint64_t>(base->offset);
     offset += (kind == PointerOp::PtrMinusInt) ? 0u - step : step;
-    base->offset = WrapToType(offset, base->label.empty() ? *Type::UInt() : *Type::Int());
+    base->offset = WrapToType(static_cast<long>(offset),
+                              base->label.empty() ? *ptr_int : *Type::Integer(Target().pointer_size, true));
     return base;
 }
 
