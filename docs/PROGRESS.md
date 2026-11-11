@@ -22,6 +22,7 @@ Next: nothing planned. The open items are in docs/BLOCKERS.md.
 |------|---------|------|
 | 1a TargetInfo, SetTarget, Target() (old path) | 283/283 | 0/283 |
 | 1b IR core, --ir/--emit-ir flags, checker, IRGen | 283/283 | 0/283 |
+| 1c RISC-V backend skeleton (frames, prologue, ret, WriteData) | 283/283 | 0/283 |
 
 ## Pass count by category
 | Category | Passing | Total |

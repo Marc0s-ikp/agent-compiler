@@ -3,11 +3,11 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "ast.hpp"
+#include "backend.hpp"
 #include "ir.hpp"
 #include "ir_gen.hpp"
 #include "target.hpp"
@@ -77,7 +77,8 @@ int CompileViaIR(const Options& opts, const ast::TranslationUnit& root, std::ost
         return ReportIRErrors(module) ? 1 : 0;  // 2. then the checker
     }
     if (ReportIRErrors(module)) return 1;  // checker first, then the backend
-    throw std::runtime_error("no RISC-V backend yet");
+    EmitRiscv(module, out);
+    return 0;
 }
 
 }  // namespace
