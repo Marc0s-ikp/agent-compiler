@@ -13,6 +13,7 @@ public:
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     // Throws if the value does not fit 32 bits. Checked at code generation,
@@ -54,6 +55,7 @@ public:
         return value_;
     }
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     unsigned char value_;

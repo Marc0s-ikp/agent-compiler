@@ -23,12 +23,13 @@ public:
 
     static TypePtr Void();
     static TypePtr Integer(int size, bool is_signed);
-    static TypePtr Int() { return Integer(4, true); }
-    static TypePtr UInt() { return Integer(4, false); }
-    // size 4 is float, size 8 is double.
+    // Int and UInt have the target's int size (D21, 21.3).
+    static TypePtr Int();
+    static TypePtr UInt();
+    // The size picks float or double; Float() and Double() use the target's.
     static TypePtr Floating(int size);
-    static TypePtr Float() { return Floating(4); }
-    static TypePtr Double() { return Floating(8); }
+    static TypePtr Float();
+    static TypePtr Double();
     static TypePtr Pointer(TypePtr pointee);
     // length 0 means "unspecified" (only legal for parameters).
     static TypePtr Array(TypePtr element, int length);

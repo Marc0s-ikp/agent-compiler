@@ -11,11 +11,20 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: 272/272 before, 283/283 after (86 of 86 compiler_tests, 197 of 197 custom). No test that passed before now fails.
-Fixed: compile-time constant folding (`EvalConst`) now follows run-time semantics: 32-bit wraparound, unsigned division, modulo and right shift, `!` of a wrapped value, and comparisons as integer constant expressions in `case`, enum and array sizes. Tests were written first and 8 of the 11 failed on the old compiler. 11 new custom tests: `const_fold_*` (int_wrap, unsigned_arith, shifts, bitwise_unary, compare, case_labels, enum_values, enum_wrap, array_size, contexts_compare, ptr_offset).
-Blocked: no new blockers.
-Remaining failures: none.
-Next: nothing planned. The open items are in docs/BLOCKERS.md.
+Pass count: default 283/283 before, 285/285 after (86 of 86 compiler_tests, 199 of 199 custom). `--ir` 0 before (the old main.cpp ignored `--ir`, so the 283 a `--ir` run reported was the old path), 18/285 after. No test that passed before now fails.
+Fixed: v3 step 1. `TargetInfo` with an aborting `Target()` on the old path, the IR core, `--ir`, `--emit-ir` (dump first, then checker errors), the IR checker on every IR compile, data entries and `WriteData`, the RISC-V backend skeleton, integer operators, assignment, locals and return. New custom tests: `ir_int_locals`, `ir_narrow_return`.
+Blocked: nothing new in BLOCKERS. Design questions for Marcus are under "Open after v3 step 1" in docs/BLOCKERS.md. D22 is pending Marcus.
+Next: v3 step 2, control flow (if/else, loops, break/continue, `&&` `||` `?:`, switch), after Marcus decides where the lowering code lives.
+
+## v3 migration (IR path)
+| Step | Default | --ir |
+|------|---------|------|
+| baseline (master before step 1; `--ir` was not parsed) | 283/283 | 0/283 |
+| 1a TargetInfo, SetTarget, Target() (old path) | 283/283 | 0/283 |
+| 1b IR core, --ir/--emit-ir flags, checker, IRGen | 283/283 | 0/283 |
+| 1c RISC-V backend skeleton (frames, prologue, ret, WriteData) | 283/283 | 0/283 |
+| 1d integer operators, assignment, locals, return via EmitIR | 284/284 | 18/284 |
+| 1e review fixes (narrow return guard, data items, checker, main) | 285/285 | 18/285 |
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -35,7 +44,7 @@ Next: nothing planned. The open items are in docs/BLOCKERS.md.
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 197 | 197 |
+| custom (written by tester, D13) | 199 | 199 |
 
 ## History
 | Date | Passing | Change |
@@ -51,3 +60,4 @@ Next: nothing planned. The open items are in docs/BLOCKERS.md.
 | 2026-11-10 | 262/262 | feature 8: structs, unions, by-value struct ABI (219→262) |
 | 2026-11-10 | 272/272 | cleanup: self-referencing initialisers, pointers in ?:, short (262→272) |
 | 2026-11-10 | 283/283 | constant folding: typed 32-bit folding for initialisers, case, enum, array sizes (272→283) |
+| 2026-11-11 | 285/285 | v3 step 1: TargetInfo, IR core, checker, backend skeleton, integer lowering (default 283→285, --ir 0→18) |

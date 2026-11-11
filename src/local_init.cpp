@@ -1,6 +1,7 @@
 #include "local_init.hpp"
 
 #include "emit.hpp"
+#include "target.hpp"
 
 namespace ast {
 
@@ -25,7 +26,7 @@ void EmitScalarItem(std::ostream& os, Context& ctx, const InitItem& item,
 // A string's chars, one byte store each. The array was zeroed first, so zero
 // bytes (and the NUL) need no store.
 void EmitStringItem(std::ostream& os, const InitItem& item, int offset) {
-    TypePtr byte = Type::Integer(1, false);
+    TypePtr byte = Type::Integer(Target().char_size, false);
     for (size_t i = 0; i < item.bytes.size(); ++i) {
         unsigned char c = static_cast<unsigned char>(item.bytes[i]);
         if (c == 0) continue;

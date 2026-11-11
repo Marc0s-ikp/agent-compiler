@@ -23,21 +23,28 @@ struct Symbol {
     SymbolKind kind = SymbolKind::Local;
     std::string label;
     long value = 0;
+    // --ir only: the name of the local's frame object (offset is unused).
+    std::string object;
 
+    static Symbol IrLocal(TypePtr type, std::string object) {
+        Symbol s = Local(std::move(type), 0);
+        s.object = std::move(object);
+        return s;
+    }
     static Symbol Local(TypePtr type, int offset) {
-        return Symbol{std::move(type), offset, SymbolKind::Local, "", 0};
+        return Symbol{std::move(type), offset, SymbolKind::Local, "", 0, ""};
     }
     static Symbol Global(TypePtr type, std::string label) {
-        return Symbol{std::move(type), 0, SymbolKind::Global, std::move(label), 0};
+        return Symbol{std::move(type), 0, SymbolKind::Global, std::move(label), 0, ""};
     }
     static Symbol Typedef(TypePtr type) {
-        return Symbol{std::move(type), 0, SymbolKind::Typedef, "", 0};
+        return Symbol{std::move(type), 0, SymbolKind::Typedef, "", 0, ""};
     }
     static Symbol EnumConst(long value) {
-        return Symbol{Type::Int(), 0, SymbolKind::EnumConst, "", value};
+        return Symbol{Type::Int(), 0, SymbolKind::EnumConst, "", value, ""};
     }
     static Symbol Function(TypePtr type) {
-        return Symbol{std::move(type), 0, SymbolKind::Function, "", 0};
+        return Symbol{std::move(type), 0, SymbolKind::Function, "", 0, ""};
     }
 };
 

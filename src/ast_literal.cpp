@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "emit.hpp"
+#include "target.hpp"
 
 namespace ast {
 
@@ -84,7 +85,7 @@ void CharLiteral::EmitRISC(std::ostream& os, Context&) const {
 }
 
 TypePtr StringLiteral::GetType(const Context&) const {
-    return Type::Array(Type::Integer(1, false), static_cast<int>(bytes_.size()) + 1);
+    return Type::Array(Type::Integer(Target().char_size, Target().char_is_signed), static_cast<int>(bytes_.size()) + 1);
 }
 
 std::optional<ConstValue> StringLiteral::EvalConstAddress(Context& ctx) const {

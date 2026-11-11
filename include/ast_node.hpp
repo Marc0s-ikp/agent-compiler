@@ -5,7 +5,10 @@
 #include <string>
 
 #include "context.hpp"
+#include "ir.hpp"
 #include "type.hpp"
+
+class IRGen;
 
 namespace ast {
 
@@ -14,6 +17,10 @@ class Node {
 public:
     virtual ~Node() = default;
     virtual void EmitRISC(std::ostream& os, Context& ctx) const = 0;
+    // The --ir path (D21). Nodes that have no IR lowering yet throw
+    // "not in IR yet", so a test using one fails under --ir and still passes
+    // on the old path.
+    virtual void EmitIR(IRGen& gen) const;
 };
 
 // A link-time constant: the address of a global label plus a byte offset, or
@@ -60,6 +67,11 @@ public:
     // For lvalues: leave the object's address in a0 (D4).
     // Default: the expression is not an lvalue.
     virtual void EmitAddress(std::ostream& os, Context& ctx) const;
+    // --ir: evaluates the expression and returns an operand holding its
+    // value, with the IR type of ValueType(ctx).
+    virtual ir::Operand EmitValue(IRGen& gen) const;
+    // --ir, lvalues: the address of the object, as a Ptr operand.
+    virtual ir::Operand EmitIRAddress(IRGen& gen) const;
 };
 
 using ExprPtr = std::unique_ptr<Expr>;

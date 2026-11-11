@@ -172,3 +172,17 @@ From the constant folding review (2026-11-10, approved). None of these blocked t
 4. `tests/custom/const_fold_case_labels.c:20`: `case -7 / 2` is never driven, because the driver has no `sw_i(-3)`.
 5. No test covers the integer branch of `FoldArithmetic` (cast-of-float operands such as `(int)1.5 + 2147483647`) or unsigned-to-double conversion. Both gave correct values in the reviewer's probes.
 6. Still not constants, as before this change: `&&`, `||` and `?:` (`int g = 1 && 2;`, `case 1 ? 2 : 3:`), and casts of floats in `case`, enum and array-size contexts (`char a[(int)2.5]`).
+
+## Open after v3 step 1
+
+From the step 1 review (2026-11-11, approved in round 2). These are design questions for Marcus. None blocked the merge.
+
+1. **Where the lowering code lives (decide before step 2).** All `EmitIR`/`EmitValue` code is in one file, `src/ast_ir.cpp` (D22(b)), about 300 lines now and likely 1500+ by step 6. The options are to put each `EmitIR` next to its node's `EmitRISC` in the existing `src/ast_*.cpp` files, or to split by group (`ast_ir_operators.cpp`, `ast_ir_stmt.cpp`, ...). Step 7 deletes functions either way.
+2. **Pointer arithmetic in the IR (decide before step 4).** 21.2 has no pointer-to-integer conversion, and the checker rejects `Ptr` in arithmetic. The reviewer suggests a `ptradd ptr, iN` (byte offset already scaled by the frontend) plus `ptrtoint`/`inttoptr`. This needs a D21 amendment.
+3. **Partial dump when lowering throws.** `--emit-ir` prints nothing when a node throws `not in IR yet` (D22(h)). Cheap option: print the finished functions and the partly built one, then rethrow.
+4. **Trailing `ret`.** Every function ends with an implicit `ret`, even after an explicit one. One option is to skip it when the last instruction is already a `ret`.
+5. **The `.L` label prefix comes from the frontend** (`Context::NewLabel`, `src/context.cpp:142`). It is assembler syntax, so the backend should add it.
+6. **Old-path coupling to remove before step 7.** `FunctionDefinition::EmitIR` calls `ctx.BeginFunction` (old frame counters), and `src/backend_riscv.cpp` includes `emit.hpp` for `EmitMem`/`EmitAddrOffset`.
+7. **Unary minus on a constant is not folded** (`-1` becomes `neg` then `trunc`). Correct, but it makes the dump noisy.
+8. **Narrow returns are rejected under `--ir`** (`src/ast_ir.cpp:283-290`), unsigned ones included. The step 3 classifier must remove this guard; `tests/custom/ir_narrow_return` is the test for it.
+9. Commit `147dee6`'s message reads "(default 283/283 + 1 new custom test, --ir 0→18)" instead of "(default 284/284, --ir 0→18)". It was left as is, to avoid rewriting history.
