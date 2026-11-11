@@ -52,8 +52,8 @@ until step 7.
 - Measure the IR path with `COMPILER_FLAGS=--ir ./scripts/run_tests.sh`.
 - `Target()` used before `SetTarget` must abort, and must never fall back to a default.
 - One stack slot per IR temporary, never reused (reuse is a possible later optimisation, not v3).
-- The IR checker runs only in `make DEBUG=1` builds. Rebuild with `DEBUG=1` before a suite run that
-  should exercise it, because the runner itself builds without `DEBUG`.
+- The IR checker runs on every `--ir` compile, in every build (never behind `#ifdef DEBUG`), so
+  every `COMPILER_FLAGS=--ir` suite run checks the IR.
 
 Do these in order, don't skip ahead:
 1. Expressions and locals: `TargetInfo` replaces the size constants (on the old path first), IR core,
