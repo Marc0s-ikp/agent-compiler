@@ -46,5 +46,10 @@ Operand ValueAs(IRGen& gen, const Expr& e, const Type& to) {
     RequireIrInteger(*from);
     return gen.ConvertInt(e.EmitValue(gen), *from, to);
 }
+ 
+Operand Condition(IRGen& gen, const Expr& e) {
+    RequireIrInteger(*e.ValueType(gen.Ctx()));
+    return e.EmitValue(gen);
+}
 
 }  // namespace ast

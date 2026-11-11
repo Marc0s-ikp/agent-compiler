@@ -28,6 +28,7 @@ Next: v3 step 2, control flow (if/else, loops, break/continue, `&&` `||` `?:`, s
 | 2a move lowering code into the per-node files (D23 a) | 285/285 | 18/285 |
 | 2b partial `--emit-ir` dump when lowering throws (D23 c) | 285/285 | 18/285 |
 | 2c large immediates verified in the backend, custom test `ir_large_immediates` (default 286/286, --ir 19/286) | 286/286 | 19/286 |
+| 2d control flow: if/else, loops, break/continue, &&, ||, ?:, switch; custom tests `ir_loops`, `ir_short_circuit`, `ir_ternary`, `ir_switch` | 290/290 | 34/290 |
 
 ## Pass count by category
 | Category | Passing | Total |

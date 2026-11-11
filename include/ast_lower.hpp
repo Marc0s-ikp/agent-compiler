@@ -16,4 +16,8 @@ ir::Operand Arith(IRGen& gen, BinOp op, const Type& common, ir::Operand a, ir::O
 // Evaluates 'e' and converts it to 'to' (an integer type).
 ir::Operand ValueAs(IRGen& gen, const Expr& e, const Type& to);
 
+// Evaluates a controlling expression (if, loops, ?:, &&, ||, switch) to an
+// integer operand that a branch can test against zero.
+ir::Operand Condition(IRGen& gen, const Expr& e);
+
 }  // namespace ast

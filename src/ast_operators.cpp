@@ -625,4 +625,57 @@ Operand Comma::EmitValue(IRGen& gen) const {
     return rhs_->EmitValue(gen);
 }
 
+
+// ---- && || ?: (control flow that yields a value) ----
+// The result is one temp written at two sites, which the checker allows for
+// exactly this case (21.2); the backend needs nothing special, a temp is a slot.
+
+Operand LogicalAnd::EmitValue(IRGen& gen) const {
+    Operand result = gen.NewTemp(IrType::I32);
+    std::string rhs = gen.NewLabel("andr"), is_true = gen.NewLabel("andt");
+    std::string is_false = gen.NewLabel("andf"), end = gen.NewLabel("ande");
+    gen.Branch(Condition(gen, *lhs_), rhs, is_false);
+    gen.Label(rhs);
+    gen.Branch(Condition(gen, *rhs_), is_true, is_false);
+    gen.Label(is_true);
+    gen.Move(result, Operand::Int(1, IrType::I32));
+    gen.Jump(end);
+    gen.Label(is_false);
+    gen.Move(result, Operand::Int(0, IrType::I32));
+    gen.Label(end);
+    return result;
+}
+
+Operand LogicalOr::EmitValue(IRGen& gen) const {
+    Operand result = gen.NewTemp(IrType::I32);
+    std::string rhs = gen.NewLabel("orr"), is_true = gen.NewLabel("ort");
+    std::string is_false = gen.NewLabel("orf"), end = gen.NewLabel("ore");
+    gen.Branch(Condition(gen, *lhs_), is_true, rhs);
+    gen.Label(rhs);
+    gen.Branch(Condition(gen, *rhs_), is_true, is_false);
+    gen.Label(is_false);
+    gen.Move(result, Operand::Int(0, IrType::I32));
+    gen.Jump(end);
+    gen.Label(is_true);
+    gen.Move(result, Operand::Int(1, IrType::I32));
+    gen.Label(end);
+    return result;
+}
+
+Operand Ternary::EmitValue(IRGen& gen) const {
+    TypePtr type = GetType(gen.Ctx());
+    RequireIrInteger(*type);
+    Operand result = gen.NewTemp(IRGen::ToIr(*type));
+    std::string then_label = gen.NewLabel("qthen"), else_label = gen.NewLabel("qelse");
+    std::string end = gen.NewLabel("qend");
+    gen.Branch(Condition(gen, *cond_), then_label, else_label);
+    gen.Label(then_label);
+    gen.Move(result, ValueAs(gen, *then_, *type));
+    gen.Jump(end);
+    gen.Label(else_label);
+    gen.Move(result, ValueAs(gen, *else_, *type));
+    gen.Label(end);
+    return result;
+}
+
 }  // namespace ast

@@ -82,6 +82,7 @@ public:
         : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     ExprPtr lhs_, rhs_;
@@ -93,6 +94,7 @@ public:
         : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     ExprPtr lhs_, rhs_;
@@ -121,6 +123,7 @@ public:
           else_(std::move(else_expr)) {}
     TypePtr GetType(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     ExprPtr cond_, then_, else_;

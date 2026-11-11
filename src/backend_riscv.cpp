@@ -215,7 +215,8 @@ private:
             case Op::Jump: os_ << "\tj " << in.label << "\n"; return;
             case Op::Branch:
                 Load("t0", in.args[0]);
-                os_ << "\tbnez t0, " << in.label << "\n\tj " << in.label2 << "\n";
+                // 'j' reaches the whole function; a conditional branch only +-4 KiB.
+                os_ << "\tbeqz t0, 1f\n\tj " << in.label << "\n1:\n\tj " << in.label2 << "\n";
                 return;
             case Op::Ret:
                 if (!in.args.empty()) Load("a0", in.args[0]);

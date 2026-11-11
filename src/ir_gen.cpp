@@ -89,6 +89,15 @@ Operand IRGen::Emit(Instruction in, IrType result) {
     return in.dst;
 }
 
+void IRGen::Move(Operand dst, Operand src) {
+    Instruction in;
+    in.op = src.IsConst() ? Op::Const : Op::Copy;
+    in.type = dst.type;
+    in.dst = dst;
+    in.args = {src};
+    Append(in);
+}
+
 Operand IRGen::Binary(Op op, IrType type, Operand a, Operand b) {
     Instruction in;
     in.op = op;
