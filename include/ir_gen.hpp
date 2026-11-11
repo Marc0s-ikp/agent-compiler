@@ -18,6 +18,9 @@ public:
     // ---- functions ----
     void BeginFunction(const std::string& name, bool is_global, const TypePtr& return_type);
     void EndFunction();  // adds an implicit return, then appends the function
+    // After a lowering error: appends the function being built as it stands,
+    // so --emit-ir can dump it (D23 c). Does nothing between functions.
+    void AppendPartialFunction();
 
     // A frame object for a local. The returned operand names it uniquely
     // ('x' and a shadowing 'x' become $x.0 and $x.1).

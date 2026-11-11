@@ -26,6 +26,7 @@ Next: v3 step 2, control flow (if/else, loops, break/continue, `&&` `||` `?:`, s
 | 1d integer operators, assignment, locals, return via EmitIR | 284/284 | 18/284 |
 | 1e review fixes (narrow return guard, data items, checker, main) | 285/285 | 18/285 |
 | 2a move lowering code into the per-node files (D23 a) | 285/285 | 18/285 |
+| 2b partial `--emit-ir` dump when lowering throws (D23 c) | 285/285 | 18/285 |
 
 ## Pass count by category
 | Category | Passing | Total |

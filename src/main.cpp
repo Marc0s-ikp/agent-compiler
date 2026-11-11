@@ -69,13 +69,22 @@ bool ReportIRErrors(const ir::Module& module) {
 
 // The IR path. The checker runs on every compile, in every build (D21).
 // With --emit-ir the dump is written FIRST and the checker runs after it, so a
-// broken module can still be read. With --ir alone the checker runs before
+// broken module can still be read. If lowering throws, the finished functions
+// and the partly built one are dumped before the error is reported. With --ir
+// alone the checker runs before
 // the backend, and nothing is generated from a module that fails it.
 int CompileViaIR(const Options& opts, const ast::TranslationUnit& root, std::ostream& out) {
     ir::Module module;
     Context ctx;
     IRGen gen(module, ctx);
-    root.EmitIR(gen);
+    try {
+        root.EmitIR(gen);
+    } catch (const std::exception&) {
+        if (!opts.emit_ir) throw;
+        gen.AppendPartialFunction();  // D23 c: dump what was built, then fail
+        ir::Print(module, out);
+        throw;
+    }
     if (opts.emit_ir) {
         ir::Print(module, out);          // 1. the dump
         return ReportIRErrors(module) ? 1 : 0;  // 2. then the checker
