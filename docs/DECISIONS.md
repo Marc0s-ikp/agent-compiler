@@ -2,8 +2,8 @@
 
 | Date | Decision | Reason | Alternatives considered |
 |------|----------|--------|-------------------------|
-| 2026-11-08 | ACCEPTED D1: every expression evaluates into one accumulator (`a0` or `fa0`), with intermediates saved in frame temp slots | No allocator and no live-register state to get wrong around calls. Speed is not tested | Register pool with spilling (more code, faster output, not needed for these tests); destination register passed down the tree |
-| 2026-11-08 | ACCEPTED D2: frame addressed from `s0`, `sp` fixed after the prologue, function body buffered so the prologue is written last | Frame size is only known after the body. A fixed `sp` keeps 16-byte alignment and makes outgoing stack args simple | Pre-pass to compute frame size (a second tree walk to keep in sync); push/pop on `sp` (alignment bugs around calls) |
+| 2026-11-08 | ACCEPTED D1, **SUPERSEDED by D21 (21.4) at v3 step 7, 2026-11-12**: the accumulator is gone; each IR instruction loads its operands into scratch registers and stores its result to the temp's own slot, so D1's rule (no register state held across code that may call) now holds per IR instruction, not per AST node. Original: every expression evaluates into one accumulator (`a0` or `fa0`), with intermediates saved in frame temp slots | No allocator and no live-register state to get wrong around calls. Speed is not tested | Register pool with spilling (more code, faster output, not needed for these tests); destination register passed down the tree |
+| 2026-11-08 | ACCEPTED D2, **SUPERSEDED by D21 (21.6) at v3 step 7, 2026-11-12**: the backend receives a whole `ir::Function`, so the frame size is known before printing and the body is no longer buffered; addressing from `s0`, the fixed `sp` and the outgoing area at `sp` remain as the RISC-V backend's layout rules. Original: frame addressed from `s0`, `sp` fixed after the prologue, function body buffered so the prologue is written last | Frame size is only known after the body. A fixed `sp` keeps 16-byte alignment and makes outgoing stack args simple | Pre-pass to compute frame size (a second tree walk to keep in sync); push/pop on `sp` (alignment bugs around calls) |
 | 2026-11-08 | ACCEPTED D3: `Type` is an immutable shared value object; `Expr::GetType` is pure and emits nothing | Types first-class from day one. `sizeof expr` must not generate code | Storing a type on each node at parse time (needs scopes the parser doesn't have) |
 | 2026-11-08 | ACCEPTED D4: separate `EmitRISC` (value) and `EmitAddress` (lvalue) on `Expr` | One rule for assignment, `&`, `++`, members and indexing | A boolean "want address" flag through `EmitRISC` |
 | 2026-11-08 | ACCEPTED D5: one ABI classifier shared by caller and callee | Both sides of a call cannot disagree | Separate logic in `FunctionCall` and `FunctionDefinition` |
@@ -29,7 +29,7 @@
 | 2026-11-11 | ACCEPTED D24 (implementer, accepted by Marcus 2026-11-12 with a change to (d), see below), implementation choices in v3 step 2: (a) `ast_lower.hpp`/`ast_lower.cpp` hold only the lowering helpers that several nodes share (`RequireIrInteger`, `Arith`, `ValueAs`, `Condition`); every `EmitIR`/`EmitValue` is in its node's file (D23 a), and `src/ast_ir.cpp` is deleted. (b) Loops and switches reuse `Context::PushLoop`/`PushSwitch`/`BreakLabel`/`ContinueLabel`/`AddCase`/`AddDefault`, so label and duplicate-case handling is the same on both paths. (c) `switch` computes the controlling value once (converted to the promoted type), jumps to a dispatch label, lowers the body, jumps to the end, then writes the dispatch chain (`eq` + `branch` per case, then a jump to `default` or the end) after the body; this is the IR equivalent of the old path's buffering and needs no pre-scan of the body. (d) `&&`, `||` and `?:` allocate their result with `IRGen::NewTemp` (now public) and write it at two sites with `IRGen::Move` (`const` for a constant source, `copy` otherwise), as 21.2 allows. (e) `branch` is written by the backend as `beqz t0, 1f; j if_nonzero; 1: j if_zero`, so a branch reaches the whole function (a bare `bnez` reaches only +-4 KiB). (f) `AppendPartialFunction` supports the D23 c partial dump. (g) Not done: skipping the trailing implicit `ret` (it is dead only when no label follows the last `ret`). **Change to (d) (Marcus, 2026-11-12), done first in step 3:** no temp has two definition sites. `?:` lowers through a hidden frame object: each arm stores its value to the object, and one `load` after the join defines the result temp. `&&` and `||` do the same, since they also had two-site temps. The checker then enforces that every temp is defined by exactly one instruction site. This replaces the exception in 21.2 (amendment 21.10.4). | Keeps the two paths' control-flow bookkeeping identical; no extra IR instructions beyond the existing ones | A pre-scan of the switch body for case labels; a `select` instruction for `?:`; storing the `?:` result through a frame object |
 | 2026-11-12 | D25 (implementer, **accepted by Marcus 2026-11-12, with one change: the classifier is a virtual on `Target().Abi()`**), the per-target call classifier interface and the IR `call`, v3 step 3 (detail: "D25 detail" below). (a) `include/call_abi.hpp` declares the abstract `TargetAbi` with `virtual CallLayout Classify(params, ret) const`, reached as `Target().Abi().Classify(...)` (`RiscV32Abi`, chosen in `SetTarget`); `CallLayout` holds one `ArgPlace` per parameter, a `RetPlace` and `stack_bytes`. Everything is a `Piece` (offset in the value, byte count, C signedness, and `IntReg`/`FloatReg`/`StackWord` plus a register number or stack offset). (b) The RISC-V classifier (`src/call_abi_riscv.cpp`) is built on `ClassifyArgs`, `ClassifyReturn` and `StackExtent`, which the old path still uses, so there is one rule set until step 7. Only integers (up to 4 bytes) and pointers are classified; any other type throws "not in IR yet". (c) The backend calls `Classify` once for the function's own entry and once per IR `call`, with the same types. (d) The psABI extension of narrow integers is carried by `Piece::is_signed` (the C signedness), never inferred from IR types. (e) IR `call` carries the callee, the argument values, their C types and the C return type; `ir::Function` carries its parameters (home frame object plus C type) and its C return type. The checker verifies callee, argument IR types and result type. | The frontend decides what is passed and with which C types; where it goes is one backend call used on both sides, so the two cannot disagree (D5). Pieces already express every kind in D18(d) and D19(d), so steps 5 and 6 only lift the throw | A free function `Classify` (see "D25 detail"); IR types alone in the call (lose signedness); separate caller and callee rule sets |
 | 2026-11-12 | ACCEPTED D26 (implementer, accepted by Marcus 2026-11-12), the struct result object in v3 step 6: every call whose C return type is a struct or union gets a result object, a frame object `ret.N` of the record's size that the frontend allocates for every such call and names in the call's `result_object`; the value of the call expression is `addr $ret.N`. The frontend never asks `Classify(...).ret.in_memory`. The backend decides: hidden pointer (it passes the object's address in `ret.pointer`) or registers (it stores the returned pieces into the object). The checker requires a `result_object` of exactly the record's size on every record call and none on any other call (detail: "Step 6 notes", `result_object`) | The frontend has nothing to decide and never learns the RISC-V rule, so a second target changes only its classifier and backend. The object is needed in both cases anyway | The frontend asks the classifier and allocates an object only for a hidden-pointer return (puts the RISC-V rule in the frontend); a result temporary of a record IR type (the IR has no record types, 21.2) |
-Status: all of the above was approved by Marcus (D15 to D18 on 2026-11-09, D19 and D20 on 2026-11-10, D21 on 2026-11-11, the rest on 2026-11-08). D21 step 1 is merged (2026-11-11); steps 2 to 7 remain. D22 and D23 were accepted by Marcus on 2026-11-11, D24 on 2026-11-12 (with the change to (d)), D25 on 2026-11-12 (with one change: the classifier is a virtual on `Target().Abi()`), D26 on 2026-11-12.
+Status: all of the above was approved by Marcus (D15 to D18 on 2026-11-09, D19 and D20 on 2026-11-10, D21 on 2026-11-11, the rest on 2026-11-08). D21 steps 1 to 7 are merged (2026-11-11 to 2026-11-12); D1 and D2 are superseded by D21. D22 and D23 were accepted by Marcus on 2026-11-11, D24 on 2026-11-12 (with the change to (d)), D25 on 2026-11-12 (with one change: the classifier is a virtual on `Target().Abi()`), D26 on 2026-11-12.
 
 ---
 
@@ -120,6 +120,8 @@ Expressions of array type are never loaded. They evaluate to their address, thro
 
 ## 3. Context
 
+*Superseded by D21 at v3 step 7 (2026-11-12): this section describes the removed `EmitRISC` path. The current design is in "D21 detail" (21.1, 21.4 to 21.6), "D25 detail" and the Step 3 to 7 notes. Kept for history.*
+
 ```
 class Context
   Scopes        PushScope / PopScope / Declare(name, Symbol) / Lookup(name)
@@ -150,6 +152,8 @@ registering its value and label as it goes, then emit the dispatch followed by t
 
 ## 4. Stack frame
 
+*Superseded by D21 at v3 step 7 (2026-11-12): this section describes the removed `EmitRISC` path. The current design is in "D21 detail" (21.1, 21.4 to 21.6), "D25 detail" and the Step 3 to 7 notes. Kept for history.*
+
 ```
 higher addresses
   incoming stack args      s0 + 0, s0 + 4, ...
@@ -174,6 +178,8 @@ lower addresses
   and epilogue do the same.
 
 ## 5. Register strategy
+
+*Superseded by D21 at v3 step 7 (2026-11-12): this section describes the removed `EmitRISC` path. The current design is in "D21 detail" (21.1, 21.4 to 21.6), "D25 detail" and the Step 3 to 7 notes. Kept for history.*
 
 | Register | Use |
 |----------|-----|
@@ -204,6 +210,8 @@ seconds per step.
 `CompoundAssign` and `IncDec` save the operand's address in a temp slot, so it is evaluated once.
 
 ## 6. Calls (ilp32d)
+
+*Superseded by D21 at v3 step 7 (2026-11-12): this section describes the removed `EmitRISC` path. The current design is in "D21 detail" (21.1, 21.4 to 21.6), "D25 detail" and the Step 3 to 7 notes. Kept for history.*
 
 `ClassifyArgs(paramTypes) -> vector<ArgLoc>` is used by both `FunctionCall` and `FunctionDefinition`.
 Each `ArgLoc` is an integer register, a floating register, a register pair, or a stack offset.

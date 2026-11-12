@@ -14,13 +14,31 @@ Previous attempt (v1): 110/160 tests passing. Goal: beat it, then reach 160/160.
 - Usage: `build/c_compiler -S in.c -o out.s`
 - Test one case: `./scripts/run_tests.sh tests/compiler_tests/<category>/<name>.c`
 
-## Architecture (do not change without a DECISIONS.md entry)
-- `src/lexer.flex`, `src/parser.y` → AST
-- `include/ast_*.hpp` → one node class per construct, each with `EmitRISC(std::ostream&, Context&)`
-- `include/context.hpp` → symbol tables, scopes, stack frame layout, type info, label generation
-- Types are first-class from day one: every expression node can report its type and size.
+## Architecture (do not change without a DECISIONS.md entry; design in `docs/DECISIONS.md`, "D21 detail")
+Pipeline: source → `src/lexer.flex`, `src/parser.y` → AST → `EmitIR` (frontend) → `ir::Module` → IR checker
+→ RISC-V backend → assembly. `build/c_compiler --emit-ir` prints the IR instead of assembly.
+- **AST** (`include/ast_*.hpp`, `src/ast_*.cpp`): one node class per construct. Statements lower with
+  `EmitIR(IRGen&)`; expressions with `EmitValue` (value) and `EmitIRAddress` (lvalue). Shared lowering
+  helpers are in `ast_lower.*` (D24 a).
+- **Frontend** knows C, not the machine: scopes, types, conversions, pointer scaling, constant folding,
+  initialiser layout, evaluation order. It never names a register, instruction, frame offset or directive.
+  `include/context.hpp` holds the frontend state: scopes and tags, globals and the string/float pools,
+  loop/switch targets and case labels (D24 b), label and symbol names. `include/ir_gen.hpp` builds the IR.
+- **IR** (`include/ir.hpp`): linear, typed instructions on temporaries and frame objects, plus module data
+  entries. Every temp has exactly one defining instruction (D24 d). Struct values are `Ptr`s to frame
+  objects; a struct-returning call writes its `result_object` (D26).
+- **Checker** (`src/ir_check.cpp`) runs on every compile, in every build (never behind `#ifdef DEBUG`).
+  Nothing is generated from a module that fails it.
+- **Backend** (`src/backend_riscv.cpp`) knows the machine: frame layout, prologue/epilogue, instruction
+  choice. One stack slot per IR temporary, never reused; nothing is held in a register between IR
+  instructions (21.4). Frame addressed from `s0`, `sp` fixed after the prologue, aligned to 16 (21.6).
+- **Target** (`include/target.hpp`): type sizes and alignment come from `Target()`. `Target()` or
+  `Target().Abi()` used before `SetTarget` must abort, and must never fall back to a default.
+- **ABI**: the ilp32d rules exist only in `RiscV32Abi` (`src/call_abi_riscv.cpp`), behind the `TargetAbi`
+  interface (`include/call_abi.hpp`, D25), shared by caller and callee. Follow the ilp32d calling
+  convention exactly; callee-saved registers the backend uses must be saved.
+- Types are first-class: every expression node can report its type and size, and `GetType` emits nothing.
   (v1 lost most of its failures to bolted-on types: pointers, arrays, floats, structs.)
-- Follow the RISC-V ilp32d calling convention exactly. Callee-saved registers must be saved.
 
 ## Rules for every agent
 1. One feature or fix per commit. Commit message: `<category>: <what changed> (N→M passing)`.
@@ -42,29 +60,8 @@ Previous attempt (v1): 110/160 tests passing. Goal: beat it, then reach 160/160.
 7. float / double (FP registers + ABI)
 8. structs, unions
 
-## v3 migration (D21, accepted by Marcus 2026-11-11)
-Goal: a linear IR between the AST and code generation, so a second ISA needs only a new backend.
-Design in `docs/DECISIONS.md`, "D21 detail". The old `EmitRISC` path and the new `--ir` path coexist
-until step 7.
-- Merge rule for every step: the default (old) path stays at 283/283, and the `--ir` pass count never
-  goes down. Commit message: `ir/<step>: <what changed> (default 283/283, --ir N→M)`.
-- Record both counts in `docs/PROGRESS.md` after every merge.
-- Measure the IR path with `COMPILER_FLAGS=--ir ./scripts/run_tests.sh`.
-- `Target()` used before `SetTarget` must abort, and must never fall back to a default.
-- One stack slot per IR temporary, never reused (reuse is a possible later optimisation, not v3).
-- The IR checker runs on every `--ir` compile, in every build (never behind `#ifdef DEBUG`), so
-  every `COMPILER_FLAGS=--ir` suite run checks the IR.
-
-Do these in order, don't skip ahead:
-1. Expressions and locals: `TargetInfo` replaces the size constants (on the old path first), IR core,
-   `--emit-ir`, the IR checker (temps defined before use, operand types consistent), module data
-   entries, backend frame layout, prologue/epilogue, integer ops, assignment, return
-2. Control flow: if/else, loops, break/continue, `&&` `||` `?:`, switch
-3. Calls and ABI: IR `call`, the per-target classifier interface, the RISC-V classifier (D5/D18/D19)
-   moved behind it, >8 args, recursion
-4. Arrays, pointers, globals: addresses, load/store, pointer scaling, global/static data entries
-   from D15 `ConstValue`, enum, char, string entries, sizeof
-5. float / double: FP IR types, conversions, float-constant entries, the classifier's floating rows
-6. structs, unions: memcpy/memzero, struct args and returns, initialisers
-7. Delete the old path: `--ir` becomes the default at 283/283, then remove `EmitRISC`, the flag and
-   the dead `Context`/`emit` code, and update the Architecture section above
+## v3 migration (D21, accepted by Marcus 2026-11-11): DONE 2026-11-12
+Steps 1 to 7 are merged; the IR is the only code generation path and `EmitRISC`, the old `Context`
+frame code and the `--ir` flag are gone (Step 1 to 7 notes in `docs/DECISIONS.md`). Its standing rules
+are in the Architecture section above. A second ISA needs a new `TargetInfo`, a `TargetAbi` subclass and
+a backend; the frontend and the IR do not change.
