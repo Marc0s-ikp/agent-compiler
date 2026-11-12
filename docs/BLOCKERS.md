@@ -266,5 +266,6 @@ From the step 5 review (2026-11-12, approved in round 1). None of these blocked 
    `char[1000]` is a 1000-iteration byte loop.
 4. A struct argument is copied by the frontend even if the callee only reads it (21.5 requires a private copy); the
    by-reference callee then copies again into its home. Two copies of a big struct per call; an optimisation for later.
-5. `tests/abi_check` does not model registers for structs, so every double of such a signature is byte-checked; a
+5. RESOLVED (review commit 2bde714: `gen_abi.py` models the ilp32d struct rules and byte-checks only split doubles). Was: `tests/abi_check` does not model registers for structs, so every double of such a signature is byte-checked; a
    struct whose double is split (e.g. `{double}` after 7 ints and 8 doubles) is therefore only checked by bytes.
+6. The IR checker could reject two calls that share one `result_object` (from the step 6 review).

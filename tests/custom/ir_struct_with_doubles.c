@@ -1,8 +1,9 @@
 /* Structs among doubles once fa0-fa7 are used up: the 8 doubles fill fa0-fa7, so
    the ninth double goes in two a registers, and the structs after it take a
    registers too: {float,float} in a0,a1 (integer convention), the double d9 in
-   a2,a3, {int,int} in a4,a5, a 12-byte struct by reference in a6, and a
-   {double} struct in a7 plus the first stack word (the split).
+   a2,a3, {int,int} in a4,a5, a 12-byte struct by reference in a6, and the int
+   'tail' in a7. Nothing is split here; a split {double} struct is covered by
+   struct_fp_split_double and by tests/abi_check.
    Our functions are ours_*; the GCC-compiled driver defines theirs_* and
    calls both ways, so caller and callee are always checked against GCC. */
 struct FF { float a; float b; };

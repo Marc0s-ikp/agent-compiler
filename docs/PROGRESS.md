@@ -13,7 +13,7 @@
 ## Latest session
 Pass count: default 305/305 before, 319/319 after (86 of 86 compiler_tests, 233 of 233 custom). `--ir` 257/305 before, 319/319 after. No previously passing test fails on either path (checked per test against `results/baseline_default_step6.txt` and `results/baseline_ir_step6.txt`).
 Fixed: v3 step 6, structs and unions on the IR path. A struct value is a `Ptr` to its object; member access is `ptradd`; struct assignment, struct arguments and initialiser items are `memcpy`; `ir::Instruction::result_object` receives a returned struct; `RiscV32Abi` maps `ArgPieces`/`ClassifyReturn` (integer words, a7 split, stack, floating-convention fields, by reference, hidden return pointer) with the interface unchanged; the backend places and stores pieces by offset. 14 new custom tests `ir_struct_*` (one per ABI case, GCC on the other side) and struct/union types in `tests/abi_check` (seeds 101-505 x 300 and 606-1010 x 500 pass in all four combinations).
-Blocked: nothing. Notes under "Step 6 notes" in docs/DECISIONS.md and "Nice to have from the v3 step 6 work" in docs/BLOCKERS.md.
+Blocked: nothing. For Marcus: `result_object` is made for every struct-returning call; the frontend does not ask `Target().Abi()` (the reviewer recommends keeping this, see Step 6 notes). Review approved in round 1; `abi_check` `run_abi.sh` prints hit counts per ABI case (every case hit in seeds 101-505). Notes under "Step 6 notes" in docs/DECISIONS.md and "Nice to have from the v3 step 6 work" in docs/BLOCKERS.md.
 Next: v3 step 7, delete the old path.
 
 ## v3 migration (IR path)
@@ -41,6 +41,7 @@ Next: v3 step 7, delete the old path.
 | 6a structs and unions without calls: struct value = Ptr, member access, struct assignment (memcpy), local/global initialisers, `?:` on structs, `result_object` in the IR | 305/305 | 283/305 |
 | 6b struct classifier rows (`RiscV32Abi`: integer words, a7 split, stack, `Fields`, by reference, hidden return pointer), backend pieces by offset, struct arguments and returns | 305/305 | 305/305 |
 | 6c 14 custom tests `ir_struct_*` (one per ABI case), `abi_check` draws structs and unions | 319/319 | 319/319 |
+| 6d review: `abi_check` models ilp32d struct rules, counts hits per ABI case (every case hit, seeds 101-505 x 300, 4 combinations, GCC -O0/-O2); test comment fixes | 319/319 | 319/319 |
 
 ## Pass count by category
 | Category | Passing | Total |

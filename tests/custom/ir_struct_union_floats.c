@@ -1,6 +1,6 @@
 /* A union never uses the floating convention, even when all its members are
    floats: {float a; float b;} travels in an a register (the double after it
-   still gets fa0) and comes back in a0, not fa0. An 8-byte union of double and
+   still gets fa1) and comes back in a0, not fa0. An 8-byte union of double and
    float uses two a registers.
    Our functions are ours_*; the GCC-compiled driver defines theirs_* and
    calls both ways, so caller and callee are always checked against GCC. */
