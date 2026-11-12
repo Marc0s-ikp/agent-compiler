@@ -12,6 +12,7 @@ Writes three C files into OUT_DIR:
 Usage: gen_abi.py SEED COUNT OUT_DIR
 """
 import random
+import struct
 import sys
 
 INT_TYPES = {
@@ -62,13 +63,63 @@ def is_int_valued(v):
     return v == int(v) and abs(v) < 2 ** 31
 
 
+def byte_check(k, v):
+    """The test of a split double parameter: its 8 bytes, through an unsigned
+    char pointer. GCC's callee spills a7 next to the caller's stack word and
+    reads the double with an fld from an address that is 4 mod 8; spike pk
+    emulates that misaligned fld wrongly (it returns a wrong value even for
+    GCC to GCC), so a split double is never read as a double in the callee."""
+    want = struct.pack("<d", v)
+    tests = " || ".join("b[%d] != %d" % (n, c) for n, c in enumerate(want))
+    return "    b = (unsigned char *)&p%d;\n    if (%s) abi_fail(%%d, %d);" % (k, tests, k)
+
+
 def ptr_getter(t):
     return "abi_ptr_i()" if t == "int *" else "abi_ptr_c()"
 
 
+def gen_params(rng):
+    """Half the signatures are uniform draws (0 to 14 parameters). A uniform
+    draw almost never uses up fa0-fa7, so the other half are shaped:
+    'fp_heavy' has 9 to 12 float/double parameters among 0 to 8 others (floats
+    and doubles in a registers, doubles in pairs and on the stack); 'split' has
+    8 float/double and 7 other parameters in any order, then a double (low
+    word in a7, high word on the stack), then 0 to 3 more parameters."""
+    shape = rng.choice(["random", "random", "fp_heavy", "split"])
+    others = list(INT_TYPES) + PTR_TYPES
+    if shape == "random":
+        return [rng.choice(PARAM_TYPES) for _ in range(rng.randint(0, 14))]
+    if shape == "fp_heavy":
+        params = [rng.choice(FLOAT_TYPES) for _ in range(rng.randint(9, 12))]
+        params += [rng.choice(others) for _ in range(rng.randint(0, 8))]
+        rng.shuffle(params)
+        return params
+    params = [rng.choice(FLOAT_TYPES) for _ in range(8)] + [rng.choice(others) for _ in range(7)]
+    rng.shuffle(params)
+    return params + ["double"] + [rng.choice(PARAM_TYPES) for _ in range(rng.randint(0, 3))]
+
+
+def split_params(params):
+    """Indexes of the doubles that ilp32d splits between a7 and the stack:
+    fa0-fa7 are used up and only a7 is left. (A float or double takes an fa
+    register while one is free, then follows the integer rules; a double needs
+    two a registers, or one if only a7 is left, which is the split.)"""
+    fa = ia = 0
+    split = set()
+    for k, t in enumerate(params):
+        if t in FLOAT_TYPES and fa < 8:
+            fa += 1
+        elif t == "double":
+            if ia == 7:
+                split.add(k)
+            ia = min(ia + 2, 8)
+        else:
+            ia = min(ia + 1, 8)
+    return split
+
+
 def gen_sig(rng):
-    n = rng.randint(0, 14)
-    params = [rng.choice(PARAM_TYPES) for _ in range(n)]
+    params = gen_params(rng)
     ret = rng.choice(PARAM_TYPES + ["void"])
     raws = [rng.choice(FEDGE if t in FLOAT_TYPES else EDGE) for t in params]
     modes = [rng.choice(["lit", "same", "int", "call"]) for _ in params]
@@ -88,13 +139,26 @@ def proto(i, params, ret):
     return "%s f%d(%s)" % (ret, i, plist)
 
 
+def returned_param(params, ret):
+    """The parameter a float or pointer return gives back: the last one of the
+    return type that is not a split double (see byte_check), or None."""
+    split = split_params(params)
+    same = [k for k, t in enumerate(params) if t == ret and k not in split]
+    return same[-1] if same else None
+
+
 def callee(i, params, ret, raws):
     out = [proto(i, params, ret), "{"]
+    split = split_params(params)
+    if split:
+        out.append("    unsigned char *b;")
     if ret in INT_TYPES:
         out.append("    unsigned acc;")
         out.append("    acc = 0;")
     for k, (t, r) in enumerate(zip(params, raws)):
-        if t in INT_TYPES:
+        if k in split:
+            out.append(byte_check(k, r) % i)
+        elif t in INT_TYPES:
             out.append("    if (p%d != %s) abi_fail(%d, %d);" % (k, lit(conv(r, t), t), i, k))
         elif t in FLOAT_TYPES:
             out.append("    if (p%d != %s) abi_fail(%d, %d);" % (k, flit(r, t), i, k))
@@ -109,8 +173,8 @@ def callee(i, params, ret, raws):
         same = [k for k, t in enumerate(params) if t == ret]
         out.append("    return %s;" % ("p%d" % same[-1] if same else ptr_getter(ret)))
     elif ret in FLOAT_TYPES:
-        same = [k for k, t in enumerate(params) if t == ret]
-        out.append("    return %s;" % ("p%d" % same[-1] if same else flit(2.5, ret)))
+        k = returned_param(params, ret)
+        out.append("    return %s;" % ("p%d" % k if k is not None else flit(2.5, ret)))
     out.append("}")
     return "\n".join(out)
 
@@ -159,8 +223,8 @@ def caller(i, params, ret, raws, modes):
             e = expected_return(params, ret, raws)
             out.append("    if (r != %s) abi_fail(%d, 99);" % (lit(e, ret), i))
         elif ret in FLOAT_TYPES:
-            same = [k for k, t in enumerate(params) if t == ret]
-            want = flit(raws[same[-1]], ret) if same else flit(2.5, ret)
+            k = returned_param(params, ret)
+            want = flit(raws[k], ret) if k is not None else flit(2.5, ret)
             out.append("    if (r != %s) abi_fail(%d, 99);" % (want, i))
         else:
             out.append("    if (r != %s) abi_fail(%d, 99);" % (ptr_getter(ret), i))
