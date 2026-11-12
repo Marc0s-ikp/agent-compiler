@@ -27,6 +27,7 @@
 
 | 2026-11-11 | ACCEPTED D23 (Marcus, 2026-11-11), decisions on "Open after v3 step 1" in BLOCKERS: (a) Lowering code (`EmitIR`, `EmitValue`, `EmitIRAddress`) goes next to `EmitRISC` in each node's `src/ast_*.cpp` file. The step 1 code moves out of `src/ast_ir.cpp` as part of step 2. Supersedes D22(b)'s single file. (b) D21 amendment (21.10): `ptradd Ptr, offset`, where the offset is a pointer-width integer byte count. The frontend scales by the element size and explicitly widens the index to pointer width (`sext` or `zext` by the index's C type). New conversions `ptrtoint` and `inttoptr`. Pointer difference is `ptrtoint` both, `sub`, then divide by the element size. Implemented in step 4. (c) When lowering throws, `--emit-ir` writes a partial dump (the finished functions and the partly built one), then the error. Done in step 2. Supersedes D22(h). (d) Moving the `.L` label prefix from the frontend (`Context::NewLabel`) to the backend is required before an AArch64 backend (BLOCKERS). | Per-node files keep each construct's old and new lowering side by side, and step 7 deletes functions, not files. An explicit `ptradd` keeps `Ptr` distinct from integers, so a 64-bit target changes nothing in the frontend | One `ast_ir.cpp`, or files per group (`ast_ir_operators.cpp`, ...); integer `add` on pointers (loses the `Ptr` type) |
 | 2026-11-11 | ACCEPTED D24 (implementer, accepted by Marcus 2026-11-12 with a change to (d), see below), implementation choices in v3 step 2: (a) `ast_lower.hpp`/`ast_lower.cpp` hold only the lowering helpers that several nodes share (`RequireIrInteger`, `Arith`, `ValueAs`, `Condition`); every `EmitIR`/`EmitValue` is in its node's file (D23 a), and `src/ast_ir.cpp` is deleted. (b) Loops and switches reuse `Context::PushLoop`/`PushSwitch`/`BreakLabel`/`ContinueLabel`/`AddCase`/`AddDefault`, so label and duplicate-case handling is the same on both paths. (c) `switch` computes the controlling value once (converted to the promoted type), jumps to a dispatch label, lowers the body, jumps to the end, then writes the dispatch chain (`eq` + `branch` per case, then a jump to `default` or the end) after the body; this is the IR equivalent of the old path's buffering and needs no pre-scan of the body. (d) `&&`, `||` and `?:` allocate their result with `IRGen::NewTemp` (now public) and write it at two sites with `IRGen::Move` (`const` for a constant source, `copy` otherwise), as 21.2 allows. (e) `branch` is written by the backend as `beqz t0, 1f; j if_nonzero; 1: j if_zero`, so a branch reaches the whole function (a bare `bnez` reaches only +-4 KiB). (f) `AppendPartialFunction` supports the D23 c partial dump. (g) Not done: skipping the trailing implicit `ret` (it is dead only when no label follows the last `ret`). **Change to (d) (Marcus, 2026-11-12), done first in step 3:** no temp has two definition sites. `?:` lowers through a hidden frame object: each arm stores its value to the object, and one `load` after the join defines the result temp. `&&` and `||` do the same, since they also had two-site temps. The checker then enforces that every temp is defined by exactly one instruction site. This replaces the exception in 21.2 (amendment 21.10.4). | Keeps the two paths' control-flow bookkeeping identical; no extra IR instructions beyond the existing ones | A pre-scan of the switch body for case labels; a `select` instruction for `?:`; storing the `?:` result through a frame object |
+| 2026-11-12 | D25 (implementer, **pending Marcus**), the per-target call classifier interface and the IR `call`, v3 step 3 (detail: "D25 detail" below). (a) `include/call_abi.hpp` declares `CallLayout Classify(params, ret)`; `CallLayout` holds one `ArgPlace` per parameter, a `RetPlace` and `stack_bytes`. Everything is a `Piece` (offset in the value, byte count, C signedness, and `IntReg`/`FloatReg`/`StackWord` plus a register number or stack offset). (b) The RISC-V classifier (`src/call_abi_riscv.cpp`) is built on `ClassifyArgs`, `ClassifyReturn` and `StackExtent`, which the old path still uses, so there is one rule set until step 7. Only integers (up to 4 bytes) and pointers are classified; any other type throws "not in IR yet". (c) The backend calls `Classify` once for the function's own entry and once per IR `call`, with the same types. (d) The psABI extension of narrow integers is carried by `Piece::is_signed` (the C signedness), never inferred from IR types. (e) IR `call` carries the callee, the argument values, their C types and the C return type; `ir::Function` carries its parameters (home frame object plus C type) and its C return type. The checker verifies callee, argument IR types and result type. | The frontend decides what is passed and with which C types; where it goes is one backend call used on both sides, so the two cannot disagree (D5). Pieces already express every kind in D18(d) and D19(d), so steps 5 and 6 only lift the throw | A virtual class per target (one free function is enough with a single backend); IR types alone in the call (lose signedness); separate caller and callee rule sets |
 Status: all of the above was approved by Marcus (D15 to D18 on 2026-11-09, D19 and D20 on 2026-11-10, D21 on 2026-11-11, the rest on 2026-11-08). D21 step 1 is merged (2026-11-11); steps 2 to 7 remain. D22 and D23 were accepted by Marcus on 2026-11-11, D24 on 2026-11-12 (with the change to (d)).
 
 ---
@@ -425,7 +426,7 @@ call  callee, result?, [(value, C type), ...], return C type, result_object?
 
 where `result_object` is the call-site frame object that receives a returned struct (D19(c)).
 
-**Per-target classifier (backend).** Each target implements
+**Per-target classifier (backend).** (As built in step 3: D25.) Each target implements
 
 ```
 CallLayout Classify(const std::vector<TypePtr>& params, const TypePtr& ret);
@@ -527,3 +528,42 @@ The prologue then copies each incoming register piece to its parameter's home, e
 4. **One definition site per temp (Marcus, 2026-11-12, D24).** The `?:` exception in 21.2 is removed.
    `?:`, `&&` and `||` write their result to a hidden frame object from each arm and `load` it once
    after the join. The checker requires every temp to be defined by exactly one instruction site.
+
+## D25 detail (pending Marcus)
+
+**Interface** (`include/call_abi.hpp`):
+
+```cpp
+struct ArgPlace { bool by_reference; std::vector<Piece> pieces; };
+struct RetPlace { bool in_memory; Piece pointer; std::vector<Piece> pieces; };
+struct CallLayout { std::vector<ArgPlace> args; RetPlace ret; int stack_bytes; };
+CallLayout Classify(const std::vector<TypePtr>& params, const TypePtr& ret);
+```
+
+**How each case is expressed, so steps 5 and 6 add no interface.**
+- Integer, pointer: one piece, `IntReg n` or `StackWord offset`; a narrow integer has `bytes` 1 or 2
+  and `is_signed` from its C type. The backend extends it to 32 bits (register and stack slot).
+- `float`/`double` in an fa register: one `FloatReg` piece of 4 or 8 bytes. A float or double whose fa
+  registers ran out: one `IntReg` piece or `StackWord` piece (4 bytes); a double: two `IntReg` pieces
+  (`IntPair`), or `IntReg` plus `StackWord` (`Split`, the a7 case), or one 8-byte `StackWord`.
+- Small struct in the floating convention (`Fields`): one piece per scalar field, `FloatReg` or
+  `IntReg`, with the field's offset in the struct (this is what `ArgPieces` already returns).
+- Struct over 8 bytes: `by_reference` is set, and the pieces describe the pointer (`IntReg` or
+  `StackWord`).
+- Hidden return pointer: `ret.in_memory` with `ret.pointer` the register that carries it (a0). The
+  classifier moves the integer argument registers up by one itself (`ClassifyArgs(..., hidden)`), so
+  the frontend and the IR do not know about it.
+- `stack_bytes` is the outgoing area the call needs; the backend takes the maximum over the function.
+
+**Caller and callee.** `FunctionWriter` classifies the function's own parameter types once, to store
+each incoming piece into the parameter's home (a frame object that the frontend declared with
+`IRGen::AddParam`; a stack piece is read from `s0 + offset`, so stack parameters also get a home), and
+each `call` once, to place the arguments (a registers, or `sp + offset`). The checks happen on the
+IR: callee is a function of the module or in `Module::externals`, each argument's IR type is
+`IrTypeOf` its C type, and the result is `IrTypeOf` the return type.
+
+**Reason:** see the table row. **Alternatives:** the classifier as an abstract class with one
+implementation per target (more code now, no benefit with one target; the free function can become
+a method when the second backend exists); separate homes only for register parameters, with stack
+parameters used in place (needs a symbol kind for "at an incoming offset", which the IR does not
+have).
