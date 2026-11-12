@@ -113,6 +113,8 @@ Operand AddressOf::EmitValue(IRGen& gen) const {
 }
 
 Operand Index::EmitIRAddress(IRGen& gen) const {
+    // Called only for its checks (a non-pointer base throws here); the address
+    // is the sum, a ptradd.
     GetType(gen.Ctx());
     return sum_->EmitValue(gen);
 }

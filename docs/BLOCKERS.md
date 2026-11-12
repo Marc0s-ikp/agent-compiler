@@ -181,7 +181,7 @@ From the step 1 review (2026-11-11, approved in round 2). These are design quest
 2. DECIDED (D23 b, 21.10): `ptradd`, `ptrtoint`, `inttoptr`, in step 4. **Pointer arithmetic in the IR (decide before step 4).** 21.2 has no pointer-to-integer conversion, and the checker rejects `Ptr` in arithmetic. The reviewer suggests a `ptradd ptr, iN` (byte offset already scaled by the frontend) plus `ptrtoint`/`inttoptr`. This needs a D21 amendment.
 3. DECIDED (D23 c): partial dump, done in step 2. **Partial dump when lowering throws.** `--emit-ir` prints nothing when a node throws `not in IR yet` (D22(h)). Cheap option: print the finished functions and the partly built one, then rethrow.
 4. **Trailing `ret`.** Every function ends with an implicit `ret`, even after an explicit one. One option is to skip it when the last instruction is already a `ret`.
-5. REQUIRED BEFORE AArch64 (D23 d). **The `.L` label prefix comes from the frontend** (`Context::NewLabel`, `src/context.cpp:142`). It is assembler syntax, so the backend should add it.
+5. RESOLVED by 0ef029e (ir/4: neutral names, the backend spells `.L`). **The `.L` label prefix comes from the frontend** (`Context::NewLabel`, `src/context.cpp:142`). It is assembler syntax, so the backend should add it.
 6. **Old-path coupling to remove before step 7.** `FunctionDefinition::EmitIR` calls `ctx.BeginFunction` (old frame counters), and `src/backend_riscv.cpp` includes `emit.hpp` for `EmitMem`/`EmitAddrOffset`.
 7. **Unary minus on a constant is not folded** (`-1` becomes `neg` then `trunc`). Correct, but it makes the dump noisy.
 8. **Narrow returns are rejected under `--ir`** (`src/ast_ir.cpp:283-290`), unsigned ones included. The step 3 classifier must remove this guard; `tests/custom/ir_narrow_return` is the test for it.
@@ -189,7 +189,7 @@ From the step 1 review (2026-11-11, approved in round 2). These are design quest
 
 ## Required before an AArch64 backend
 
-1. Move `.L` label naming to the backend. Today `Context::NewLabel` (`src/context.cpp:142`) adds the `.L` prefix in the frontend, which is RISC-V assembler syntax. IR labels should be plain names, and each backend adds its own local-label prefix (Marcus, 2026-11-11, D23 d).
+1. RESOLVED by 0ef029e. Move `.L` label naming to the backend. Today `Context::NewLabel` (`src/context.cpp:142`) adds the `.L` prefix in the frontend, which is RISC-V assembler syntax. IR labels should be plain names, and each backend adds its own local-label prefix (Marcus, 2026-11-11, D23 d).
 
 ## Nice to have from the v3 step 2 review
 
@@ -212,3 +212,17 @@ From the step 3 review (2026-11-12, approved in round 1). None of these blocked 
 4. `WordStore` also returns `sb`/`sh`; the name is misleading.
 5. `IsIntOrPointer` in the classifier repeats `RequireIrScalar`.
 6. The header comment of `include/ir.hpp` says it knows no C types, but `call` and `Function` now carry them (as 21.5 specifies).
+
+## Nice to have from the v3 step 4 review
+
+From the step 4 review (2026-11-12, approved). None of these blocked the merge.
+
+1. `CheckData` (`src/ir_check.cpp`) repeats the symbol lookup of `FunctionChecker::SymbolExists`; one helper on `Module` would do for both.
+2. `tests/abi_check/run_abi.sh` is mode 100644 while the README calls it directly. Marcus's call; the mode was not changed.
+3. 32-bit assumptions: `InitWriter::Word` rejects an address whose size is not 4, `PtrMinusPtr` is typed `int`, and `PointerDifference` truncates to `int`. Revisit for a 64-bit target.
+4. `--emit-ir` prints a negative `addr` offset as `+ -4`.
+5. `memzero` of a char array over 64 bytes (alignment 1) is a byte loop; a word loop would need an alignment-aware head and tail.
+6. `Index::EmitIRAddress` calls `GetType` only for its checks. DONE: comment added.
+7. `Context` includes `ir.hpp` and owns `ExportGlobals`/`ExportStrings`. Step 7 must decide where they live (an `ir` data builder, or a frontend module).
+8. Uninitialised globals go to `.data` with `.zero`, not `.bss`.
+9. `GlobalInit` carries both the directive text and the data items until step 7.
