@@ -1,7 +1,7 @@
 # Random ABI check against GCC
 
 `gen_abi.py SEED COUNT DIR` writes `callee.c`, `caller.c` and `driver.c` for COUNT random
-signatures (0 to 14 parameters from int, unsigned, the char and short types, `int *`, `char *`;
+signatures (0 to 14 parameters from int, unsigned, the char and short types, `int *`, `char *`, float, double;
 return type from the same set plus void). The callee checks every parameter and returns a value
 derived from them; the caller checks it. Mismatches call `abi_fail` in the driver (always GCC).
 
@@ -16,4 +16,4 @@ Run from the repo root (output goes to `tests/abi_check/out/`, delete it afterwa
       'export PATH=$PATH:/opt/riscv/bin; make build/c_compiler && \
        for s in 101 202 303; do tests/abi_check/run_abi.sh $s 300; done'
 
-Steps 5 and 6 should add float/double and struct types to `PARAM_TYPES` once the IR path has them.
+Float and double are in `PARAM_TYPES` since step 5 (the a7 split is not checked against GCC as callee, see BLOCKERS). Step 6 should add struct types.

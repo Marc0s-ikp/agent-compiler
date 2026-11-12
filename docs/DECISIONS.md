@@ -607,3 +607,39 @@ IR: callee is a function of the module or in `Module::externals`, each argument'
 coexist in one binary, so it must be selected by `SetTarget` rather than by the linker); separate homes only for register parameters, with stack
 parameters used in place (needs a symbol kind for "at an incoming offset", which the IR does not
 have).
+
+## Step 5 notes (implementer, 2026-11-12)
+
+- **No interface change.** `TargetAbi`/`CallLayout`/`ArgPlace`/`RetPlace`/`Piece` are as D25 left them.
+  `RiscV32Abi` maps the `ArgLoc` that `ClassifyArgs` already returns: `FloatReg` becomes one `FloatReg`
+  piece (4 or 8 bytes); `Stack` becomes one `StackWord` piece of the value's size (so a double is one
+  8-byte piece, 8-aligned by the classifier); `IntReg`, `IntPair` and `Split` come from `ArgPieces`
+  (abi.cpp), so a float in an a register is one 4-byte `IntReg` piece, a double is two (low word
+  first), and the a7 case is `IntReg` plus a 4-byte `StackWord` piece with `offset` 4. A float or double
+  return is a `FloatReg` piece at index 0. There is no second mapping: the rules stay in abi.cpp.
+- **Backend pieces.** `PlaceOutgoingPiece` (caller) and `StoreIncomingPiece` (callee) switch on
+  `piece.where`. A float temp that travels in integer words is read with `lw` from its slot at
+  `piece.offset` (`LoadFloatWord`); an 8-byte stack piece is copied with `fld`/`fsd` through ft0;
+  an fa register is loaded/stored with `flw`/`fld`/`fsw`/`fsd`. Scratch registers: t0/t1 and ft0/ft1.
+- **Float constants** are never immediates. `IRGen::FloatConstant(value, type)` adds the bits to the
+  existing float pool (`Context::AddFloat`, deduplicated) and emits `addr @flt.N` + `load F32/F64`.
+  `Context::ExportFloats` turns the pool into read-only, internal, compiler-made data entries (one
+  `Float(size, bits)` item, aligned to its size). `FloatBits` (const_value.cpp) is the one place that
+  turns a double into float or double bits. The implicit `return 0` of a float function is such a load.
+- **Conversions** (`ConvertFloating`, ast_lower.cpp): integer to float widens a narrow source to 32 bits
+  by its C signedness, then `itof` (signed) or `utof` (unsigned); float to integer is `ftou` for a
+  32-bit unsigned target and `ftoi` otherwise, then a narrow target is truncated from the int; this
+  is the old path's rule. The backend emits `fcvt.<fmt>.w[u]` and `fcvt.w[u].<fmt> ..., rtz`. IR
+  conversions of 64-bit integers are `NotYet` in the backend.
+- **Truth and `!=`.** A float condition is `feq(x, 0.0) == 0`, and `a != b` is `feq(a, b) == 0`, so NaN is
+  true for both, as C requires. `>` and `>=` swap the operands of `flt`/`fle`. No new IR op was added.
+- **Float `++`/`--`** add or subtract a pooled 1.0 in the float's own type. Float `%`, shifts and `~`
+  throw "invalid operands".
+- **Random ABI check** (`tests/abi_check`) now draws `float` and `double` parameters and returns. Seeds
+  101, 202, 303, 404 x 300 signatures pass in all combinations, GCC -O0 and -O2.
+- **Split double and GCC.** GCC 12.2 compiles a callee for "eight doubles, seven ints, a double, an int"
+  that saves a7 at `12(s0)`, loads the double from there and the next int from `20(s0)`, while GCC's
+  own caller writes the high word at `0(sp)` and the int at `4(sp)`. So GCC disagrees with itself and
+  `tests/custom/ir_float_split_a7.c` checks ours-to-ours and GCC-caller-to-our-callee only. NOTE:
+  the older `float_split_double.c` does not actually produce a split, because its double finds fa0
+  free and travels in fa0; `ir_float_split_a7.c` is the real a7 split.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Random ABI cross-check generator (integer and pointer signatures).
+"""Random ABI cross-check generator (integer, pointer, float and double signatures).
 
 Writes three C files into OUT_DIR:
   callee.c  N functions f<i>(params) -> ret. Each checks every parameter
@@ -21,7 +21,12 @@ INT_TYPES = {
     "short": (2, True), "unsigned short": (2, False),
 }
 PTR_TYPES = ["int *", "char *"]
-PARAM_TYPES = list(INT_TYPES) + PTR_TYPES
+FLOAT_TYPES = ["float", "double"]
+PARAM_TYPES = list(INT_TYPES) + PTR_TYPES + FLOAT_TYPES
+# Values for float and double parameters; the integral ones can also be passed
+# through an int local. Decimal text is rounded the same way by every compiler.
+FEDGE = [0.0, 0.5, -1.25, 1.5, 100.0, 3.0, -7.0, 1024.5, 65536.0, 0.1, 3.141592653589793,
+         2147483648.0, -2.5e-3, 1e10]
 EDGE = [0, 1, -1, 0x7F, 0x80, 0xFF, 0x100, -128, -129, 0x7FFF, 0x8000, 0xFFFF,
         -32768, -32769, 65535, 65536, 0x7FFFFFFF, -2147483648, 0x80000000,
         0xFFFFFFFF, 4000000000, 0x12345678, -0x12345678, 200, -3, 60000]
@@ -45,6 +50,18 @@ def lit(v, t):
     return "%d" % v if v >= 0 else "(%d)" % v
 
 
+def flit(v, t):
+    """A C floating literal of type t."""
+    text = "%.17g" % v
+    if "." not in text and "e" not in text and "n" not in text:
+        text += ".0"
+    return "(%s)" % (text + "f" if t == "float" else text) if v < 0 else (text + "f" if t == "float" else text)
+
+
+def is_int_valued(v):
+    return v == int(v) and abs(v) < 2 ** 31
+
+
 def ptr_getter(t):
     return "abi_ptr_i()" if t == "int *" else "abi_ptr_c()"
 
@@ -53,7 +70,7 @@ def gen_sig(rng):
     n = rng.randint(0, 14)
     params = [rng.choice(PARAM_TYPES) for _ in range(n)]
     ret = rng.choice(PARAM_TYPES + ["void"])
-    raws = [rng.choice(EDGE) for _ in params]
+    raws = [rng.choice(FEDGE if t in FLOAT_TYPES else EDGE) for t in params]
     modes = [rng.choice(["lit", "same", "int", "call"]) for _ in params]
     return params, ret, raws, modes
 
@@ -79,6 +96,8 @@ def callee(i, params, ret, raws):
     for k, (t, r) in enumerate(zip(params, raws)):
         if t in INT_TYPES:
             out.append("    if (p%d != %s) abi_fail(%d, %d);" % (k, lit(conv(r, t), t), i, k))
+        elif t in FLOAT_TYPES:
+            out.append("    if (p%d != %s) abi_fail(%d, %d);" % (k, flit(r, t), i, k))
         else:
             out.append("    if (p%d != %s) abi_fail(%d, %d);" % (k, ptr_getter(t), i, k))
     if ret in INT_TYPES:
@@ -89,6 +108,9 @@ def callee(i, params, ret, raws):
     elif ret in PTR_TYPES:
         same = [k for k, t in enumerate(params) if t == ret]
         out.append("    return %s;" % ("p%d" % same[-1] if same else ptr_getter(ret)))
+    elif ret in FLOAT_TYPES:
+        same = [k for k, t in enumerate(params) if t == ret]
+        out.append("    return %s;" % ("p%d" % same[-1] if same else flit(2.5, ret)))
     out.append("}")
     return "\n".join(out)
 
@@ -98,7 +120,18 @@ def caller(i, params, ret, raws, modes):
     args = []
     decls, inits = [], []
     for k, (t, r, m) in enumerate(zip(params, raws, modes)):
-        if t in PTR_TYPES:
+        if t in FLOAT_TYPES:
+            if m == "lit":
+                args.append(flit(r, t))
+            elif m in ("int", "call") and is_int_valued(r):
+                decls.append("    int a%d;" % k)
+                inits.append("    a%d = %d;" % (k, int(r)))
+                args.append("a%d" % k)  # converted to the parameter type at the call
+            else:
+                decls.append("    %s a%d;" % (t, k))
+                inits.append("    a%d = %s;" % (k, flit(r, t)))
+                args.append("a%d" % k)
+        elif t in PTR_TYPES:
             decls.append("    %s a%d;" % (t, k))
             inits.append("    a%d = %s;" % (k, ptr_getter(t)))
             args.append("a%d" % k)
@@ -125,8 +158,11 @@ def caller(i, params, ret, raws, modes):
         if ret in INT_TYPES:
             e = expected_return(params, ret, raws)
             out.append("    if (r != %s) abi_fail(%d, 99);" % (lit(e, ret), i))
-        else:
+        elif ret in FLOAT_TYPES:
             same = [k for k, t in enumerate(params) if t == ret]
+            want = flit(raws[same[-1]], ret) if same else flit(2.5, ret)
+            out.append("    if (r != %s) abi_fail(%d, 99);" % (want, i))
+        else:
             out.append("    if (r != %s) abi_fail(%d, 99);" % (ptr_getter(ret), i))
     out.append("    return 0;")
     out.append("}")
