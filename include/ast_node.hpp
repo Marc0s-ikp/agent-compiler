@@ -1,7 +1,6 @@
 #pragma once
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <string>
 
 #include "context.hpp"
@@ -12,14 +11,11 @@ class IRGen;
 
 namespace ast {
 
-// Root of the tree. Every node can write its assembly.
+// Root of the tree. Every node can lower itself to IR (D21). A node with no
+// lowering throws "not in IR yet".
 class Node {
 public:
     virtual ~Node() = default;
-    virtual void EmitRISC(std::ostream& os, Context& ctx) const = 0;
-    // The --ir path (D21). Nodes that have no IR lowering yet throw
-    // "not in IR yet", so a test using one fails under --ir and still passes
-    // on the old path.
     virtual void EmitIR(IRGen& gen) const;
 };
 
@@ -64,13 +60,10 @@ public:
     // The bytes of a string literal (without the NUL), else null. Lets an
     // initialiser tell 'char s[] = "ab"' from 'char *s = "ab"'.
     virtual const std::string* StringBytes() const { return nullptr; }
-    // For lvalues: leave the object's address in a0 (D4).
-    // Default: the expression is not an lvalue.
-    virtual void EmitAddress(std::ostream& os, Context& ctx) const;
-    // --ir: evaluates the expression and returns an operand holding its
+    // Evaluates the expression and returns an operand holding its
     // value, with the IR type of ValueType(ctx).
     virtual ir::Operand EmitValue(IRGen& gen) const;
-    // --ir, lvalues: the address of the object, as a Ptr operand.
+    // For lvalues: the address of the object, as a Ptr operand.
     virtual ir::Operand EmitIRAddress(IRGen& gen) const;
 };
 

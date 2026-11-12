@@ -14,7 +14,6 @@ public:
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     bool IsNullPointerConstant(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:

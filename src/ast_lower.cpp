@@ -1,5 +1,5 @@
 // Lowering helpers shared by several nodes' EmitIR / EmitValue (D23 a). The
-// lowering of each node lives next to its EmitRISC; only what more than one
+// lowering of each node lives in its own file; only what more than one
 // node needs is here.
 #include "ast_lower.hpp"
 
@@ -63,7 +63,7 @@ Operand Arith(IRGen& gen, BinOp op, const Type& common, Operand a, Operand b) {
 // fext/ftrunc. An integer goes to float through a 32-bit int (a narrow one is
 // extended first), signed with itof and unsigned with utof. Float to integer
 // rounds toward zero: ftou for a 32-bit unsigned target, ftoi otherwise, then
-// a narrow target is truncated from the int (as the old path does).
+// a narrow target is truncated from the int.
 Operand ConvertFloating(IRGen& gen, Operand value, const Type& from, const Type& to) {
     if (from.IsPointer() || to.IsPointer()) throw std::runtime_error("invalid type conversion");
     if (from.IsFloating() && to.IsFloating()) {

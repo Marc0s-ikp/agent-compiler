@@ -16,19 +16,7 @@ TypePtr RequireScalar(const TypePtr& t);
 // Throws unless 't' is an integer or floating type; returns it.
 TypePtr RequireArithmetic(const TypePtr& t);
 
-// Evaluate 'cond' as a condition: leaves its truth value in a0 (nonzero is
-// true). The one place that decides what may be a condition: integers,
-// pointers and floats (compared with zero, so -0.0 is false and NaN true).
-// Every control-flow node and logical operator goes through it.
-void EmitCondition(std::ostream& os, Context& ctx, const Expr& cond);
-
-// acc = acc <op> scratch (a0, t0 or fa0, ft0), using the type 'common':
-// signedness for integers, the + - * / forms for float and double (shared
-// with CompoundAssign).
-void EmitBinOp(std::ostream& os, BinOp op, const Type& common);
-
 // Size of the object a pointer points to; throws if it has none (void).
-// Every pointer scaling, including ++ and --, takes its step from here.
 int PointeeSize(const Type& pointer);
 
 // The pointer forms of + and -, decided once for the whole compiler.
@@ -37,13 +25,6 @@ enum class PointerOp { None, PtrPlusInt, IntPlusPtr, PtrMinusInt, PtrMinusPtr };
 // Classifies 'l op r' (value types). Throws for invalid pointer combinations.
 PointerOp ClassifyPointerOp(BinOp op, const TypePtr& l, const TypePtr& r);
 
-// With the pointer in a0 and the integer index in t0: a0 = a0 +/- t0 scaled
-// by the pointee size. The one place pointer arithmetic is scaled.
-void EmitPointerAdd(std::ostream& os, bool subtract, const Type& pointer);
-
-// a0 = (a0 - t0) / pointee size, for pointer subtraction.
-void EmitPointerDiff(std::ostream& os, const Type& pointer);
-
 class BinaryArith : public Expr {
 public:
     BinaryArith(BinOp op, ExprPtr lhs, ExprPtr rhs)
@@ -51,7 +32,6 @@ public:
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -69,7 +49,6 @@ public:
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -82,7 +61,6 @@ public:
     LogicalAnd(ExprPtr lhs, ExprPtr rhs)
         : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -94,7 +72,6 @@ public:
     LogicalOr(ExprPtr lhs, ExprPtr rhs)
         : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -108,7 +85,6 @@ public:
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -123,7 +99,6 @@ public:
           then_(std::move(then_expr)),
           else_(std::move(else_expr)) {}
     TypePtr GetType(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -135,7 +110,6 @@ public:
     Comma(ExprPtr lhs, ExprPtr rhs)
         : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:

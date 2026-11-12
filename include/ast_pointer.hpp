@@ -8,8 +8,6 @@ class Deref : public Expr {
 public:
     explicit Deref(ExprPtr operand) : operand_(std::move(operand)) {}
     TypePtr GetType(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
-    void EmitAddress(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
     ir::Operand EmitIRAddress(IRGen& gen) const override;
 
@@ -23,7 +21,6 @@ public:
     explicit AddressOf(ExprPtr operand) : operand_(std::move(operand)) {}
     TypePtr GetType(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -37,8 +34,6 @@ public:
     TypePtr GetType(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     std::optional<ConstValue> EvalConstAddress(Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
-    void EmitAddress(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
     ir::Operand EmitIRAddress(IRGen& gen) const override;
 

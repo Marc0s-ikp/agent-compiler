@@ -3,7 +3,6 @@
 #include <stdexcept>
 
 #include "ast_lower.hpp"
-#include "emit.hpp"
 
 namespace ast {
 
@@ -42,23 +41,6 @@ std::optional<ConstValue> Member::EvalConstValue(Context& ctx) const {
     if (!GetType(ctx)->IsArray()) return std::nullopt;
     return EvalConstAddress(ctx);
 }
-
-void Member::EmitAddress(std::ostream& os, Context& ctx) const {
-    const RecordMember& member = Find(ctx);
-    base_->EmitRISC(os, ctx);
-    EmitAddrOffset(os, "a0", "a0", member.offset);
-}
-
-// An array or struct member is its own address; anything else is loaded.
-void Member::EmitRISC(std::ostream& os, Context& ctx) const {
-    EmitAddress(os, ctx);
-    TypePtr type = GetType(ctx);
-    EmitLoad(os, *type, AccReg(*type), "a0", 0);
-}
-
-
-
-// ---- --ir lowering ----
 
 // The base's value is the struct's address for '.', and the pointer for '->';
 // the member is that address plus its offset (no instruction for offset 0).

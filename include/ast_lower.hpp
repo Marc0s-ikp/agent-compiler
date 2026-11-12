@@ -4,7 +4,7 @@
 #include "ir_gen.hpp"
 
 // Lowering helpers shared by several nodes (D23 a): the per-node EmitIR and
-// EmitValue functions live next to each node's EmitRISC.
+// EmitValue functions live in each node's own file.
 namespace ast {
 
 // Throws "not in IR yet" unless 'type' is an integer type.

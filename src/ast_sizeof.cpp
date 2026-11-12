@@ -19,8 +19,6 @@ long ObjectSize(const Type& type) {
     return type.Size();
 }
 
-void EmitSize(std::ostream& os, long size) { os << "\tli a0, " << size << "\n"; }
-
 }  // namespace
 
 // ---- SizeofExpr ----
@@ -32,10 +30,6 @@ TypePtr SizeofExpr::GetType(const Context& ctx) const {
 
 std::optional<long> SizeofExpr::EvalConst(const Context& ctx) const {
     return ObjectSize(*operand_->GetType(ctx));
-}
-
-void SizeofExpr::EmitRISC(std::ostream& os, Context& ctx) const {
-    EmitSize(os, ObjectSize(*operand_->GetType(ctx)));
 }
 
 // ---- SizeofType ----
@@ -55,15 +49,8 @@ std::optional<long> SizeofType::EvalConst(const Context& ctx) const {
     return ObjectSize(*NamedType(type_, ctx));
 }
 
-void SizeofType::EmitRISC(std::ostream& os, Context& ctx) const {
-    EmitSize(os, ObjectSize(*NamedType(type_, ctx)));
-}
-
-
-// ---- --ir lowering ----
-
 // A size is a compile-time constant of size_t's type, from the same EvalConst
-// the old path and the constant contexts use; the operand is never evaluated.
+// the constant contexts use; the operand is never evaluated.
 ir::Operand SizeofExpr::EmitValue(IRGen& gen) const {
     return ir::Operand::Int(*EvalConst(gen.Ctx()), IRGen::ToIr(*SizeType()));
 }

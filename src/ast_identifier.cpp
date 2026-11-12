@@ -4,8 +4,6 @@
 
 #include <stdexcept>
 
-#include "emit.hpp"
-
 namespace ast {
 
 namespace {
@@ -43,33 +41,6 @@ std::optional<ConstValue> Identifier::EvalConstValue(
     if (!GetType(ctx)->IsArray()) return std::nullopt;
     return EvalConstAddress(ctx);
 }
-
-void Identifier::EmitRISC(std::ostream& os, Context& ctx) const {
-    const Symbol& sym = LookupName(ctx, name_);
-    if (sym.kind == SymbolKind::EnumConst) {
-        os << "\tli a0, " << sym.value << "\n";
-    } else if (sym.kind == SymbolKind::Global) {
-        EmitAddress(os, ctx);
-        EmitLoad(os, *sym.type, AccReg(*sym.type), "a0", 0);
-    } else {
-        EmitLoad(os, *sym.type, AccReg(*sym.type), "s0", sym.offset);
-    }
-}
-
-void Identifier::EmitAddress(std::ostream& os, Context& ctx) const {
-    const Symbol& sym = LookupName(ctx, name_);
-    if (sym.kind == SymbolKind::EnumConst) {
-        throw std::runtime_error("enumeration constant is not an lvalue");
-    }
-    if (sym.kind == SymbolKind::Global) {
-        os << "\tla a0, " << sym.label << "\n";
-        return;
-    }
-    EmitAddrOffset(os, "a0", "s0", sym.offset);
-}
-
-
-// ---- --ir lowering ----
 
 using ir::Operand;
 

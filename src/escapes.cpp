@@ -71,18 +71,3 @@ std::string DecodeEscapes(const std::string& body) {
     }
     return out;
 }
-
-std::string AsmQuoted(const std::string& bytes) {
-    std::string out = "\"";
-    for (unsigned char c : bytes) {
-        if (c >= 32 && c < 127 && c != '"' && c != '\\') {
-            out += static_cast<char>(c);
-            continue;
-        }
-        out += '\\';
-        out += static_cast<char>('0' + (c >> 6));
-        out += static_cast<char>('0' + ((c >> 3) & 7));
-        out += static_cast<char>('0' + (c & 7));
-    }
-    return out + "\"";
-}

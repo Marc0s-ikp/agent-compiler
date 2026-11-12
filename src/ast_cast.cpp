@@ -5,7 +5,6 @@
 #include <stdexcept>
 
 #include "const_value.hpp"
-#include "emit.hpp"
 
 namespace ast {
 
@@ -43,15 +42,6 @@ std::optional<ConstValue> Cast::EvalConstValue(Context& ctx) const {
     if (to->IsVoid()) return std::nullopt;
     return ConstOperandAs(ctx, *operand_, *to);
 }
-
-void Cast::EmitRISC(std::ostream& os, Context& ctx) const {
-    TypePtr to = GetType(ctx);
-    operand_->EmitRISC(os, ctx);
-    if (!to->IsVoid()) EmitConvert(os, *operand_->ValueType(ctx), *to);
-}
-
-
-// ---- --ir lowering ----
 
 using ir::Operand;
 

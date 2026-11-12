@@ -6,7 +6,7 @@
 
 namespace ast {
 
-// The compile-time twin of EmitConvert (D6, D18): converts a constant to type
+// The compile-time twin of the run-time conversions (D6, D18): converts a constant to type
 // 'to' with the same C rules (truncation toward zero, wrapping
 // to the width of an integer type, rounding to float). An address keeps its
 // label when it stays 4 bytes wide. Returns nullopt if the value cannot be

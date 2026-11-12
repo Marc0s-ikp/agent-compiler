@@ -1,19 +1,9 @@
 #include "context.hpp"
 
 #include "const_value.hpp"
-#include "escapes.hpp"
 
-#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
-
-namespace {
-const int kSavedBytes = 8;  // ra and the caller's s0
-
-int RoundUp(int value, int multiple) {
-    return (value + multiple - 1) / multiple * multiple;
-}
-}  // namespace
 
 Context::~Context() {
     for (const TypePtr& record : records_) Type::ReleaseRecord(record);
@@ -99,52 +89,15 @@ void Context::DeclareFunction(const std::string& name,
 }
 
 void Context::BeginFunction(const TypePtr& return_type) {
-    used_ = kSavedBytes;
-    max_used_ = kSavedBytes;
-    floor_ = kSavedBytes;
-    outgoing_ = 0;
-    temp_marks_.clear();
     return_type_ = return_type;
-    return_label_ = NewLabel("ret");
+    ++label_count_;  // a function used to take its return label here; the numbers stay as they were
 }
-
-// Reserve a slot aligned for 'type'; returns its offset from s0 (D12).
-int Context::Allocate(const TypePtr& type) {
-    used_ = RoundUp(used_ + type->Size(), type->Align());
-    if (used_ > max_used_) max_used_ = used_;
-    return -used_;
-}
-
-int Context::AllocLocal(const TypePtr& type) {
-    int offset = Allocate(type);
-    floor_ = used_;
-    return offset;
-}
-
-// Temps are a stack: PopTemp releases the most recent PushTemp.
-int Context::PushTemp(const TypePtr& type) {
-    temp_marks_.push_back(used_);
-    return Allocate(type);
-}
-
-void Context::PopTemp() {
-    used_ = std::max(temp_marks_.back(), floor_);
-    temp_marks_.pop_back();
-}
-
-// Rounded to 16 including the outgoing area, so sp stays ABI-aligned (D12).
-void Context::ReserveOutgoing(int bytes) {
-    if (bytes > outgoing_) outgoing_ = bytes;
-}
-
-int Context::FrameSize() const { return RoundUp(max_used_ + outgoing_, 16); }
 
 std::string Context::NewLabel(const std::string& prefix) {
-    return (neutral_names_ ? "" : ".L") + prefix + std::to_string(label_count_++);
+    return prefix + std::to_string(label_count_++);
 }
 
 std::string Context::NewSymbolName(const std::string& prefix) {
-    if (!neutral_names_) return NewLabel(prefix);
     return prefix + "." + std::to_string(label_count_++);
 }
 
@@ -198,7 +151,7 @@ void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
     Symbol& slot = scopes_.front()[name];
     if (!slot.type) {
         slot = Symbol::Global(type, name);
-        globals_.push_back(GlobalVar{name, type, false, !is_extern, false, "", {}, false});
+        globals_.push_back(GlobalVar{name, type, false, !is_extern, false, {}, false});
         return;
     }
     TypePtr merged = slot.kind == SymbolKind::Global
@@ -213,53 +166,32 @@ void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
     if (!is_extern) var.has_storage = true;
 }
 
-void Context::InitGlobal(const std::string& name, const std::string& data,
-                         const std::vector<ir::DataItem>& items) {
+void Context::InitGlobal(const std::string& name, const std::vector<ir::DataItem>& items) {
     GlobalVar& var = FindGlobal(name);
     if (var.initialised) {
         throw std::runtime_error("redefinition of '" + name + "'");
     }
     var.initialised = true;
     var.has_storage = true;
-    var.data = data;
     var.items = items;
 }
 
 std::string Context::AddStaticLocal(const TypePtr& type) {
     std::string label = NewSymbolName("static");
-    globals_.push_back(GlobalVar{label, type, true, true, false, "", {}, true});
+    globals_.push_back(GlobalVar{label, type, true, true, false, {}, true});
     return label;
 }
 
 void Context::CompleteStaticLocal(const std::string& label, const TypePtr& type,
-                                  const std::string& data,
                                   const std::vector<ir::DataItem>& items) {
     GlobalVar& var = FindGlobal(label);
     var.type = type;
     var.initialised = true;
-    var.data = data;
     var.items = items;
 }
 
 void Context::MakeGlobalInternal(const std::string& name) {
     FindGlobal(name).internal = true;
-}
-
-void Context::EmitGlobals(std::ostream& os) const {
-    for (const GlobalVar& g : globals_) {
-        if (!g.has_storage) continue;
-        if (g.type->Size() == 0) {
-            throw std::runtime_error("'" + g.name + "' has incomplete type");
-        }
-        if (!g.internal) os << "\t.globl " << g.name << "\n";
-        os << (g.initialised ? "\t.data\n" : "\t.bss\n");
-        os << "\t.balign " << g.type->Align() << "\n" << g.name << ":\n";
-        if (g.initialised) {
-            os << g.data;
-        } else {
-            os << "\t.zero " << g.type->Size() << "\n";
-        }
-    }
 }
 
 void Context::ExportGlobals(ir::Module& module) const {
@@ -364,28 +296,10 @@ std::string Context::AddString(const std::string& bytes) {
     return strings_.back().first;
 }
 
-void Context::EmitStrings(std::ostream& os) const {
-    if (strings_.empty()) return;
-    os << "\t.section .rodata\n";
-    for (const auto& s : strings_) {
-        os << s.first << ":\n\t.ascii " << AsmQuoted(s.second) << "\n\t.byte 0\n";
-    }
-}
-
 std::string Context::AddFloat(uint64_t bits, int size) {
     for (const FloatConst& f : floats_) {
         if (f.bits == bits && f.size == size) return f.label;
     }
     floats_.push_back({NewSymbolName("flt"), bits, size});
     return floats_.back().label;
-}
-
-void Context::EmitFloats(std::ostream& os) const {
-    if (floats_.empty()) return;
-    os << "\t.section .rodata\n";
-    for (const FloatConst& f : floats_) {
-        os << "\t.balign " << f.size << "\n" << f.label << ":\n";
-        os << "\t.word " << (f.bits & 0xffffffffu) << "\n";
-        if (f.size == 8) os << "\t.word " << (f.bits >> 32) << "\n";
-    }
 }

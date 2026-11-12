@@ -23,7 +23,6 @@ public:
         : spec_(spec),
           declarators_(std::move(declarators)),
           storage_(storage) {}
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitIR(IRGen& gen) const override;
 
 private:
@@ -45,7 +44,6 @@ public:
           spec_(spec),
           declarator_(std::move(declarator)),
           body_(std::move(body)) {}
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitIR(IRGen& gen) const override;
 
 private:
@@ -59,7 +57,6 @@ class TranslationUnit : public Node {
 public:
     explicit TranslationUnit(std::vector<ExternalDeclPtr> decls)
         : decls_(std::move(decls)) {}
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitIR(IRGen& gen) const override;
 
 private:

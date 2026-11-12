@@ -7,7 +7,6 @@
 #include <stdexcept>
 
 #include "const_value.hpp"
-#include "emit.hpp"
 #include "target.hpp"
 
 namespace ast {
@@ -32,12 +31,6 @@ TypePtr IntLiteral::GetType(const Context&) const {
 std::optional<long> IntLiteral::EvalConst(const Context&) const {
     CheckRange();
     return static_cast<long>(value_);
-}
-
-void IntLiteral::EmitRISC(std::ostream& os, Context&) const {
-    CheckRange();
-    os << "\tli a0, " << static_cast<int32_t>(static_cast<uint32_t>(value_))
-       << "\n";
 }
 
 // strtof rounds straight to float; going through double first could round
@@ -67,16 +60,6 @@ std::optional<ConstValue> FloatLiteral::EvalConstValue(Context&) const {
     return v;
 }
 
-void FloatLiteral::EmitRISC(std::ostream& os, Context& ctx) const {
-    TypePtr type = GetType(ctx);
-    os << "\tla t0, " << ctx.AddFloat(FloatBits(value_, type->Size()), type->Size()) << "\n";
-    EmitLoad(os, *type, "fa0", "t0", 0);
-}
-
-void CharLiteral::EmitRISC(std::ostream& os, Context&) const {
-    os << "\tli a0, " << static_cast<int>(value_) << "\n";
-}
-
 TypePtr StringLiteral::GetType(const Context&) const {
     return Type::Array(Type::Integer(Target().char_size, Target().char_is_signed), static_cast<int>(bytes_.size()) + 1);
 }
@@ -89,17 +72,6 @@ std::optional<ConstValue> StringLiteral::EvalConstAddress(Context& ctx) const {
 std::optional<ConstValue> StringLiteral::EvalConstValue(Context& ctx) const {
     return EvalConstAddress(ctx);
 }
-
-void StringLiteral::EmitAddress(std::ostream& os, Context& ctx) const {
-    os << "\tla a0, " << ctx.AddString(bytes_) << "\n";
-}
-
-void StringLiteral::EmitRISC(std::ostream& os, Context& ctx) const {
-    EmitAddress(os, ctx);
-}
-
-
-// ---- --ir lowering ----
 
 using ir::Operand;
 

@@ -10,7 +10,6 @@ namespace ast {
 class CompoundStmt : public Stmt {
 public:
     explicit CompoundStmt(std::vector<StmtPtr> body) : body_(std::move(body)) {}
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitIR(IRGen& gen) const override;
 
 private:
@@ -21,7 +20,6 @@ private:
 class ExprStmt : public Stmt {
 public:
     explicit ExprStmt(ExprPtr expr) : expr_(std::move(expr)) {}
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitIR(IRGen& gen) const override;
 
 private:
@@ -35,12 +33,9 @@ public:
         : storage_(storage),
           spec_(spec),
           declarators_(std::move(declarators)) {}
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitIR(IRGen& gen) const override;
 
 private:
-    void DeclareLocal(std::ostream& os, const std::string& name, TypePtr type,
-                      const Initializer* init, Context& ctx) const;
     void DeclareLocalIR(IRGen& gen, const std::string& name, TypePtr type,
                         const Initializer* init) const;
     void DeclareStatic(const std::string& name, const TypePtr& type,
@@ -54,7 +49,6 @@ private:
 class ReturnStmt : public Stmt {
 public:
     explicit ReturnStmt(ExprPtr value) : value_(std::move(value)) {}
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitIR(IRGen& gen) const override;
 
 private:

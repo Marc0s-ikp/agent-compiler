@@ -12,7 +12,6 @@
 #include "ir_gen.hpp"
 #include "target.hpp"
 
-
 extern FILE* yyin;
 int yylex_destroy();
 int yyparse(std::unique_ptr<ast::TranslationUnit>& root);
@@ -76,7 +75,6 @@ bool ReportIRErrors(const ir::Module& module) {
 int CompileViaIR(const Options& opts, const ast::TranslationUnit& root, std::ostream& out) {
     ir::Module module;
     Context ctx;
-    ctx.UseNeutralNames();  // the backend spells labels (21.2a)
     IRGen gen(module, ctx);
     try {
         root.EmitIR(gen);

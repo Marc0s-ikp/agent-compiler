@@ -5,7 +5,6 @@
 
 // The RISC-V (ilp32d) classifier: a thin layer over ClassifyArgs and
 // ClassifyReturn (abi.cpp), which hold the rules of D5, D18(d) and D19(d).
-// The old EmitRISC path calls those same functions, so there is one rule set.
 namespace {
 
 [[noreturn]] void NotYet() { throw std::runtime_error("not in IR yet: this type in a call"); }
