@@ -2,6 +2,7 @@
 #include <set>
 
 #include "ir.hpp"
+#include "target.hpp"
 
 // The IR checker (D21, 21.2). It looks at one function at a time, walking the
 // instruction list in order, and reports every problem it finds.
@@ -46,6 +47,7 @@ private:
     }
 
     bool SymbolExists(const std::string& name) const {
+        if (module_.external_data.count(name) > 0) return true;
         for (const DataEntry& d : module_.data) if (d.label == name) return true;
         for (const Function& f : module_.functions) if (f.name == name) return true;
         return module_.externals.count(name) > 0;
@@ -319,6 +321,14 @@ void CheckData(const Module& module, std::vector<std::string>& errors) {
         bool dotted = d.label.find('.') != std::string::npos;
         if (d.compiler_made && !d.internal) errors.push_back(who + "compiler-made but not internal");
         if (d.compiler_made && !dotted) errors.push_back(who + "compiler-made name must contain '.'");
+        for (const DataItem& item : d.items) {
+            if (item.kind != DataItem::Kind::Address) continue;
+            bool known = module.external_data.count(item.bytes) > 0 || module.externals.count(item.bytes) > 0;
+            for (const DataEntry& e : module.data) known = known || e.label == item.bytes;
+            for (const Function& f : module.functions) known = known || f.name == item.bytes;
+            if (!known) errors.push_back(who + "address of unknown symbol " + item.bytes);
+            if (item.size != Target().pointer_size) errors.push_back(who + "address item is not pointer-sized");
+        }
         if (!d.compiler_made && dotted) errors.push_back(who + "a C-named entry cannot contain '.'");
     }
 }

@@ -35,7 +35,7 @@ void DeclarationStmt::DeclareStatic(const std::string& name, const TypePtr& type
     }
     GlobalInit built = BuildGlobalInit(type, *init, ctx);
     if (built.type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
-    ctx.CompleteStaticLocal(label, built.type, built.data);
+    ctx.CompleteStaticLocal(label, built.type, built.data, built.items);
     ctx.Declare(name, Symbol::Global(built.type, label));
 }
 
@@ -109,9 +109,12 @@ void DeclarationStmt::EmitIR(IRGen& gen) const {
             ctx.Declare(name, Symbol::Typedef(type));
             continue;
         }
-        if (storage_ == Storage::Static) throw std::runtime_error("not in IR yet: static local");
         if (type->IsVoid() || type->IsFunction()) {
             throw std::runtime_error("invalid type for variable '" + name + "'");
+        }
+        if (storage_ == Storage::Static) {  // a data entry, no code
+            DeclareStatic(name, type, d.init.get(), ctx);
+            continue;
         }
         DeclareLocalIR(gen, name, type, d.init.get());
     }

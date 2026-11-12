@@ -140,6 +140,7 @@ struct Module {
     std::vector<Function> functions;
     std::vector<DataEntry> data;
     std::set<std::string> externals;  // functions defined elsewhere
+    std::set<std::string> external_data;  // extern objects: valid symbols, no entry
 };
 
 // --emit-ir: the module as text.

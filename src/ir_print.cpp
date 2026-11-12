@@ -107,6 +107,7 @@ void PrintData(const DataEntry& d, std::ostream& os) {
 }  // namespace
 
 void Print(const Module& module, std::ostream& os) {
+    for (const std::string& name : module.external_data) os << "extern @" << name << "\n";
     for (const DataEntry& d : module.data) PrintData(d, os);
     for (const Function& fn : module.functions) PrintFunction(fn, os);
 }

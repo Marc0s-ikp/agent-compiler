@@ -125,10 +125,13 @@ void GlobalDeclaration::DeclareVariable(const std::string& name,
     if (ctx.Lookup(name).type->Size() != built.type->Size()) {
         throw std::runtime_error("conflicting declaration of '" + name + "'");
     }
-    ctx.InitGlobal(name, built.data);
+    ctx.InitGlobal(name, built.data, built.items);
 }
 
-void GlobalDeclaration::EmitRISC(std::ostream&, Context& ctx) const {
+// Both paths do the same work here: the global table (merging tentative and
+// extern declarations) is in the Context, and each path writes it out at the
+// end (EmitGlobals, or ExportGlobals as data entries).
+void GlobalDeclaration::Declare(Context& ctx) const {
     TypePtr base = spec_.Resolve(ctx);
     for (const InitDeclarator& d : declarators_) {
         auto [name, type] = d.declarator.Apply(base, ctx);
@@ -143,6 +146,8 @@ void GlobalDeclaration::EmitRISC(std::ostream&, Context& ctx) const {
         }
     }
 }
+
+void GlobalDeclaration::EmitRISC(std::ostream&, Context& ctx) const { Declare(ctx); }
 
 // The body is generated first into a buffer, because the frame size it
 // needs for the prologue is only known afterwards (D2). The function is
@@ -182,22 +187,7 @@ void TranslationUnit::EmitRISC(std::ostream& os, Context& ctx) const {
 
 // ---- --ir lowering ----
 
-// Prototypes and typedefs are declarations only; variables need data entries
-// (step 4).
-void GlobalDeclaration::EmitIR(IRGen& gen) const {
-    Context& ctx = gen.Ctx();
-    TypePtr base = spec_.Resolve(ctx);
-    for (const InitDeclarator& d : declarators_) {
-        auto [name, type] = d.declarator.Apply(base, ctx);
-        if (storage_ == Storage::Typedef) {
-            ctx.Declare(name, Symbol::Typedef(type));
-        } else if (type->IsFunction() && !d.init) {
-            ctx.DeclareFunction(name, type);
-        } else {
-            throw std::runtime_error("not in IR yet: global variable");
-        }
-    }
-}
+void GlobalDeclaration::EmitIR(IRGen& gen) const { Declare(gen.Ctx()); }
 
 // Each parameter gets a frame object as its home; the backend fills it from
 // the classifier's pieces (21.5), so the frontend does not know where the

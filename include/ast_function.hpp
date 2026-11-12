@@ -27,6 +27,7 @@ public:
     void EmitIR(IRGen& gen) const override;
 
 private:
+    void Declare(Context& ctx) const;
     void MarkLinkage(const std::string& name, Context& ctx) const;
     void DeclareVariable(const std::string& name, const TypePtr& type,
                          const Initializer* init, Context& ctx) const;

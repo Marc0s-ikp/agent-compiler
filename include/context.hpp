@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "ir.hpp"
 #include "type.hpp"
 
 enum class SymbolKind { Local, Global, Function, EnumConst, Typedef };
@@ -86,16 +87,22 @@ public:
     // storage once, after the functions.
     void DeclareGlobal(const std::string& name, const TypePtr& type,
                        bool is_extern);
-    void InitGlobal(const std::string& name, const std::string& data);
+    // 'data' is the old path's directives, 'items' the same bytes for the IR.
+    void InitGlobal(const std::string& name, const std::string& data,
+                    const std::vector<ir::DataItem>& items);
     // A 'static' local: storage under a fresh label, never exported. Returns
     // the label. It is zero-filled until CompleteStaticLocal gives it its
     // final type (an unsized array) and initialiser directives.
     std::string AddStaticLocal(const TypePtr& type);
     void CompleteStaticLocal(const std::string& label, const TypePtr& type,
-                             const std::string& data);
+                             const std::string& data,
+                             const std::vector<ir::DataItem>& items);
     // Marks an already declared global as having internal linkage.
     void MakeGlobalInternal(const std::string& name);
     void EmitGlobals(std::ostream& os) const;
+    // The --ir twin of EmitGlobals: one data entry per object that has storage
+    // (21.2a), and the extern-only names as module.external_data.
+    void ExportGlobals(ir::Module& module) const;
 
     // String literals (read-only data). The same bytes get the same label, so
     // evaluating one literal twice adds nothing. A NUL is written after them.
@@ -166,6 +173,8 @@ private:
         bool has_storage = false;  // defined here, not only declared extern
         bool initialised = false;
         std::string data;          // initialiser directives
+        std::vector<ir::DataItem> items;  // the same, for the IR
+        bool compiler_made = false;       // a static local's label
     };
     GlobalVar& FindGlobal(const std::string& label);
 

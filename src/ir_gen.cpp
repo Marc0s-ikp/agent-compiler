@@ -187,6 +187,7 @@ Operand IRGen::Call(const std::string& callee, const std::vector<Operand>& args,
 
 void IRGen::EndModule() {
     for (const ir::Function& fn : module_.functions) module_.externals.erase(fn.name);
+    ctx_.ExportGlobals(module_);
 }
 
 void IRGen::Return() {

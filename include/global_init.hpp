@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 #include "ast_declaration.hpp"
 #include "ast_node.hpp"
@@ -10,7 +11,8 @@ namespace ast {
 // type: an array declared without a length takes it from the initialiser.
 struct GlobalInit {
     TypePtr type;
-    std::string data;
+    std::string data;                 // the old path: assembler directives
+    std::vector<ir::DataItem> items;  // the IR path: the same bytes as data items
 };
 
 // Every value must be a link-time constant: an integer constant expression,

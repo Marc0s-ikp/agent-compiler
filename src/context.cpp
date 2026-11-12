@@ -198,7 +198,7 @@ void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
     Symbol& slot = scopes_.front()[name];
     if (!slot.type) {
         slot = Symbol::Global(type, name);
-        globals_.push_back(GlobalVar{name, type, false, !is_extern, false, ""});
+        globals_.push_back(GlobalVar{name, type, false, !is_extern, false, "", {}, false});
         return;
     }
     TypePtr merged = slot.kind == SymbolKind::Global
@@ -213,7 +213,8 @@ void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
     if (!is_extern) var.has_storage = true;
 }
 
-void Context::InitGlobal(const std::string& name, const std::string& data) {
+void Context::InitGlobal(const std::string& name, const std::string& data,
+                         const std::vector<ir::DataItem>& items) {
     GlobalVar& var = FindGlobal(name);
     if (var.initialised) {
         throw std::runtime_error("redefinition of '" + name + "'");
@@ -221,20 +222,23 @@ void Context::InitGlobal(const std::string& name, const std::string& data) {
     var.initialised = true;
     var.has_storage = true;
     var.data = data;
+    var.items = items;
 }
 
 std::string Context::AddStaticLocal(const TypePtr& type) {
     std::string label = NewSymbolName("static");
-    globals_.push_back(GlobalVar{label, type, true, true, false, ""});
+    globals_.push_back(GlobalVar{label, type, true, true, false, "", {}, true});
     return label;
 }
 
 void Context::CompleteStaticLocal(const std::string& label, const TypePtr& type,
-                                  const std::string& data) {
+                                  const std::string& data,
+                                  const std::vector<ir::DataItem>& items) {
     GlobalVar& var = FindGlobal(label);
     var.type = type;
     var.initialised = true;
     var.data = data;
+    var.items = items;
 }
 
 void Context::MakeGlobalInternal(const std::string& name) {
@@ -255,6 +259,25 @@ void Context::EmitGlobals(std::ostream& os) const {
         } else {
             os << "\t.zero " << g.type->Size() << "\n";
         }
+    }
+}
+
+void Context::ExportGlobals(ir::Module& module) const {
+    if (!strings_.empty()) throw std::runtime_error("not in IR yet: string literal");
+    for (const GlobalVar& g : globals_) {
+        if (!g.has_storage) {
+            module.external_data.insert(g.name);
+            continue;
+        }
+        if (g.type->Size() == 0) throw std::runtime_error("'" + g.name + "' has incomplete type");
+        ir::DataEntry entry;
+        entry.label = g.name;
+        entry.size = g.type->Size();
+        entry.align = g.type->Align();
+        entry.internal = g.internal;
+        entry.compiler_made = g.compiler_made;
+        if (g.initialised) entry.items = g.items;  // else zero-filled: no items
+        module.data.push_back(entry);
     }
 }
 

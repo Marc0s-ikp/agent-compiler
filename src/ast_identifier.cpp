@@ -76,13 +76,13 @@ using ir::Operand;
 namespace {
 const Symbol& IrVariable(const Context& ctx, const std::string& name) {
     const Symbol& sym = ctx.Lookup(name);
-    if (sym.kind == SymbolKind::Global) throw std::runtime_error("not in IR yet: global variable");
     return sym;
 }
 }  // namespace
 
 Operand Identifier::EmitIRAddress(IRGen& gen) const {
     const Symbol& sym = IrVariable(gen.Ctx(), name_);
+    if (sym.kind == SymbolKind::Global) return gen.AddressOf(Operand::Symbol(sym.label));
     if (sym.kind != SymbolKind::Local) throw std::runtime_error("'" + name_ + "' is not a variable");
     return gen.AddressOf(Operand::Object(sym.object));
 }

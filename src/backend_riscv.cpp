@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -383,7 +384,7 @@ void WriteItem(const ir::DataItem& item, const SymbolNames& names, std::ostream&
             if (item.size == 8) os << "\t.word " << ((item.value >> 32) & 0xFFFFFFFFULL) << "\n";
             break;
         case Kind::Address:
-            os << "\t.word " << names.Spell(item.bytes) << (item.offset ? "+" + std::to_string(item.offset) : "") << "\n";
+            os << "\t.word " << names.Spell(item.bytes) << (item.offset ? (item.offset < 0 ? "-" : "+") + std::to_string(std::labs(item.offset)) : "") << "\n";
             break;
         case Kind::Zero: os << "\t.zero " << item.size << "\n"; break;
     }
