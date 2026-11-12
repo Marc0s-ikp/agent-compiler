@@ -23,4 +23,11 @@ others: floats and doubles in a registers, doubles in a register pair and on the
 is checked in the callee byte by byte through an `unsigned char *`, never read as a double: GCC's
 callee (-O0 and -O2) spills a7 next to the caller's first stack word and reads the double with an
 `fld` from an address that is 4 mod 8, and `spike pk` emulates that misaligned `fld` wrongly (GCC to
-GCC fails too). GCC's layout itself follows the psABI. Step 6 should add struct types.
+GCC fails too). GCC's layout itself follows the psABI.
+
+Struct and union types are in `PARAM_TYPES` since step 6 (`STRUCTS` in `gen_abi.py`: integer-only structs of 1 to
+16 bytes, float/double structs, mixed ones, two unions). Half of the shaped signatures are `structs`
+(1 to 6 structs or unions among 0 to 9 scalars). Each leaf is checked in the callee and, for a struct result,
+in the caller. Registers are not modelled for structs, so every double (a scalar one too) in a signature that has a
+struct parameter or a struct result is compared by its bytes (a double that finds a7 as the last free register is
+split, see above). Seeds 101-505 x 300 and 606-1010 x 500 pass in all four combinations with GCC -O0 and -O2.

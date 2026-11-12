@@ -649,3 +649,53 @@ have).
   `tests/custom/ir_float_split_a7.c` checks ours-to-ours and GCC-caller-to-our-callee only. NOTE:
   the older `float_split_double.c` does not actually produce a split, because its double finds fa0
   free and travels in fa0; `ir_float_split_a7.c` is the real a7 split.
+
+## Step 6 notes (implementer, 2026-11-12)
+
+- **No interface change.** `TargetAbi`/`CallLayout`/`ArgPlace`/`RetPlace`/`Piece` are as D25 left them. `RiscV32Abi`
+  maps what `ClassifyArgs`/`ArgPieces`/`ClassifyReturn`/`StackExtent` (abi.cpp) already return; no rule is written
+  twice. `PlaceRecord` (call_abi_riscv.cpp): `by_reference` gives `by_reference` and one 4-byte pointer piece (`IntReg`
+  or `StackWord`); `Stack` gives one `StackWord` piece with `offset` 0 and `bytes` the whole struct (3 to 8 bytes); the
+  rest are `ArgPieces` as they are (`IntReg`, `IntPair`, the a7 `Split` with its stack piece at `offset` 4, and `Fields`
+  with one `FloatReg`/`IntReg` piece per scalar field at the field's offset). `PlaceRecordReturn` gives `in_memory`
+  with `pointer` = a0 (`IntReg` index 0, the register `ClassifyArgs(.., hidden)` already skips), or the pieces of
+  `ClassifyReturn`. The only meaning added to an existing field: a `StackWord` piece may be larger than a word when it
+  is a whole struct (the backend tells it from the tail of an a7 split by `offset == 0 && bytes == struct size`).
+- **A struct value is a `Ptr`.** `IrTypeOf` maps a struct or union to `Ptr` (D19(b), 21.2), so `AddParam`, `Ret`, a
+  call argument and the `?:` slot need no special type. Everything that would load or store it as a scalar still goes
+  through `RequireIrScalar`, which rejects it; `RequireIrValue` (scalar, struct or union) is used where a value is only
+  moved: parameters, return, `?:`, local initialisers, assignment, call arguments. `LoadObject` returns the address
+  for a record as it does for an array. `ValueAs` to or from a record requires the very same record type and returns
+  the address.
+- **Member access** is `base.EmitValue` (the struct's address for `.`, the pointer for `->`, so `f().x` and `a[i].x`
+  need no separate case) plus a `ptradd` of the field's constant offset (none for offset 0). A union is the same with
+  offset 0. No new op.
+- **`memcpy dst, src, size, align`** (already in the op list) is used for struct assignment, struct arguments (the
+  frontend copies into a fresh frame object `copy.N`, so the callee and later arguments cannot change the caller's
+  object, 21.5), and a struct initialiser item. The backend uses `EmitCopyMem` (words if `align >= 4`, else bytes;
+  a loop over 16 units). The value of a struct assignment is the target's address. `memzero` clears a struct local
+  before its initialiser stores, like an array.
+- **`result_object`** (21.5). A call whose C return type is a struct or union has no result temporary: `ir::Instruction`
+  has `result_object`, a frame object `ret.N` of the struct's size that the frontend allocates for *every* such call,
+  and the value of the call expression is `addr $ret.N`. The frontend does not ask `Classify(...).ret.in_memory`: the
+  object is needed whether the value comes back in registers (the backend stores the pieces into it) or through a hidden
+  pointer (the backend passes its address in `ret.pointer`), so the frontend has nothing to decide and never learns
+  the RISC-V rule. Checker: a record call must have a `result_object` that is a frame object of exactly the record's
+  size; any other call must not have one; `memcpy`/`memzero` need a positive size and an alignment of 1, 2, 4 or 8.
+  `--emit-ir` prints `call struct @f(...) -> $ret.N`.
+- **A function that falls off its end** with a struct return type returns the address of a fresh frame object
+  (`noret.N`): the value is undefined in C, but the backend must not copy from a null pointer.
+- **Backend.** The frame has a 4-byte slot for the hidden pointer (before the frame objects) when `ret.in_memory`; the
+  prologue stores a0 there. Callee: `StoreRecordParameter` copies a by-reference struct from the pointer into the
+  parameter's home, or stores each piece at `home + piece.offset` (`EmitStoreBytes` for an integer piece, so a 3 or
+  5 byte struct never writes past its home; `fsw`/`fsd` for a field; a stack piece is read from `s0 + index`). Caller:
+  `PlaceOutgoingRecord` loads each piece from the argument copy (`EmitLoadBytes`, `flw`/`fld`) or passes the copy's
+  address; `SaveReturnedRecord` stores a0, a1, fa0, fa1 into `result_object`. `ret`: through the hidden pointer it
+  copies and returns the pointer in a0, else it loads the pieces from the operand's address. Scratch: t0 to t2 and
+  t3 to t5 inside `EmitCopyMem`; nothing is held between instructions.
+- **Tests.** 14 custom tests `ir_struct_*`, one per ABI case (see PROGRESS), each written once and generated into
+  `foo.c` (ours_*, calls theirs_*) and `foo_driver.c` (GCC: theirs_*, calls ours_*), expectations checked with GCC on
+  both sides. `tests/abi_check` draws structs and unions (20 types), also as hidden-pointer results: seeds 101-505 x 300
+  and 606-1010 x 500 pass in all four combinations (ours/GCC -O0/-O2), after the first run found that the generator
+  itself must byte-check every double whose slot a struct or a hidden pointer can shift into a7 (pk's misaligned `fld`,
+  see Step 5 notes).

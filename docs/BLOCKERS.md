@@ -222,7 +222,7 @@ From the step 2 review (2026-11-11, approved in round 1). None of these blocked 
 From the step 3 review (2026-11-12, approved in round 1). None of these blocked the merge.
 
 1. **RESOLVED (D25 accepted, ir/4): `Classify` is now `Target().Abi().Classify` via `RiscV32Abi`.** Was: **`Classify` is a free function** (`include/call_abi.hpp`, `src/call_abi_riscv.cpp`). Fine while there is one target, but a second target's `Classify` would not link, and `--target` selects at run time. Before a second backend: `riscv::Classify`, or call it through the backend. Part of D25, which is pending Marcus.
-2. **Work steps 5 and 6 must do in the backend, not in the interface:** `WriteCall`/`LoadForPiece` ignore `piece.offset`, `by_reference`, `FloatReg`, and an operand that is a `Ptr` to a struct copy; `StoreParameters` handles only integer registers and stack words of 4 bytes or less. `PlaceArg`/`PlaceReturn` in `src/call_abi_riscv.cpp` must go through `ArgPieces`/`ClassifyReturn` and copy `loc.by_reference` rather than grow their own mapping, or the record rules will exist twice. `IrTypeOf` throws on records although `CheckCall`/`IRGen::Call` call it for struct arguments. `ir::Instruction` has no `result_object` (21.5).
+2. **DONE in step 6 (see "Step 6 notes" in DECISIONS.md): the backend piece offsets, by_reference, the hidden pointer, `StoreParameters` for records, `PlaceArg`/`PlaceReturn` through `ArgPieces`/`ClassifyReturn`, `IrTypeOf` for records, `result_object`.** Was: **Work steps 5 and 6 must do in the backend, not in the interface:** `WriteCall`/`LoadForPiece` ignore `piece.offset`, `by_reference`, `FloatReg`, and an operand that is a `Ptr` to a struct copy; `StoreParameters` handles only integer registers and stack words of 4 bytes or less. `PlaceArg`/`PlaceReturn` in `src/call_abi_riscv.cpp` must go through `ArgPieces`/`ClassifyReturn` and copy `loc.by_reference` rather than grow their own mapping, or the record rules will exist twice. `IrTypeOf` throws on records although `CheckCall`/`IRGen::Call` call it for struct arguments. `ir::Instruction` has no `result_object` (21.5).
 3. `CheckCall`'s "unknown function" check cannot fire, because `IRGen::Call` adds every callee to `externals`. Drop it or explain it.
 4. `WordStore` also returns `sb`/`sh`; the name is misleading.
 5. `IsIntOrPointer` in the classifier repeats `RequireIrScalar`.
@@ -254,3 +254,17 @@ From the step 5 review (2026-11-12, approved in round 1). None of these blocked 
    constants into a temporary; revisit if a backend takes floating `const` operands.
 4. The backend rejects `itof`/`ftoi` on integers that are not 32 bits, while the checker allows `I64`. Needed once `long`
    is 64 bits or `long long` exists.
+
+## Nice to have from the v3 step 6 work
+
+1. `PlaceRecordReturn` writes the hidden-pointer register as the literal index 0 (a0). `abi.cpp` has the same fact as
+   `cursor.int_reg = 1` in `ClassifyArgs`. `RetLoc` could carry the register so that it exists once. Fine for one target.
+2. A `StackWord` piece of a whole struct (3 to 8 bytes) is larger than a word; the backend recognises it by
+   `offset == 0 && bytes == struct size`. If a second target wants a clearer interface, a flag on `Piece` or `ArgPlace`
+   ("whole object") would do; it was not added because D25 fixes the interface.
+3. `memcpy` of a struct is `EmitCopyMem`, shared with the old path: words only if `align >= 4`, so a struct of
+   `char[1000]` is a 1000-iteration byte loop.
+4. A struct argument is copied by the frontend even if the callee only reads it (21.5 requires a private copy); the
+   by-reference callee then copies again into its home. Two copies of a big struct per call; an optimisation for later.
+5. `tests/abi_check` does not model registers for structs, so every double of such a signature is byte-checked; a
+   struct whose double is split (e.g. `{double}` after 7 ints and 8 doubles) is therefore only checked by bytes.
