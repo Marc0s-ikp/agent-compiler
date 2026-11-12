@@ -77,3 +77,7 @@ Next: v3 step 6, structs and unions.
 | 2026-11-12 | 293/293 | v3 step 3: one definition per temp (D24), calls and ABI, classifier interface D25 (default 290→293, --ir 34→135) |
 | 2026-11-12 | 294/294 | v3 step 4 stage A: neutral labels, ptradd/ptrtoint/inttoptr, arrays and pointers, sizeof (default 293→294, --ir 135→176) |
 | 2026-11-12 | 299/299 | v3 step 4 stage B: globals, static locals and strings as data entries, five pointer tests (default 294→299, --ir 176→226) |
+
+## Step 6 baseline (before any struct/union work)
+Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.
+All 48 `--ir` failures are struct/union tests (all CRASH in the compiler): 40 stop at "not in IR yet: this type" (`IrTypeOf` / `RequireIrScalar` on a struct or union type), 5 at "not in IR yet: ast::Member" (global/local initialiser paths), 3 at "expression is not an lvalue" (array-of-struct element member access).
