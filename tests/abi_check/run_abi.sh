@@ -13,7 +13,7 @@ OPTS=("$@")
 [ "$#" -eq 0 ] && OPTS=(-O0)
 case " ${OPTS[*]} " in *" -O2 "*) ;; *) OPTS+=(-O2) ;; esac
 GCC="riscv64-unknown-elf-gcc -march=rv32imfd -mabi=ilp32d"
-OURS="build/c_compiler ${OURS_FLAGS:---ir}"
+OURS="build/c_compiler ${OURS_FLAGS:-}"
 OUT="tests/abi_check/out/seed$SEED"
 mkdir -p "$OUT"
 # ELFs of an earlier run of this seed are stale (the loop below skips an existing ELF).

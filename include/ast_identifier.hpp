@@ -5,8 +5,8 @@
 
 namespace ast {
 
-// A variable or parameter: a local addressed from s0, or a global addressed
-// by its label.
+// A variable or parameter: a local or parameter is a frame object, a global
+// is addressed by its label.
 class Identifier : public Expr {
 public:
     explicit Identifier(std::string name) : name_(std::move(name)) {}
@@ -14,10 +14,8 @@ public:
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     std::optional<ConstValue> EvalConstAddress(Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
     ir::Operand EmitIRAddress(IRGen& gen) const override;
-    void EmitAddress(std::ostream& os, Context& ctx) const override;
 
 private:
     std::string name_;

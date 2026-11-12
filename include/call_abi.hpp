@@ -1,15 +1,25 @@
 #pragma once
 #include <vector>
 
-#include "abi.hpp"
 #include "type.hpp"
+
+// One part of a value that travels by itself: in an integer register, a
+// floating register, or one stack word.
+struct Piece {
+    enum class Where { IntReg, FloatReg, StackWord };
+    Where where;
+    int index;   // register number, or the stack offset for StackWord
+    int offset;  // byte offset inside the struct
+    int bytes;   // 1 to 4 for an integer piece, 4 or 8 for a floating one
+    bool is_signed;
+};
 
 // The per-target calling-convention classifier (D25, 21.5). A backend calls
 // Classify once for each function it writes (entry and parameter homes) and
 // once for each IR 'call' it lowers, with the same function type, so caller
 // and callee cannot disagree (D5).
 //
-// Everything is described with Pieces (abi.hpp): a part of a value that
+// Everything is described with Pieces: a part of a value that
 // travels by itself, with its byte offset inside the value, its byte count,
 // its C signedness and where it goes:
 //   Where::IntReg     integer argument register number 'index'

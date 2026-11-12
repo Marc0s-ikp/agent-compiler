@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: default 305/305 before, 319/319 after (86 of 86 compiler_tests, 233 of 233 custom). `--ir` 257/305 before, 319/319 after. No previously passing test fails on either path (checked per test against `results/baseline_default_step6.txt` and `results/baseline_ir_step6.txt`).
-Fixed: v3 step 6, structs and unions on the IR path. A struct value is a `Ptr` to its object; member access is `ptradd`; struct assignment, struct arguments and initialiser items are `memcpy`; `ir::Instruction::result_object` receives a returned struct; `RiscV32Abi` maps `ArgPieces`/`ClassifyReturn` (integer words, a7 split, stack, floating-convention fields, by reference, hidden return pointer) with the interface unchanged; the backend places and stores pieces by offset. 14 new custom tests `ir_struct_*` (one per ABI case, GCC on the other side) and struct/union types in `tests/abi_check` (seeds 101-505 x 300 and 606-1010 x 500 pass in all four combinations).
-Blocked: nothing. For Marcus: `result_object` is made for every struct-returning call; the frontend does not ask `Target().Abi()` (the reviewer recommends keeping this, see Step 6 notes). Review approved in round 1; `abi_check` `run_abi.sh` prints hit counts per ABI case (every case hit in seeds 101-505). Notes under "Step 6 notes" in docs/DECISIONS.md and "Nice to have from the v3 step 6 work" in docs/BLOCKERS.md.
-Next: v3 step 7, delete the old path.
+Pass count: default 319/319 and `--ir` 319/319 before; 319/319 after on the only path (86 of 86 compiler_tests, 233 of 233 custom). `scripts/test.py` 319 passed; `tests/abi_check` seeds 101-505 x 300 and 606-1010 x 500 pass in all four combinations at GCC -O0/-O2, every ABI case hit. Generated assembly of all 319 tests byte-identical to step 6 `--ir` after every commit.
+Fixed: v3 step 7, the IR is the only code generation path. `--ir` removed; every `EmitRISC`/`EmitAddress`, `emit.cpp`, `abi.cpp`, `record_abi.cpp` and the Context frame state deleted; the ilp32d rules live only in `RiscV32Abi` (D25); loop/switch/label bookkeeping kept in Context (D24). D26 (struct result object) recorded as accepted. CLAUDE.md Architecture rewritten for the IR; D1, D2 and design sections 3-6 marked superseded by D21.
+Blocked: nothing. For Marcus: `Context::BeginFunction` keeps one `++label_count_` only so labels stay byte-identical to step 6 (reviewer: remove it in its own commit after the merge). Review approved in round 1.
+Next: v3 is complete. Follow-ups are under "Nice to have from the v3 step 7 review" in docs/BLOCKERS.md; whether to build a second target is a separate decision (21.8).
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -42,6 +42,7 @@ Next: v3 step 7, delete the old path.
 | 6b struct classifier rows (`RiscV32Abi`: integer words, a7 split, stack, `Fields`, by reference, hidden return pointer), backend pieces by offset, struct arguments and returns | 305/305 | 305/305 |
 | 6c 14 custom tests `ir_struct_*` (one per ABI case), `abi_check` draws structs and unions | 319/319 | 319/319 |
 | 6d review: `abi_check` models ilp32d struct rules, counts hits per ABI case (every case hit, seeds 101-505 x 300, 4 combinations, GCC -O0/-O2); test comment fixes | 319/319 | 319/319 |
+| 7 IR is the default and the only path; `--ir` removed, old generator deleted, ilp32d rules in `RiscV32Abi` (assembly byte-identical) | 319/319 | (no flag) |
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -82,6 +83,7 @@ Next: v3 step 7, delete the old path.
 | 2026-11-12 | 293/293 | v3 step 3: one definition per temp (D24), calls and ABI, classifier interface D25 (default 290→293, --ir 34→135) |
 | 2026-11-12 | 294/294 | v3 step 4 stage A: neutral labels, ptradd/ptrtoint/inttoptr, arrays and pointers, sizeof (default 293→294, --ir 135→176) |
 | 2026-11-12 | 299/299 | v3 step 4 stage B: globals, static locals and strings as data entries, five pointer tests (default 294→299, --ir 176→226) |
+| 2026-11-12 | 319/319 | v3 step 7: the IR is the only path, EmitRISC and the old generator deleted, ilp32d rules in RiscV32Abi (default 319/319, `--ir` removed) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.

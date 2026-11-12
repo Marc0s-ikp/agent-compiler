@@ -7,12 +7,11 @@
 
 namespace ast {
 
-// The assembly data directives for a global's initialiser, and the object's
-// type: an array declared without a length takes it from the initialiser.
+// The data items for a global's initialiser, and the object's type: an array
+// declared without a length takes it from the initialiser.
 struct GlobalInit {
     TypePtr type;
-    std::string data;                 // the old path: assembler directives
-    std::vector<ir::DataItem> items;  // the IR path: the same bytes as data items
+    std::vector<ir::DataItem> items;  // the object's bytes, in order
 };
 
 // Every value must be a link-time constant: an integer constant expression,

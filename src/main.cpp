@@ -12,7 +12,6 @@
 #include "ir_gen.hpp"
 #include "target.hpp"
 
-
 extern FILE* yyin;
 int yylex_destroy();
 int yyparse(std::unique_ptr<ast::TranslationUnit>& root);
@@ -23,7 +22,6 @@ struct Options {
     const char* input = nullptr;
     const char* output = nullptr;
     const char* target = "riscv32";  // the default when --target is absent
-    bool use_ir = false;             // --ir: AST -> IR -> RISC-V backend
     bool emit_ir = false;            // --emit-ir: write the IR as text
 };
 
@@ -34,14 +32,15 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             std::cerr << "error: --target needs a value\n";
             return false;
         }
-        if (std::strcmp(argv[i], "--ir") == 0) {
-            opts.use_ir = true;
-        } else if (std::strcmp(argv[i], "--emit-ir") == 0) {
+        if (std::strcmp(argv[i], "--emit-ir") == 0) {
             opts.emit_ir = true;
         } else if (std::strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
             opts.target = argv[++i];
         } else if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             opts.output = argv[++i];
+        } else if (argv[i][0] == '-') {
+            std::cerr << "error: unknown option '" << argv[i] << "'\n";
+            return false;
         } else {
             opts.input = argv[i];
         }
@@ -67,16 +66,15 @@ bool ReportIRErrors(const ir::Module& module) {
     return !errors.empty();
 }
 
-// The IR path. The checker runs on every compile, in every build (D21).
+// AST -> IR -> backend. The checker runs on every compile, in every build (D21).
 // With --emit-ir the dump is written FIRST and the checker runs after it, so a
 // broken module can still be read. If lowering throws, the finished functions
-// and the partly built one are dumped before the error is reported. With --ir
-// alone the checker runs before
-// the backend, and nothing is generated from a module that fails it.
+// and the partly built one are dumped before the error is reported. Without
+// it the checker runs before the backend, and nothing is generated from a
+// module that fails it.
 int CompileViaIR(const Options& opts, const ast::TranslationUnit& root, std::ostream& out) {
     ir::Module module;
     Context ctx;
-    ctx.UseNeutralNames();  // the backend spells labels (21.2a)
     IRGen gen(module, ctx);
     try {
         root.EmitIR(gen);
@@ -114,12 +112,9 @@ int main(int argc, char** argv) {
 
     std::ofstream out(opts.output);
     try {
-        if (opts.use_ir || opts.emit_ir) return CompileViaIR(opts, *root, out);
-        Context ctx;
-        root->EmitRISC(out, ctx);
+        return CompileViaIR(opts, *root, out);
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
         return 1;
     }
-    return 0;
 }

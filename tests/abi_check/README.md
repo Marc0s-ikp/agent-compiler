@@ -5,8 +5,8 @@ signatures (0 to 14 parameters for a uniform draw, up to 20 for the shaped ones 
 return type from the same set plus void). The callee checks every parameter and returns a value
 derived from them; the caller checks it. Mismatches call `abi_fail` in the driver (always GCC).
 
-`run_abi.sh SEED COUNT [GCC_OPT...]` builds caller and callee with ours (`build/c_compiler --ir`,
-override with `OURS_FLAGS`) and with GCC at each option (default `-O0 -O2`; `-O2` is always run, added if you pass other options, never twice), links all four
+`run_abi.sh SEED COUNT [GCC_OPT...]` builds caller and callee with ours (`build/c_compiler`,
+extra flags via `OURS_FLAGS`) and with GCC at each option (default `-O0 -O2`; `-O2` is always run, added if you pass other options, never twice), links all four
 combinations (ours->ours, ours->gcc, gcc->ours, gcc->gcc) and runs them under `spike pk`.
 `-O2` is mandatory on the GCC side: `-O0` GCC re-extends narrow values and hides missing extensions.
 

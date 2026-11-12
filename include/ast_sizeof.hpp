@@ -11,7 +11,6 @@ public:
     explicit SizeofExpr(ExprPtr operand) : operand_(std::move(operand)) {}
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -25,7 +24,6 @@ public:
     explicit SizeofType(Param type_name) : type_(std::move(type_name)) {}
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:

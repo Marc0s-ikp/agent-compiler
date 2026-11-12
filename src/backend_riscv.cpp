@@ -4,11 +4,11 @@
 #include <cstdint>
 #include <cstdlib>
 #include <map>
+#include <ostream>
 #include <set>
 #include <stdexcept>
 
 #include "call_abi.hpp"
-#include "emit.hpp"
 #include "target.hpp"
 
 // Immediates (21.10): any IR integer is legal. Every constant operand is
@@ -52,6 +52,96 @@ private:
 };
 
 int RoundUp(int value, int multiple) { return (value + multiple - 1) / multiple * multiple; }
+
+// ---- memory access helpers ----
+
+bool FitsImm12(int v) { return v >= -2048 && v <= 2047; }
+
+// 'op reg, off(base)'. If off does not fit 12 bits, the address is built in
+// t6 first.
+void EmitMem(std::ostream& os, const std::string& op, const std::string& reg,
+             const std::string& base, int off) {
+    if (FitsImm12(off)) {
+        os << "\t" << op << " " << reg << ", " << off << "(" << base << ")\n";
+        return;
+    }
+    os << "\tli t6, " << off << "\n";
+    os << "\tadd t6, " << base << ", t6\n";
+    os << "\t" << op << " " << reg << ", 0(t6)\n";
+}
+
+// dst = base + off, for any offset.
+void EmitAddrOffset(std::ostream& os, const std::string& dst,
+                    const std::string& base, int off) {
+    if (off == 0 && dst == base) return;
+    if (FitsImm12(off)) {
+        os << "\taddi " << dst << ", " << base << ", " << off << "\n";
+        return;
+    }
+    os << "\tli t6, " << off << "\n";
+    os << "\tadd " << dst << ", " << base << ", t6\n";
+}
+
+// A struct whose alignment is 4 or more is copied a word at a time (its size
+// is a multiple of its alignment), any other a byte at a time.
+int CopyUnit(int align) { return align >= 4 ? 4 : 1; }
+
+// Copies a struct or union of 'bytes' bytes and alignment 'align' from the
+// address in 'src' to the address in 'dst' (D19). Handles any size; a large
+// one uses a loop. Clobbers t0, t3, t4 and t5, so 'dst' and 'src' must be
+// other registers; both stay unchanged.
+void EmitCopyMem(std::ostream& os, const std::string& dst,
+                 const std::string& src, int bytes, int align) {
+    const int kUnrolledMax = 16;  // units copied with straight-line code
+    int unit = CopyUnit(align);
+    const char* load = unit == 4 ? "lw" : "lbu";
+    const char* store = unit == 4 ? "sw" : "sb";
+    int count = bytes / unit;
+    if (count <= kUnrolledMax) {
+        for (int i = 0; i < count; ++i) {
+            os << "\t" << load << " t0, " << i * unit << "(" << src << ")\n";
+            os << "\t" << store << " t0, " << i * unit << "(" << dst << ")\n";
+        }
+        return;
+    }
+    os << "\tmv t3, " << dst << "\n\tmv t4, " << src << "\n";
+    os << "\tli t5, " << bytes << "\n\tadd t5, t3, t5\n";
+    os << "1:\n\t" << load << " t0, 0(t4)\n\t" << store << " t0, 0(t3)\n";
+    os << "\taddi t3, t3, " << unit << "\n\taddi t4, t4, " << unit << "\n";
+    os << "\tbne t3, t5, 1b\n";
+}
+
+// Loads 'bytes' (1 to 4) bytes of an integer piece of a struct, zero- or
+// sign-extended, into 'reg' from off(base). A whole aligned word is one 'lw';
+// anything else is built byte by byte, so it never reads past the object or
+// reads a misaligned word. 'align' is the alignment of the struct. Clobbers
+// t0; 'reg' and 'base' must not be t0.
+void EmitLoadBytes(std::ostream& os, const std::string& reg, int bytes,
+                   bool is_signed, int align, const std::string& base, int off) {
+    if (bytes == 4 && align >= 4) return EmitMem(os, "lw", reg, base, off);
+    if (bytes == 1) return EmitMem(os, is_signed ? "lb" : "lbu", reg, base, off);
+    EmitMem(os, "lbu", reg, base, off);
+    for (int i = 1; i < bytes; ++i) {
+        // The top byte of a signed 2-byte value is loaded signed, which
+        // extends the sign through the register.
+        bool top_signed = is_signed && bytes == 2 && i == 1;
+        EmitMem(os, top_signed ? "lb" : "lbu", "t0", base, off + i);
+        os << "\tslli t0, t0, " << 8 * i << "\n\tor " << reg << ", " << reg
+           << ", t0\n";
+    }
+}
+
+// The matching store of the low 'bytes' bytes of 'reg'. Clobbers t0; 'reg'
+// and 'base' must not be t0.
+void EmitStoreBytes(std::ostream& os, const std::string& reg, int bytes,
+                    int align, const std::string& base, int off) {
+    if (bytes == 4 && align >= 4) return EmitMem(os, "sw", reg, base, off);
+    EmitMem(os, "sb", reg, base, off);
+    for (int i = 1; i < bytes; ++i) {
+        os << "\tsrli t0, " << reg << ", " << 8 * i << "\n";
+        EmitMem(os, "sb", "t0", base, off + i);
+    }
+}
 
 // ---- frame layout (21.6) ----
 // Below s0: saved ra and s0, then the frame objects (locals and parameter

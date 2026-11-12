@@ -4,7 +4,6 @@
 
 #include "ast_lower.hpp"
 #include "ast_operators.hpp"
-#include "emit.hpp"
 
 namespace ast {
 
@@ -23,12 +22,6 @@ TypePtr Pointee(const TypePtr& pointer) {
     return target;
 }
 
-// Value of the object whose address is in a0 (arrays yield the address), in
-// the accumulator for its type.
-void EmitLoadThroughA0(std::ostream& os, const Type& type) {
-    EmitLoad(os, type, AccReg(type), "a0", 0);
-}
-
 }  // namespace
 
 // ---- Deref ----
@@ -37,24 +30,10 @@ TypePtr Deref::GetType(const Context& ctx) const {
     return Pointee(operand_->ValueType(ctx));
 }
 
-void Deref::EmitAddress(std::ostream& os, Context& ctx) const {
-    GetType(ctx);
-    operand_->EmitRISC(os, ctx);
-}
-
-void Deref::EmitRISC(std::ostream& os, Context& ctx) const {
-    EmitAddress(os, ctx);
-    EmitLoadThroughA0(os, *GetType(ctx));
-}
-
 // ---- AddressOf ----
 
 TypePtr AddressOf::GetType(const Context& ctx) const {
     return Type::Pointer(operand_->GetType(ctx));
-}
-
-void AddressOf::EmitRISC(std::ostream& os, Context& ctx) const {
-    operand_->EmitAddress(os, ctx);
 }
 
 std::optional<ConstValue> AddressOf::EvalConstValue(Context& ctx) const {
@@ -81,19 +60,6 @@ std::optional<ConstValue> Index::EvalConstValue(Context& ctx) const {
     if (!GetType(ctx)->IsArray()) return std::nullopt;
     return EvalConstAddress(ctx);
 }
-
-void Index::EmitAddress(std::ostream& os, Context& ctx) const {
-    GetType(ctx);
-    sum_->EmitRISC(os, ctx);
-}
-
-void Index::EmitRISC(std::ostream& os, Context& ctx) const {
-    EmitAddress(os, ctx);
-    EmitLoadThroughA0(os, *GetType(ctx));
-}
-
-
-// ---- --ir lowering ----
 
 // *p is the object at the pointer's value; a[i] is *(a + i), so its address is
 // the ptradd the sum lowers to. An array object is its own address (D10).

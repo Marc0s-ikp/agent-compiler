@@ -10,12 +10,10 @@ public:
     Assign(ExprPtr lhs, ExprPtr rhs)
         : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
-    void EmitRecordCopy(std::ostream& os, const Type& type, int address_slot) const;
-    ir::Operand EmitRecordCopy(IRGen& gen, const Type& type) const;  // --ir
+    ir::Operand EmitRecordCopy(IRGen& gen, const Type& type) const;
 
     ExprPtr lhs_, rhs_;
 };
@@ -26,7 +24,6 @@ public:
     CompoundAssign(BinOp op, ExprPtr lhs, ExprPtr rhs)
         : op_(op), lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
     TypePtr GetType(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -44,11 +41,9 @@ public:
           prefix_(is_prefix),
           operand_(std::move(operand)) {}
     TypePtr GetType(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
-    void EmitFloating(std::ostream& os, Context& ctx, const Type& type) const;
     ir::Operand StepPointer(IRGen& gen, ir::Operand old, const Type& type) const;
     ir::Operand StepFloat(IRGen& gen, ir::Operand old, const Type& type) const;
     ir::Operand StepInteger(IRGen& gen, ir::Operand old, const TypePtr& type) const;

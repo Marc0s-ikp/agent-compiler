@@ -152,7 +152,7 @@ struct Module {
 void Print(const Module& module, std::ostream& os);
 
 // The IR checker (21.2). Returns one message per problem; empty means the
-// module is well formed. Runs on every --ir and --emit-ir compile.
+// module is well formed. Runs on every compile.
 std::vector<std::string> CheckIR(const Module& module);
 
 }  // namespace ir

@@ -4,8 +4,8 @@
 
 namespace ast {
 
-// (type-name) operand. The conversion is EmitConvert, the same routine
-// assignment and calls use (D6). A cast to void evaluates and discards.
+// (type-name) operand. The conversion is ValueAs (ast_lower), the same
+// routine assignment and calls use (D6). A cast to void evaluates and discards.
 class Cast : public Expr {
 public:
     Cast(Param type_name, ExprPtr operand)
@@ -14,7 +14,6 @@ public:
     std::optional<long> EvalConst(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     bool IsNullPointerConstant(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:

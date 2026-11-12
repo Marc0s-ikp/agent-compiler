@@ -12,7 +12,6 @@ public:
     explicit IntLiteral(const std::string& text);
     TypePtr GetType(const Context& ctx) const override;
     std::optional<long> EvalConst(const Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -33,7 +32,6 @@ public:
     explicit FloatLiteral(const std::string& text);
     TypePtr GetType(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -55,7 +53,6 @@ public:
     std::optional<long> EvalConst(const Context&) const override {
         return value_;
     }
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
@@ -72,8 +69,6 @@ public:
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     std::optional<ConstValue> EvalConstAddress(Context& ctx) const override;
     const std::string* StringBytes() const override { return &bytes_; }
-    void EmitRISC(std::ostream& os, Context& ctx) const override;
-    void EmitAddress(std::ostream& os, Context& ctx) const override;
     ir::Operand EmitValue(IRGen& gen) const override;
     ir::Operand EmitIRAddress(IRGen& gen) const override;
 
