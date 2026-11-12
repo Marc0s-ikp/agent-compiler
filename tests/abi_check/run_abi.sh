@@ -16,6 +16,8 @@ GCC="riscv64-unknown-elf-gcc -march=rv32imfd -mabi=ilp32d"
 OURS="build/c_compiler ${OURS_FLAGS:---ir}"
 OUT="tests/abi_check/out/seed$SEED"
 mkdir -p "$OUT"
+# ELFs of an earlier run of this seed are stale (the loop below skips an existing ELF).
+rm -f "$OUT"/*.elf
 python3 tests/abi_check/gen_abi.py "$SEED" "$COUNT" "$OUT"
 $OURS -S "$OUT/caller.c" -o "$OUT/caller_ours.s" || { echo "ours failed on caller.c"; exit 2; }
 $OURS -S "$OUT/callee.c" -o "$OUT/callee_ours.s" || { echo "ours failed on callee.c"; exit 2; }
