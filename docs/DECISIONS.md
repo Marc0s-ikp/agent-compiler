@@ -544,6 +544,18 @@ The prologue then copies each incoming register piece to its parameter's home, e
   since `branch` takes an integer.
 - **Index widening** is by the index's C signedness (`sext` signed, `zext` unsigned); the same width needs
   no instruction, because the bits are identical and the sum wraps in pointer width (D20).
+- **Globals reuse the old table and walk (stage B).** `GlobalDeclaration::Declare` is shared by both paths:
+  `Context::DeclareGlobal`/`InitGlobal` keep merging tentative definitions and `extern` declarations into
+  one `GlobalVar` per object (D15). `InitWriter` appends a `DataItem` next to every directive it writes
+  (`Int` after `ConvertConst`, `Address(label, offset)` pointer-sized, `Bytes`, `Zero`, `Float`), so there
+  is one initialiser layout and `GlobalInit` carries both forms; the old text goes away at step 7.
+  `Context::ExportGlobals`, called from `IRGen::EndModule`, makes exactly one `DataEntry` per object that has
+  storage (uninitialised: empty items, zero-filled). An object with no storage (extern only) gets no entry
+  and goes into `Module::external_data`, which the checker accepts as a symbol. `static` file-scope objects are
+  `internal` and keep their C name; static locals are `compiler_made` and `internal` (label from
+  `NewSymbolName`). The checker also verifies that every `Address` item names a known symbol.
+- **Strings.** Each `Context::AddString` pool entry becomes a read-only, internal, compiler-made entry with one
+  `Bytes` item that includes the NUL (`ExportStrings`); code uses `addr @str.N`.
 
 ## D25 detail (ACCEPTED, Marcus, 2026-11-12, with one change)
 
