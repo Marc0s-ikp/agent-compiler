@@ -322,6 +322,9 @@ void CheckData(const Module& module, std::vector<std::string>& errors) {
         if (d.compiler_made && !d.internal) errors.push_back(who + "compiler-made but not internal");
         if (d.compiler_made && !dotted) errors.push_back(who + "compiler-made name must contain '.'");
         for (const DataItem& item : d.items) {
+            if (item.kind == DataItem::Kind::Float && item.size != 4 && item.size != 8) {
+                errors.push_back(who + "float item must be 4 or 8 bytes");
+            }
             if (item.kind != DataItem::Kind::Address) continue;
             bool known = module.external_data.count(item.bytes) > 0 || module.externals.count(item.bytes) > 0;
             for (const DataEntry& e : module.data) known = known || e.label == item.bytes;

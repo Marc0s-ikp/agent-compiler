@@ -18,10 +18,17 @@ const Type& RequireIrScalar(const Type& type);
 ir::Operand Arith(IRGen& gen, BinOp op, const Type& common, ir::Operand a, ir::Operand b);
 
 // Converts an already evaluated scalar value between two C scalar types
-// (integer or pointer). The one place integers and pointers meet (21.10).
+// (integer, pointer or floating). The one place integers, pointers and
+// floats meet (21.10).
 ir::Operand ConvertScalar(IRGen& gen, ir::Operand value, const Type& from, const Type& to);
 
-// Evaluates 'e' and converts it to 'to' (an integer or pointer type).
+// The conversions with a floating type on either side (ConvertScalar calls it).
+ir::Operand ConvertFloating(IRGen& gen, ir::Operand value, const Type& from, const Type& to);
+
+// "x != 0.0" for a floating value, as an I32 0 or 1 (true for NaN).
+ir::Operand FloatCondition(IRGen& gen, ir::Operand value);
+
+// Evaluates 'e' and converts it to 'to' (a scalar type).
 ir::Operand ValueAs(IRGen& gen, const Expr& e, const Type& to);
 
 // Evaluates a controlling expression (if, loops, ?:, &&, ||, switch) to an

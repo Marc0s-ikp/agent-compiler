@@ -39,6 +39,11 @@ public:
     ir::Operand PtrAdd(ir::Operand pointer, ir::Operand offset);
     ir::Operand PtrToInt(ir::Operand pointer);
     ir::Operand IntToPtr(ir::Operand integer);
+    // A conversion instruction (sext, itof, ftoi, fext, ...) to 'result'.
+    ir::Operand Convert(ir::Op op, ir::IrType result, ir::Operand value);
+    // A floating constant: an entry in the float pool, loaded from memory
+    // (21.2a). 'type' is F32 or F64.
+    ir::Operand FloatConstant(double value, ir::IrType type);
     ir::Operand Load(ir::IrType type, ir::Operand address);
     void Store(ir::IrType type, ir::Operand value, ir::Operand address);
     // Zeroes 'size' bytes at 'address', which is aligned to 'align'.

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <optional>
 
 #include "ast_node.hpp"
@@ -17,6 +18,10 @@ std::optional<ConstValue> ConvertConst(const ConstValue& value, const Type& to);
 // not constant or does not convert.
 std::optional<ConstValue> ConstOperandAs(Context& ctx, const Expr& expr,
                                          const Type& to);
+
+// The IEEE bit pattern of 'value' as a float (size 4, rounded) or double
+// (size 8): what the float pool and data entries store.
+uint64_t FloatBits(double value, int size);
 
 // An integer constant of integer type 'type': 'n' wrapped to its width.
 long WrapToType(long n, const Type& type);

@@ -6,6 +6,7 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "const_value.hpp"
 #include "emit.hpp"
 #include "target.hpp"
 
@@ -68,16 +69,7 @@ std::optional<ConstValue> FloatLiteral::EvalConstValue(Context&) const {
 
 void FloatLiteral::EmitRISC(std::ostream& os, Context& ctx) const {
     TypePtr type = GetType(ctx);
-    uint64_t bits;
-    if (is_float_) {
-        float f = static_cast<float>(value_);
-        uint32_t narrow;
-        std::memcpy(&narrow, &f, sizeof narrow);
-        bits = narrow;
-    } else {
-        std::memcpy(&bits, &value_, sizeof bits);
-    }
-    os << "\tla t0, " << ctx.AddFloat(bits, type->Size()) << "\n";
+    os << "\tla t0, " << ctx.AddFloat(FloatBits(value_, type->Size()), type->Size()) << "\n";
     EmitLoad(os, *type, "fa0", "t0", 0);
 }
 
@@ -122,6 +114,13 @@ Operand StringLiteral::EmitIRAddress(IRGen& gen) const {
 }
 
 Operand StringLiteral::EmitValue(IRGen& gen) const { return EmitIRAddress(gen); }
+
+// The constant lives in the float pool (a read-only data entry); the value is
+// loaded from it.
+Operand FloatLiteral::EmitValue(IRGen& gen) const {
+    CheckSuffix();
+    return gen.FloatConstant(value_, IRGen::ToIr(*GetType(gen.Ctx())));
+}
 
 Operand CharLiteral::EmitValue(IRGen&) const {
     return Operand::Int(value_, IRGen::ToIr(*Type::Int()));

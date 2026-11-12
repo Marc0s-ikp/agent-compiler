@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: default 293/293 before, 299/299 after (86 of 86 compiler_tests, 213 of 213 custom). `--ir` 135/293 before, 226/299 after. No previously passing test fails on either path (checked per test against the baselines at every commit).
-Fixed: D25 accepted with Marcus's change (`Target().Abi().Classify` through `RiscV32Abi`, chosen in `SetTarget`; `abi_check` always runs GCC -O2). v3 step 4 (arrays, pointers, globals). Neutral label and data-symbol names in the IR with the backend alone spelling `.L` labels; `ptradd`/`ptrtoint`/`inttoptr` and all pointer forms; arrays, Index, Deref, AddressOf, local array initialisers, `memzero`; `sizeof`; globals and static locals as module data entries built from the old initialiser walk; string literals as read-only compiler-made entries. New custom tests `ir_pointer_forms`, `ir_neg_index`, `ir_unsigned_index`, `ir_ptr_difference`, `ir_addr_of_elem`, `ir_global_ptr_elem`.
-Blocked: nothing. Review approved in round 1; notes under "Nice to have from the v3 step 4 review" in docs/BLOCKERS.md. Every remaining `--ir` failure uses float/double or struct/union (steps 5 and 6).
-Next: v3 step 5, float and double.
+Pass count: default 299/299 before, 304/304 after (86 of 86 compiler_tests, 218 of 218 custom). `--ir` 226/299 before, 256/304 after. No previously passing test fails on either path (checked per test against the baselines).
+Fixed: v3 step 5, float and double on the IR path. Classifier F32/F64 rows in `RiscV32Abi` (fa registers, then integer registers, a7/stack split, stack; returns in fa0) with the interface unchanged; float constants as read-only pool entries; signed and unsigned int<->float/double and float<->double conversions; compares (NaN-correct `!=`) and the full arithmetic set. New custom tests `ir_float_mixed_args`, `ir_float_double_in_ints`, `ir_float_split_a7`, `ir_float_utod`, `ir_float_dtou`. `tests/abi_check` now generates float/double signatures that exhaust fa0-fa7 and split doubles; seeds 101-505 x 300 pass in all four caller/callee combinations with GCC -O0 and -O2. BLOCKERS: new "Required before AArch64" items (pointer width, `AddCase`).
+Blocked: nothing. Review approved in round 1; notes under "Nice to have from the v3 step 5 review" in docs/BLOCKERS.md. All 48 remaining `--ir` failures are struct/union tests (step 6).
+Next: v3 step 6, structs and unions.
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -34,6 +34,9 @@ Next: v3 step 5, float and double.
 | 4a neutral names, ptradd/ptrtoint/inttoptr, arrays, pointers, sizeof (custom test `ir_pointer_forms`) | 294/294 | 176/294 |
 | 4b globals and static locals as data entries, string literals as entries; custom tests `ir_neg_index`, `ir_unsigned_index`, `ir_ptr_difference`, `ir_addr_of_elem`, `ir_global_ptr_elem` | 299/299 | 226/299 |
 | 4c review fixes: `ir_addr_of_elem` checked against GCC-computed addresses, docs | 299/299 | 226/299 |
+| 5a float and double: classifier rows, conversions, compares, float pool entries, backend | 299/299 | 251/299 |
+| 5b custom tests `ir_float_mixed_args`, `ir_float_double_in_ints`, `ir_float_split_a7`, `ir_float_utod`, `ir_float_dtou`; float/double in `abi_check` | 304/304 | 256/304 |
+| 5c review: `abi_check` exhausts fa registers and splits doubles, split-double docs corrected | 304/304 | 256/304 |
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -53,7 +56,7 @@ Next: v3 step 5, float and double.
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 213 | 213 |
+| custom (written by tester, D13) | 218 | 218 |
 
 ## History
 | Date | Passing | Change |

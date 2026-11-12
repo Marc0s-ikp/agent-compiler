@@ -117,8 +117,10 @@ For feature 8: DONE (D19). `src/local_init.cpp` now zeroes structs and unions as
 
 - `long double` and the `L` suffix on a floating literal are rejected. Hex floating literals do not lex.
 - `LogicalAnd`, `LogicalOr` and `Ternary` have no `EvalConstValue`, so `double d = 1 ? 2.0 : 3.0;` at file scope is rejected.
-- A double split across a7 and the stack is not tested against GCC: GCC's own callee reads it with a misaligned `fld`
-  that gives a wrong value under spike pk. `tests/custom/float_split_double.c` checks our caller against our callee.
+- A GCC callee that reads a double split across a7 and the stack uses a misaligned `fld`, which spike pk emulates
+  wrongly (GCC to GCC fails too). `tests/custom/ir_float_split_a7.c` is the real split test (ours to ours, GCC caller
+  to our callee); `float_split_double.c` does not split (its double travels in fa0). Since v3 step 5, `tests/abi_check`
+  checks split doubles in all four caller/callee combinations, reading them byte by byte in the callee.
 - Constant folding of an out-of-range floating value (`int x = 1e20;`) is rejected as "not a constant" instead of
   saturating, and a literal beyond double's range becomes infinity without a warning.
 - Nice to have (feature 7 review): `Cast::EvalConst` only folds integer operands, so a cast of a floating constant is
@@ -187,9 +189,22 @@ From the step 1 review (2026-11-11, approved in round 2). These are design quest
 8. **Narrow returns are rejected under `--ir`** (`src/ast_ir.cpp:283-290`), unsigned ones included. The step 3 classifier must remove this guard; `tests/custom/ir_narrow_return` is the test for it.
 9. Commit `147dee6`'s message reads "(default 283/283 + 1 new custom test, --ir 0→18)" instead of "(default 284/284, --ir 0→18)". It was left as is, to avoid rewriting history.
 
-## Required before an AArch64 backend
+## Required before AArch64
 
 1. RESOLVED by 0ef029e. Move `.L` label naming to the backend. Today `Context::NewLabel` (`src/context.cpp:142`) adds the `.L` prefix in the frontend, which is RISC-V assembler syntax. IR labels should be plain names, and each backend adds its own local-label prefix (Marcus, 2026-11-11, D23 d).
+
+Pointer width (Marcus, 2026-11-12). Each of items 2 to 4 must take the width from `Target().pointer_size`
+(and the matching signed integer type), never from a literal 4 or from `int`.
+
+2. `InitWriter::Word` (`src/global_init.cpp`) rejects an address whose size is not 4: it assumes 4-byte addresses.
+   Moved from the step 4 review, item 3.
+3. `PtrMinusPtr` is typed `int`. It must be the signed integer type of pointer width (`ptrdiff_t`).
+   Moved from the step 4 review, item 3.
+4. `PointerDifference` truncates the difference to `int`. It must compute and return it in pointer width.
+   Moved from the step 4 review, item 3.
+5. `Context::AddCase` (`src/context.cpp:270-280`) wraps case values to `Type::Int()`, not to the promoted
+   controlling type. Wrong once `long` is parsed and is `I64` on a 64-bit target. Its sizes must come from
+   `Target()`. Moved from the step 2 review, item 3.
 
 ## Nice to have from the v3 step 2 review
 
@@ -197,7 +212,7 @@ From the step 2 review (2026-11-11, approved in round 1). None of these blocked 
 
 1. DONE (step 3, D24 change, 21.10.4). The checker now enforces one definition site per temp; `?:`, `&&`, `||` go through a hidden frame object.
 2. DONE (step 3). `&&`/`||` `EmitValue` (`src/ast_operators.cpp`) hard-code `IrType::I32` instead of `IRGen::ToIr(*GetType(ctx))`, the D22(b) contract. Harmless while `int` is 32 bits.
-3. `Context::AddCase` (`src/context.cpp:270-280`) wraps case values to `Type::Int()`, not to the promoted controlling type. Wrong once `long` is parsed and is `I64` on a 64-bit target.
+3. MOVED to "Required before AArch64", item 5 (`Context::AddCase` wraps case values to `int`).
 4. **Step 7 must keep or move, not delete as dead:** the IR path now uses `Context::PushLoop`/`PopLoop`/`BreakLabel`/`ContinueLabel`, `PushSwitch`/`PopSwitch`/`AddCase`/`AddDefault`/`SwitchInfo`, and `NewLabel`. The backend's `beqz t0, 1f` relies on GNU numeric local labels (relevant to the AArch64 label item).
 5. Commit `3252e7f`'s message says "large immediates in the RISC-V backend", but the backend already handled them; the commit adds a comment and a test. Left as is, to avoid rewriting history.
 6. Tidiness: a whitespace-only line before `Condition` in `src/ast_lower.cpp`; `src/ast_lower.cpp` repeats the comments in `include/ast_lower.hpp`; an odd line break in the comment in `CompileViaIR` (`src/main.cpp:70-75`).
@@ -219,10 +234,23 @@ From the step 4 review (2026-11-12, approved). None of these blocked the merge.
 
 1. `CheckData` (`src/ir_check.cpp`) repeats the symbol lookup of `FunctionChecker::SymbolExists`; one helper on `Module` would do for both.
 2. `tests/abi_check/run_abi.sh` is mode 100644 while the README calls it directly. Marcus's call; the mode was not changed.
-3. 32-bit assumptions: `InitWriter::Word` rejects an address whose size is not 4, `PtrMinusPtr` is typed `int`, and `PointerDifference` truncates to `int`. Revisit for a 64-bit target.
+3. MOVED to "Required before AArch64", items 2 to 4 (32-bit assumptions in `InitWriter::Word`, `PtrMinusPtr`, `PointerDifference`).
 4. `--emit-ir` prints a negative `addr` offset as `+ -4`.
 5. `memzero` of a char array over 64 bytes (alignment 1) is a byte loop; a word loop would need an alignment-aware head and tail.
 6. `Index::EmitIRAddress` calls `GetType` only for its checks. DONE: comment added.
 7. `Context` includes `ir.hpp` and owns `ExportGlobals`/`ExportStrings`. Step 7 must decide where they live (an `ir` data builder, or a frontend module).
 8. Uninitialised globals go to `.data` with `.zero`, not `.bss`.
 9. `GlobalInit` carries both the directive text and the data items until step 7.
+
+## Nice to have from the v3 step 5 review
+
+From the step 5 review (2026-11-12, approved in round 1). None of these blocked the merge.
+
+1. `WriteConversion` (`src/backend_riscv.cpp`) picks out float conversions with `in.op >= Op::IToF && in.op <= Op::FTrunc`,
+   which depends on the order of the `Op` enum. A named `IsFloatConversion(Op)` next to `IsConversion` in `ir.hpp` would be clearer.
+2. Double to `unsigned char`/`unsigned short` goes through `fcvt.w` (signed) and then truncates. Correct for every in-range
+   value (out-of-range is undefined in C), but the reason needs a comment.
+3. `LoadFloatWord` calls `NotYet` for a float operand that is not a temporary. Fine while the frontend always loads float
+   constants into a temporary; revisit if a backend takes floating `const` operands.
+4. The backend rejects `itof`/`ftoi` on integers that are not 32 bits, while the checker allows `I64`. Needed once `long`
+   is 64 bits or `long long` exists.

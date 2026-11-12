@@ -49,6 +49,7 @@ public:
 private:
     void EmitFloating(std::ostream& os, Context& ctx, const Type& type) const;
     ir::Operand StepPointer(IRGen& gen, ir::Operand old, const Type& type) const;
+    ir::Operand StepFloat(IRGen& gen, ir::Operand old, const Type& type) const;
     ir::Operand StepInteger(IRGen& gen, ir::Operand old, const TypePtr& type) const;
 
     bool increment_, prefix_;

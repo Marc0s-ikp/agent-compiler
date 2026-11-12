@@ -178,6 +178,7 @@ private:
     };
     GlobalVar& FindGlobal(const std::string& label);
     void ExportStrings(ir::Module& module) const;
+    void ExportFloats(ir::Module& module) const;
 
     int Allocate(const TypePtr& type);
 

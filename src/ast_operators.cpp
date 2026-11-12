@@ -564,7 +564,7 @@ namespace {
 // The type a compare's operands are converted to. With a pointer on either
 // side that is the pointer's type (an integer, such as the null constant, is
 // converted to it; pointers are unsigned, so lt/le become ltu/leu). Otherwise
-// the usual arithmetic type (integers only for now).
+// the usual arithmetic type.
 TypePtr CompareCommonType(const Context& ctx, const Expr& lhs, const Expr& rhs) {
     TypePtr l = lhs.ValueType(ctx);
     TypePtr r = rhs.ValueType(ctx);
@@ -572,8 +572,6 @@ TypePtr CompareCommonType(const Context& ctx, const Expr& lhs, const Expr& rhs) 
     RequireIrScalar(*r);
     if (l->IsPointer()) return l;
     if (r->IsPointer()) return r;
-    RequireIrInteger(*l);
-    RequireIrInteger(*r);
     return UsualArithmetic(l, r);
 }
 
@@ -600,8 +598,9 @@ Operand BinaryArith::EmitValue(IRGen& gen) const {
     Context& ctx = gen.Ctx();
     PointerOp kind = ClassifyPointerOp(op_, lhs_->ValueType(ctx), rhs_->ValueType(ctx));
     if (kind != PointerOp::None) return EmitPointerValue(gen, kind);
-    RequireIrInteger(*lhs_->ValueType(ctx));
-    RequireIrInteger(*rhs_->ValueType(ctx));
+    if (!lhs_->ValueType(ctx)->IsArithmetic() || !rhs_->ValueType(ctx)->IsArithmetic()) {
+        throw std::runtime_error("invalid operands to binary operator");
+    }
     TypePtr result = GetType(ctx);
     bool shift = op_ == BinOp::Shl || op_ == BinOp::Shr;
     TypePtr rhs_type = shift ? Promote(rhs_->ValueType(ctx)) : result;
@@ -610,11 +609,31 @@ Operand BinaryArith::EmitValue(IRGen& gen) const {
     return Arith(gen, op_, *result, a, b);
 }
 
+namespace {
+
+// The IR has feq, flt and fle only: > and >= swap the operands, and != is
+// "feq is false", which is true for NaN as C requires.
+Operand EmitFloatCompare(IRGen& gen, CmpOp op, IrType type, Operand a, Operand b) {
+    switch (op) {
+        case CmpOp::Lt: return gen.Compare(Op::FLt, type, a, b);
+        case CmpOp::Gt: return gen.Compare(Op::FLt, type, b, a);
+        case CmpOp::Le: return gen.Compare(Op::FLe, type, a, b);
+        case CmpOp::Ge: return gen.Compare(Op::FLe, type, b, a);
+        case CmpOp::Eq: return gen.Compare(Op::FEq, type, a, b);
+        case CmpOp::Ne: break;
+    }
+    Operand equal = gen.Compare(Op::FEq, type, a, b);
+    return gen.Compare(Op::Eq, equal.type, equal, Operand::Int(0, equal.type));
+}
+
+}  // namespace
+
 Operand BinaryCompare::EmitValue(IRGen& gen) const {
     TypePtr common = CompareCommonType(gen.Ctx(), *lhs_, *rhs_);
     Operand a = ValueAs(gen, *lhs_, *common);
     Operand b = ValueAs(gen, *rhs_, *common);
     IrType type = IRGen::ToIr(*common);
+    if (common->IsFloating()) return EmitFloatCompare(gen, op_, type, a, b);
     bool s = common->IsSigned();
     Op less = s ? Op::Lt : Op::LtU, less_eq = s ? Op::Le : Op::LeU;
     switch (op_) {
@@ -635,13 +654,15 @@ Operand UnaryOp::EmitValue(IRGen& gen) const {
         Operand value = Condition(gen, *operand_);
         return gen.Compare(Op::Eq, value.type, value, Operand::Int(0, value.type));
     }
-    RequireIrInteger(*operand_type);
+    RequireIrScalar(*operand_type);
     TypePtr result = GetType(ctx);
     Operand v = ValueAs(gen, *operand_, *result);
     IrType type = IRGen::ToIr(*result);
     switch (op_) {
         case UnOp::Neg: return gen.Unary(Op::Neg, type, v);
-        case UnOp::BitNot: return gen.Unary(Op::Not, type, v);
+        case UnOp::BitNot:
+            if (result->IsFloating()) throw std::runtime_error("invalid operand to ~");
+            return gen.Unary(Op::Not, type, v);
         default: return v;
     }
 }

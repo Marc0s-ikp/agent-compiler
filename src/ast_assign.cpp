@@ -188,16 +188,17 @@ Operand CompoundAssign::EmitValue(IRGen& gen) const {
     TypePtr rhs_type = rhs_->ValueType(ctx);
     IrType ir_type = IRGen::ToIr(*type);
     if (type->IsPointer()) return EmitPointerValue(gen, *type, *rhs_type);
-    RequireIrInteger(*type);
-    RequireIrInteger(*rhs_type);
+    if (!type->IsArithmetic() || !rhs_type->IsArithmetic()) {
+        throw std::runtime_error("invalid operands to binary operator");
+    }
     bool shift = op_ == BinOp::Shl || op_ == BinOp::Shr;
     TypePtr common = shift ? Promote(type) : UsualArithmetic(type, rhs_type);
     TypePtr rhs_to = shift ? Promote(rhs_type) : common;
 
     Operand address = lhs_->EmitIRAddress(gen);
-    Operand old = gen.ConvertInt(gen.Load(ir_type, address), *type, *common);
+    Operand old = ConvertScalar(gen, gen.Load(ir_type, address), *type, *common);
     Operand rhs = ValueAs(gen, *rhs_, *rhs_to);
-    Operand result = gen.ConvertInt(Arith(gen, op_, *common, old, rhs), *common, *type);
+    Operand result = ConvertScalar(gen, Arith(gen, op_, *common, old, rhs), *common, *type);
     gen.Store(ir_type, result, address);
     return result;
 }
@@ -218,7 +219,9 @@ Operand IncDec::EmitValue(IRGen& gen) const {
     IrType ir_type = IRGen::ToIr(*type);
     Operand address = operand_->EmitIRAddress(gen);
     Operand old = gen.Load(ir_type, address);
-    Operand updated = type->IsPointer() ? StepPointer(gen, old, *type) : StepInteger(gen, old, type);
+    Operand updated = type->IsPointer()    ? StepPointer(gen, old, *type)
+                      : type->IsFloating() ? StepFloat(gen, old, *type)
+                                           : StepInteger(gen, old, type);
     gen.Store(ir_type, updated, address);
     return prefix_ ? updated : old;
 }
@@ -227,6 +230,12 @@ Operand IncDec::EmitValue(IRGen& gen) const {
 Operand IncDec::StepPointer(IRGen& gen, Operand old, const Type& type) const {
     Operand one = Operand::Int(1, IRGen::ToIr(*Type::Int()));
     return PointerOffset(gen, old, type, one, *Type::Int(), !increment_);
+}
+
+// A float or double is stepped by 1.0 in its own type.
+Operand IncDec::StepFloat(IRGen& gen, Operand old, const Type& type) const {
+    Operand one = gen.FloatConstant(1.0, old.type);
+    return Arith(gen, increment_ ? BinOp::Add : BinOp::Sub, type, old, one);
 }
 
 // An integer is promoted, stepped by one, and converted back.
