@@ -44,9 +44,14 @@ void IRGen::BeginFunction(const std::string& name, bool is_global, const TypePtr
 
 void IRGen::EndFunction() {
     if (fn_.returns_value) {  // falling off the end: return a zero of the right type
-        bool pointer = fn_.return_type == IrType::Ptr;
-        Operand zero = Operand::Int(0, pointer ? ir::PointerIntType() : fn_.return_type);
-        Return(pointer ? IntToPtr(zero) : zero);
+        IrType type = fn_.return_type;
+        if (ir::IsFloatType(type)) {
+            Return(FloatConstant(0.0, type));
+        } else if (type == IrType::Ptr) {
+            Return(IntToPtr(Operand::Int(0, ir::PointerIntType())));
+        } else {
+            Return(Operand::Int(0, type));
+        }
     } else {
         Return();
     }
@@ -139,6 +144,20 @@ Operand IRGen::IntToPtr(Operand integer) {
     in.type = IrType::Ptr;
     in.args = {integer};
     return Emit(in, IrType::Ptr);
+}
+
+Operand IRGen::Convert(Op op, IrType result, Operand value) {
+    Instruction in;
+    in.op = op;
+    in.type = result;
+    in.args = {value};
+    return Emit(in, result);
+}
+
+Operand IRGen::FloatConstant(double value, IrType type) {
+    int size = ir::SizeOf(type);
+    std::string label = ctx_.AddFloat(ast::FloatBits(value, size), size);
+    return Load(type, AddressOf(Operand::Symbol(label)));
 }
 
 Operand IRGen::Load(IrType type, Operand address) {

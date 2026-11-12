@@ -34,6 +34,7 @@ public:
     TypePtr GetType(const Context& ctx) const override;
     std::optional<ConstValue> EvalConstValue(Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     // Throws for the L suffix. Checked at code generation so the parser

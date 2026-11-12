@@ -3,10 +3,23 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 #include "target.hpp"
 
 namespace ast {
+
+uint64_t FloatBits(double value, int size) {
+    if (size == 4) {
+        float narrow = static_cast<float>(value);
+        uint32_t bits;
+        std::memcpy(&bits, &narrow, sizeof bits);
+        return bits;
+    }
+    uint64_t bits;
+    std::memcpy(&bits, &value, sizeof bits);
+    return bits;
+}
 
 long WrapToType(long n, const Type& type) {
     uint64_t bits = static_cast<uint64_t>(n);

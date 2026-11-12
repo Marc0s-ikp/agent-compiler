@@ -279,6 +279,7 @@ void Context::ExportGlobals(ir::Module& module) const {
         module.data.push_back(entry);
     }
     ExportStrings(module);
+    ExportFloats(module);
 }
 
 // Each pooled string is a read-only, compiler-made entry: its bytes and the NUL.
@@ -291,6 +292,26 @@ void Context::ExportStrings(ir::Module& module) const {
         entry.label = label;
         entry.size = static_cast<int>(item.bytes.size());
         entry.align = 1;
+        entry.read_only = true;
+        entry.internal = true;
+        entry.compiler_made = true;
+        entry.items.push_back(item);
+        module.data.push_back(entry);
+    }
+}
+
+// Each pooled float constant is a read-only, compiler-made entry of one Float
+// item, aligned to its size (21.2a).
+void Context::ExportFloats(ir::Module& module) const {
+    for (const FloatConst& f : floats_) {
+        ir::DataItem item;
+        item.kind = ir::DataItem::Kind::Float;
+        item.size = f.size;
+        item.value = static_cast<long long>(f.bits);
+        ir::DataEntry entry;
+        entry.label = f.label;
+        entry.size = f.size;
+        entry.align = f.size;
         entry.read_only = true;
         entry.internal = true;
         entry.compiler_made = true;

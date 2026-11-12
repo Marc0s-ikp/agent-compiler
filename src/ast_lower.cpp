@@ -19,7 +19,7 @@ const Type& RequireIrInteger(const Type& type) {
 }
 
 const Type& RequireIrScalar(const Type& type) {
-    if (!type.IsInteger() && !type.IsPointer()) throw std::runtime_error("not in IR yet: this type");
+    if (!type.IsScalar()) throw std::runtime_error("not in IR yet: this type");
     return type;
 }
 
@@ -45,7 +45,35 @@ Op ArithOp(BinOp op, bool is_signed) {
 
 // a <op> b, both already converted to 'common'.
 Operand Arith(IRGen& gen, BinOp op, const Type& common, Operand a, Operand b) {
+    if (common.IsFloating()) {  // signedness means nothing here; no % or bit operations
+        if (op != BinOp::Add && op != BinOp::Sub && op != BinOp::Mul && op != BinOp::Div) {
+            throw std::runtime_error("invalid operands to binary operator");
+        }
+        return gen.Binary(ArithOp(op, true), IRGen::ToIr(common), a, b);
+    }
     return gen.Binary(ArithOp(op, common.IsSigned()), IRGen::ToIr(common), a, b);
+}
+
+// A conversion with a floating type on either side. float <-> double is
+// fext/ftrunc. An integer goes to float through a 32-bit int (a narrow one is
+// extended first), signed with itof and unsigned with utof. Float to integer
+// rounds toward zero: ftou for a 32-bit unsigned target, ftoi otherwise, then
+// a narrow target is truncated from the int (as the old path does).
+Operand ConvertFloating(IRGen& gen, Operand value, const Type& from, const Type& to) {
+    if (from.IsPointer() || to.IsPointer()) throw std::runtime_error("invalid type conversion");
+    if (from.IsFloating() && to.IsFloating()) {
+        if (from.Size() == to.Size()) return value;
+        return gen.Convert(to.Size() > from.Size() ? Op::FExt : Op::FTrunc, IRGen::ToIr(to), value);
+    }
+    if (to.IsFloating()) {
+        TypePtr wide = Type::Integer(Target().int_size, from.IsSigned());
+        Operand word = from.Size() < wide->Size() ? gen.ConvertInt(value, from, *wide) : value;
+        return gen.Convert(from.IsSigned() ? Op::IToF : Op::UToF, IRGen::ToIr(to), word);
+    }
+    bool unsigned_word = !to.IsSigned() && to.Size() == Target().int_size;
+    TypePtr word_type = unsigned_word ? Type::UInt() : Type::Int();
+    Operand word = gen.Convert(unsigned_word ? Op::FToU : Op::FToI, IRGen::ToIr(*word_type), value);
+    return to.Size() < word_type->Size() ? gen.ConvertInt(word, *word_type, to) : word;
 }
 
 // Integer to pointer: first to the pointer's width, extending by the source's
@@ -56,6 +84,7 @@ Operand Arith(IRGen& gen, BinOp op, const Type& common, Operand a, Operand b) {
 Operand ConvertScalar(IRGen& gen, Operand value, const Type& from, const Type& to) {
     RequireIrScalar(from);
     RequireIrScalar(to);
+    if (from.IsFloating() || to.IsFloating()) return ConvertFloating(gen, value, from, to);
     int width = Target().pointer_size;
     if (from.IsPointer() && to.IsPointer()) return value;
     if (to.IsPointer()) {
@@ -74,10 +103,19 @@ Operand ValueAs(IRGen& gen, const Expr& e, const Type& to) {
     return ConvertScalar(gen, e.EmitValue(gen), *from, to);
 }
 
+// A floating condition is "not equal to 0.0", which is true for NaN: feq is
+// false for NaN, so the test is feq(x, 0.0) == 0.
+Operand FloatCondition(IRGen& gen, Operand value) {
+    Operand zero = gen.FloatConstant(0.0, value.type);
+    Operand is_zero = gen.Compare(Op::FEq, value.type, value, zero);
+    return gen.Compare(Op::Eq, is_zero.type, is_zero, Operand::Int(0, is_zero.type));
+}
+
 Operand Condition(IRGen& gen, const Expr& e) {
     TypePtr type = e.ValueType(gen.Ctx());
     RequireIrScalar(*type);
     Operand value = e.EmitValue(gen);
+    if (type->IsFloating()) return FloatCondition(gen, value);
     return type->IsPointer() ? gen.PtrToInt(value) : value;
 }
 

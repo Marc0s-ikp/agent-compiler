@@ -21,11 +21,11 @@
 // A register NUMBER is an index into the target's argument registers; only the
 // backend turns it into a name.
 //
-// Today's classifier covers integers and pointers; any other type throws "not
-// in IR yet". Steps 5 and 6 lift that throw, and change nothing here: a double
-// is one 8-byte FloatReg piece, or two IntReg pieces, or an IntReg piece plus
-// a StackWord piece (the split case); a float-convention struct is one piece
-// per scalar field; a struct over 8 bytes has by_reference set and its pieces
+// Step 5 covers integers, pointers, float and double (a float or double is
+// one FloatReg piece, or one IntReg piece (float) / two IntReg pieces
+// (double), or IntReg plus StackWord (the a7 split), or one StackWord piece of
+// its size). Step 6 adds structs: a float-convention struct is one piece per
+// scalar field; a struct over 8 bytes has by_reference set and its pieces
 // describe the pointer.
 struct ArgPlace {
     bool by_reference = false;   // pieces hold a pointer to the caller's copy

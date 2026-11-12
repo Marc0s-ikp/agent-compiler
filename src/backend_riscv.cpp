@@ -86,7 +86,9 @@ const char* LoadOp(IrType type) {
         case IrType::I16: return "lhu";
         case IrType::I32:
         case IrType::Ptr: return "lw";
-        default: NotYet("64-bit or floating operand");
+        case IrType::F32: return "flw";
+        case IrType::F64: return "fld";
+        default: NotYet("64-bit operand");
     }
 }
 
@@ -96,9 +98,19 @@ const char* StoreOp(IrType type) {
         case IrType::I16: return "sh";
         case IrType::I32:
         case IrType::Ptr: return "sw";
-        default: NotYet("64-bit or floating result");
+        case IrType::F32: return "fsw";
+        case IrType::F64: return "fsd";
+        default: NotYet("64-bit result");
     }
 }
+
+// The scratch register n (0 or 1) for a value of this type: t0/t1 or ft0/ft1.
+std::string Scratch(IrType type, int n) {
+    return std::string(ir::IsFloatType(type) ? "ft" : "t") + std::to_string(n);
+}
+
+// The instruction suffix of a floating type: .s (single) or .d (double).
+const char* FSuffix(IrType type) { return type == IrType::F32 ? ".s" : ".d"; }
 
 class FunctionWriter {
 public:
@@ -150,15 +162,30 @@ private:
     void StoreParameters() {
         for (size_t i = 0; i < fn_.params.size(); ++i) {
             int home = frame_.objects.at(fn_.params[i].object);
-            for (const Piece& piece : entry_.args[i].pieces) {
-                std::string reg = "t0";
-                if (piece.where == Piece::Where::IntReg) {
-                    reg = "a" + std::to_string(piece.index);
+            for (const Piece& piece : entry_.args[i].pieces) StoreIncomingPiece(piece, home);
+        }
+    }
+
+    // An fa register is stored as a float or double; an a register as a word
+    // (a double in a register pair arrives as two pieces); a stack word is
+    // copied through t0, and an 8-byte stack piece (a double) through ft0.
+    void StoreIncomingPiece(const Piece& piece, int home) {
+        int dst = home + piece.offset;
+        switch (piece.where) {
+            case Piece::Where::FloatReg:
+                EmitMem(os_, piece.bytes == 8 ? "fsd" : "fsw", "fa" + std::to_string(piece.index), "s0", dst);
+                return;
+            case Piece::Where::IntReg:
+                EmitMem(os_, WordStore(piece.bytes), "a" + std::to_string(piece.index), "s0", dst);
+                return;
+            case Piece::Where::StackWord:
+                if (piece.bytes == 8) {
+                    EmitMem(os_, "fld", "ft0", "s0", piece.index);
+                    EmitMem(os_, "fsd", "ft0", "s0", dst);
                 } else {
                     EmitMem(os_, "lw", "t0", "s0", piece.index);
+                    EmitMem(os_, WordStore(piece.bytes), "t0", "s0", dst);
                 }
-                EmitMem(os_, WordStore(piece.bytes), reg, "s0", home + piece.offset);
-            }
         }
     }
 
@@ -192,6 +219,7 @@ private:
     // or stack word: a narrow integer extended to 32 bits by its C signedness
     // (which the IR type does not know).
     void LoadForPiece(const std::string& reg, const Operand& o, const Piece& piece) {
+        if (ir::IsFloatType(o.type)) return LoadFloatWord(reg, o, piece);
         int bytes = piece.bytes;
         if (bytes >= 4) return Load(reg, o);
         if (o.kind == Operand::Kind::Int) {
@@ -205,22 +233,47 @@ private:
         EmitMem(os_, op, reg, "s0", frame_.temps[o.temp]);
     }
 
-    // Arguments go to a registers and outgoing stack words, then the call; the
-    // result comes back in a0, already extended, and its slot keeps the bits.
+    // A float or double travelling in an integer register or stack word: the
+    // word of its slot at the piece's byte offset (4 bytes, so a float is one
+    // word and a double is two pieces).
+    void LoadFloatWord(const std::string& reg, const Operand& o, const Piece& piece) {
+        if (o.kind != Operand::Kind::Temp) NotYet("floating operand that is not a temporary");
+        EmitMem(os_, "lw", reg, "s0", frame_.temps[o.temp] + piece.offset);
+    }
+
+    // One piece of an argument goes to its register or outgoing stack word.
+    void PlaceOutgoingPiece(const Operand& o, const Piece& piece) {
+        switch (piece.where) {
+            case Piece::Where::FloatReg: return Load("fa" + std::to_string(piece.index), o);
+            case Piece::Where::IntReg: return LoadForPiece("a" + std::to_string(piece.index), o, piece);
+            case Piece::Where::StackWord:
+                if (piece.bytes == 8) {
+                    Load("ft0", o);
+                    return EmitMem(os_, "fsd", "ft0", "sp", piece.index);
+                }
+                LoadForPiece("t0", o, piece);
+                return EmitMem(os_, "sw", "t0", "sp", piece.index);
+        }
+    }
+
+    // Arguments go to fa and a registers and outgoing stack words, then the
+    // call; the result comes back in a0 (already extended, and its slot keeps
+    // the bits) or fa0.
     void WriteCall(size_t index, const Instruction& in) {
         const CallLayout& layout = calls_.at(index);
         for (size_t i = 0; i < in.args.size(); ++i) {
-            for (const Piece& piece : layout.args[i].pieces) {
-                if (piece.where == Piece::Where::IntReg) {
-                    LoadForPiece("a" + std::to_string(piece.index), in.args[i], piece);
-                } else {
-                    LoadForPiece("t0", in.args[i], piece);
-                    EmitMem(os_, "sw", "t0", "sp", piece.index);
-                }
-            }
+            for (const Piece& piece : layout.args[i].pieces) PlaceOutgoingPiece(in.args[i], piece);
         }
         os_ << "\tcall " << in.callee << "\n";
-        if (in.dst.kind == Operand::Kind::Temp) StoreResult("a0", in.dst);
+        if (in.dst.kind == Operand::Kind::Temp) {
+            StoreResult(ir::IsFloatType(in.dst.type) ? "fa0" : "a0", in.dst);
+        }
+    }
+
+    void LoadReturnValue(const Operand& value) {
+        const Piece& piece = entry_.ret.pieces.at(0);
+        if (piece.where == Piece::Where::FloatReg) return Load("fa0", value);
+        LoadForPiece("a0", value, piece);
     }
 
     void StoreResult(const std::string& reg, const Operand& dst) {
@@ -231,7 +284,23 @@ private:
 
     void Emit3(const char* mnemonic) { os_ << "\t" << mnemonic << " t0, t0, t1\n"; }
 
+    void WriteFloatBinary(const Instruction& in) {
+        const char* name = nullptr;
+        switch (in.op) {
+            case Op::Add: name = "fadd"; break;
+            case Op::Sub: name = "fsub"; break;
+            case Op::Mul: name = "fmul"; break;
+            case Op::Div: name = "fdiv"; break;
+            default: NotYet(std::string("floating ") + ir::OpName(in.op));
+        }
+        Load("ft0", in.args[0]);
+        Load("ft1", in.args[1]);
+        os_ << "\t" << name << FSuffix(in.type) << " ft0, ft0, ft1\n";
+        StoreResult("ft0", in.dst);
+    }
+
     void WriteBinary(const Instruction& in) {
+        if (ir::IsFloatType(in.type)) return WriteFloatBinary(in);
         Load("t0", in.args[0]);
         Load("t1", in.args[1]);
         switch (in.op) {
@@ -254,7 +323,17 @@ private:
     }
 
     // a <= b is not (b < a).
+    // feq, flt and fle give 0 for NaN, as C needs; != is built from feq by the frontend.
+    void WriteFloatCompare(const Instruction& in) {
+        const char* name = in.op == Op::FEq ? "feq" : in.op == Op::FLt ? "flt" : "fle";
+        Load("ft0", in.args[0]);
+        Load("ft1", in.args[1]);
+        os_ << "\t" << name << FSuffix(in.type) << " t0, ft0, ft1\n";
+        StoreResult("t0", in.dst);
+    }
+
     void WriteCompare(const Instruction& in) {
+        if (ir::IsFloatType(in.type)) return WriteFloatCompare(in);
         Load("t0", in.args[0]);
         Load("t1", in.args[1]);
         switch (in.op) {
@@ -264,12 +343,37 @@ private:
             case Op::LtU: os_ << "\tsltu t0, t0, t1\n"; break;
             case Op::Le: os_ << "\tslt t0, t1, t0\n\txori t0, t0, 1\n"; break;
             case Op::LeU: os_ << "\tsltu t0, t1, t0\n\txori t0, t0, 1\n"; break;
-            default: NotYet("floating compare");
+            default: NotYet(ir::OpName(in.op));
         }
         StoreResult("t0", in.dst);
     }
 
+    // Integer sources and results are 32-bit (the frontend widens narrow ones);
+    // float to int rounds toward zero, as C requires.
+    void WriteFloatConversion(const Instruction& in) {
+        IrType from = in.args[0].type;
+        if (ir::IsIntType(from) && ir::SizeOf(from) != 4) NotYet("itof of a non-32-bit integer");
+        if (ir::IsIntType(in.type) && ir::SizeOf(in.type) != 4) NotYet("ftoi to a non-32-bit integer");
+        switch (in.op) {
+            case Op::IToF:
+            case Op::UToF:
+                Load("t0", in.args[0]);
+                os_ << "\tfcvt" << FSuffix(in.type) << (in.op == Op::IToF ? ".w" : ".wu") << " ft0, t0\n";
+                return StoreResult("ft0", in.dst);
+            case Op::FToI:
+            case Op::FToU:
+                Load("ft0", in.args[0]);
+                os_ << "\tfcvt" << (in.op == Op::FToI ? ".w" : ".wu") << FSuffix(from) << " t0, ft0, rtz\n";
+                return StoreResult("t0", in.dst);
+            default:  // FExt, FTrunc
+                Load("ft0", in.args[0]);
+                os_ << "\tfcvt" << FSuffix(in.type) << FSuffix(from) << " ft0, ft0\n";
+                return StoreResult("ft0", in.dst);
+        }
+    }
+
     void WriteConversion(const Instruction& in) {
+        if (in.op >= Op::IToF && in.op <= Op::FTrunc) return WriteFloatConversion(in);
         Load("t0", in.args[0]);
         int shift = 32 - 8 * ir::SizeOf(in.args[0].type);
         switch (in.op) {
@@ -278,7 +382,7 @@ private:
             case Op::Trunc: break;  // the store keeps the low bytes
             case Op::PtrToInt:
             case Op::IntToPtr: break;  // same width on this target
-            default: NotYet("floating conversion");
+            default: NotYet(ir::OpName(in.op));
         }
         StoreResult("t0", in.dst);
     }
@@ -311,15 +415,19 @@ private:
         switch (in.op) {
             case Op::Copy:
             case Op::Const:
-                Load("t0", in.args[0]);
-                return StoreResult("t0", in.dst);
+                Load(Scratch(in.type, 0), in.args[0]);
+                return StoreResult(Scratch(in.type, 0), in.dst);
             case Op::PtrAdd:
                 Load("t0", in.args[0]);
                 Load("t1", in.args[1]);
                 Emit3("add");
                 return StoreResult("t0", in.dst);
             case Op::Neg:
-                Load("t0", in.args[0]);
+                Load(Scratch(in.type, 0), in.args[0]);
+                if (ir::IsFloatType(in.type)) {
+                    os_ << "\tfneg" << FSuffix(in.type) << " ft0, ft0\n";
+                    return StoreResult("ft0", in.dst);
+                }
                 os_ << "\tneg t0, t0\n";
                 return StoreResult("t0", in.dst);
             case Op::Not:
@@ -329,12 +437,12 @@ private:
             case Op::Addr: return WriteAddr(in);
             case Op::Load:
                 Load("t0", in.args[0]);
-                EmitMem(os_, LoadOp(in.type), "t0", "t0", 0);
-                return StoreResult("t0", in.dst);
+                EmitMem(os_, LoadOp(in.type), Scratch(in.type, 0), "t0", 0);
+                return StoreResult(Scratch(in.type, 0), in.dst);
             case Op::Store:
-                Load("t0", in.args[0]);
+                Load(Scratch(in.type, 0), in.args[0]);
                 Load("t1", in.args[1]);
-                return EmitMem(os_, StoreOp(in.type), "t0", "t1", 0);
+                return EmitMem(os_, StoreOp(in.type), Scratch(in.type, 0), "t1", 0);
             case Op::MemZero: return WriteMemZero(in);
             case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
             case Op::Jump: os_ << "\tj " << LocalLabel(in.label) << "\n"; return;
@@ -346,7 +454,7 @@ private:
                 return;
             case Op::Call: return WriteCall(index, in);
             case Op::Ret:
-                if (!in.args.empty()) LoadForPiece("a0", in.args[0], entry_.ret.pieces.at(0));
+                if (!in.args.empty()) LoadReturnValue(in.args[0]);
                 os_ << "\tj " << ReturnLabel() << "\n";
                 return;
             default: NotYet(ir::OpName(in.op));
