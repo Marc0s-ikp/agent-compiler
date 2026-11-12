@@ -76,26 +76,13 @@ Operand IRGen::AddFrameObject(const std::string& name, const Type& type) {
 
 // ---- instructions ----
 
-Operand IRGen::NewTemp(IrType type) {
-    fn_.temps.push_back(type);
-    return Operand::Temp(static_cast<int>(fn_.temps.size()) - 1, type);
-}
-
 void IRGen::Append(const Instruction& in) { fn_.body.push_back(in); }
 
 Operand IRGen::Emit(Instruction in, IrType result) {
-    in.dst = NewTemp(result);
+    fn_.temps.push_back(result);
+    in.dst = Operand::Temp(static_cast<int>(fn_.temps.size()) - 1, result);
     Append(in);
     return in.dst;
-}
-
-void IRGen::Move(Operand dst, Operand src) {
-    Instruction in;
-    in.op = src.IsConst() ? Op::Const : Op::Copy;
-    in.type = dst.type;
-    in.dst = dst;
-    in.args = {src};
-    Append(in);
 }
 
 Operand IRGen::Binary(Op op, IrType type, Operand a, Operand b) {

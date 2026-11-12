@@ -94,6 +94,7 @@ private:
             Error("%" + std::to_string(id) + " is " + TypeName(fn_.temps[id]) +
                   " but the instruction gives " + TypeName(result));
         }
+        if (defined_[id]) Error("%" + std::to_string(id) + " is defined at a second site");
         defined_[id] = true;
     }
 

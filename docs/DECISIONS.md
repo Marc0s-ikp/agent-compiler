@@ -303,9 +303,9 @@ and an alignment but no offset yet) or a symbol (a global, function, string or f
 | Calls | `call` (21.5) |
 
 `switch` is lowered by the frontend into a chain of `eq` and `branch`, which is the same dispatch
-that is generated today. `&&`, `||` and `?:` turn into branches, and `?:` writes its result to one
-temp from both arms. That temp has two definition sites, which is the only exception to the
-one-site rule, and the backend needs nothing special for it, because a temp is a slot.
+that is generated today. `&&`, `||` and `?:` turn into branches. Each arm stores its value to a
+hidden frame object, and one `load` after the join defines the result temp (21.10.4). There is no
+exception to the one-site rule.
 
 **`--emit-ir`** writes the module as text instead of assembly: each data entry (21.2a), then each
 function one instruction per line. It is the debugging and review tool for every step of the
