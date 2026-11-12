@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <stdexcept>
 
 #include "call_abi.hpp"
@@ -28,6 +29,26 @@ using ir::Operand;
 [[noreturn]] void NotYet(const std::string& what) {
     throw std::runtime_error("not in the RISC-V backend yet: " + what);
 }
+
+// ---- names (the only place that spells IR names as assembler) ----
+// An IR code label ("else3") and a compiler-made data symbol ("str.0") become
+// local assembler labels with the ".L" prefix, which stay out of the symbol
+// table. A C-named global or function keeps its name.
+
+std::string LocalLabel(const std::string& name) { return ".L" + name; }
+
+class SymbolNames {
+public:
+    explicit SymbolNames(const ir::Module& module) {
+        for (const ir::DataEntry& d : module.data) if (d.compiler_made) local_.insert(d.label);
+    }
+    std::string Spell(const std::string& name) const {
+        return local_.count(name) ? LocalLabel(name) : name;
+    }
+
+private:
+    std::set<std::string> local_;
+};
 
 int RoundUp(int value, int multiple) { return (value + multiple - 1) / multiple * multiple; }
 
@@ -82,7 +103,8 @@ class FunctionWriter {
 public:
     // One Classify call for the function's own entry and one for each call
     // (D5, 21.5); the frame layout needs the calls' stack sizes first.
-    FunctionWriter(const ir::Function& fn, std::ostream& os) : fn_(fn), os_(os) {
+    FunctionWriter(const ir::Function& fn, const SymbolNames& names, std::ostream& os)
+        : fn_(fn), names_(names), os_(os) {
         entry_ = Target().Abi().Classify(ParamTypes(), fn.c_return);
         int outgoing = 0;
         for (size_t i = 0; i < fn.body.size(); ++i) {
@@ -111,7 +133,7 @@ private:
         return types;
     }
 
-    std::string ReturnLabel() const { return ".Lret_" + fn_.name; }
+    std::string ReturnLabel() const { return LocalLabel("ret." + fn_.name); }
 
     void WritePrologue() {
         int size = frame_.size;
@@ -160,7 +182,7 @@ private:
                 os_ << "\tli " << reg << ", " << static_cast<int32_t>(o.int_value) << "\n";
                 return;
             case Operand::Kind::Object: return EmitAddrOffset(os_, reg, "s0", frame_.objects.at(o.name));
-            case Operand::Kind::Symbol: os_ << "\tla " << reg << ", " << o.name << "\n"; return;
+            case Operand::Kind::Symbol: os_ << "\tla " << reg << ", " << names_.Spell(o.name) << "\n"; return;
             default: NotYet("floating constant");
         }
     }
@@ -290,12 +312,13 @@ private:
                 Load("t0", in.args[0]);
                 Load("t1", in.args[1]);
                 return EmitMem(os_, StoreOp(in.type), "t0", "t1", 0);
-            case Op::Label: os_ << in.label << ":\n"; return;
-            case Op::Jump: os_ << "\tj " << in.label << "\n"; return;
+            case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
+            case Op::Jump: os_ << "\tj " << LocalLabel(in.label) << "\n"; return;
             case Op::Branch:
                 Load("t0", in.args[0]);
                 // 'j' reaches the whole function; a conditional branch only +-4 KiB.
-                os_ << "\tbeqz t0, 1f\n\tj " << in.label << "\n1:\n\tj " << in.label2 << "\n";
+                os_ << "\tbeqz t0, 1f\n\tj " << LocalLabel(in.label) << "\n1:\n\tj "
+                    << LocalLabel(in.label2) << "\n";
                 return;
             case Op::Call: return WriteCall(index, in);
             case Op::Ret:
@@ -307,6 +330,7 @@ private:
     }
 
     const ir::Function& fn_;
+    const SymbolNames& names_;
     std::ostream& os_;
     CallLayout entry_;
     std::map<size_t, CallLayout> calls_;  // by instruction index
@@ -315,7 +339,7 @@ private:
 
 // ---- data (21.2a): the only place that writes data directives ----
 
-void WriteItem(const ir::DataItem& item, std::ostream& os) {
+void WriteItem(const ir::DataItem& item, const SymbolNames& names, std::ostream& os) {
     using Kind = ir::DataItem::Kind;
     switch (item.kind) {
         case Kind::Bytes:
@@ -336,26 +360,27 @@ void WriteItem(const ir::DataItem& item, std::ostream& os) {
             if (item.size == 8) os << "\t.word " << ((item.value >> 32) & 0xFFFFFFFFULL) << "\n";
             break;
         case Kind::Address:
-            os << "\t.word " << item.bytes << (item.offset ? "+" + std::to_string(item.offset) : "") << "\n";
+            os << "\t.word " << names.Spell(item.bytes) << (item.offset ? "+" + std::to_string(item.offset) : "") << "\n";
             break;
         case Kind::Zero: os << "\t.zero " << item.size << "\n"; break;
     }
 }
 
-void WriteData(const ir::Module& module, std::ostream& os) {
+void WriteData(const ir::Module& module, const SymbolNames& names, std::ostream& os) {
     for (const ir::DataEntry& d : module.data) {
         os << (d.read_only ? "\t.section .rodata\n" : "\t.data\n");
         os << "\t.balign " << d.align << "\n";
         if (!d.internal) os << "\t.globl " << d.label << "\n";
-        os << d.label << ":\n";
+        os << names.Spell(d.label) << ":\n";
         if (d.items.empty()) os << "\t.zero " << d.size << "\n";
-        for (const ir::DataItem& item : d.items) WriteItem(item, os);
+        for (const ir::DataItem& item : d.items) WriteItem(item, names, os);
     }
 }
 
 }  // namespace
 
 void EmitRiscv(const ir::Module& module, std::ostream& os) {
-    for (const ir::Function& fn : module.functions) FunctionWriter(fn, os).Write();
-    WriteData(module, os);
+    SymbolNames names(module);
+    for (const ir::Function& fn : module.functions) FunctionWriter(fn, names, os).Write();
+    WriteData(module, names, os);
 }

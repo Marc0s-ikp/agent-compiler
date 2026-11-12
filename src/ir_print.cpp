@@ -99,7 +99,7 @@ std::string ItemText(const DataItem& item) {
 
 void PrintData(const DataEntry& d, std::ostream& os) {
     os << "data @" << d.label << " size " << d.size << " align " << d.align
-       << (d.read_only ? " rodata" : "") << (d.internal ? " internal" : "") << "\n";
+       << (d.read_only ? " rodata" : "") << (d.internal ? " internal" : "") << (d.compiler_made ? " compiler-made" : "") << "\n";
     if (d.items.empty()) os << "  zero " << d.size << "\n";
     for (const DataItem& item : d.items) os << "  " << ItemText(item) << "\n";
 }

@@ -148,8 +148,15 @@ public:
     void SetReturnPointerSlot(int offset) { return_pointer_slot_ = offset; }
     int ReturnPointerSlot() const { return return_pointer_slot_; }
 
-    // Labels are unique across the whole file.
+    // Labels are unique across the whole file. On the old path they are
+    // assembler syntax (".Lelse3"). After UseNeutralNames (the IR path) they are
+    // target-neutral: a code label is "else3", a compiler-made data symbol
+    // (string, float, static local) is "str.3". The dot cannot appear in a C
+    // name, so a data symbol never clashes with one. The IR backend alone
+    // decides how they are spelled in assembler.
     std::string NewLabel(const std::string& prefix);
+    std::string NewSymbolName(const std::string& prefix);
+    void UseNeutralNames() { neutral_names_ = true; }
 
 private:
     struct GlobalVar {
@@ -187,4 +194,5 @@ private:
     };
     std::vector<FloatConst> floats_;
     int label_count_ = 0;
+    bool neutral_names_ = false;
 };

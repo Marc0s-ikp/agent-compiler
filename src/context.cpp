@@ -140,7 +140,12 @@ void Context::ReserveOutgoing(int bytes) {
 int Context::FrameSize() const { return RoundUp(max_used_ + outgoing_, 16); }
 
 std::string Context::NewLabel(const std::string& prefix) {
-    return ".L" + prefix + std::to_string(label_count_++);
+    return (neutral_names_ ? "" : ".L") + prefix + std::to_string(label_count_++);
+}
+
+std::string Context::NewSymbolName(const std::string& prefix) {
+    if (!neutral_names_) return NewLabel(prefix);
+    return prefix + "." + std::to_string(label_count_++);
 }
 
 void Context::PushLoop(const std::string& break_label,
@@ -219,7 +224,7 @@ void Context::InitGlobal(const std::string& name, const std::string& data) {
 }
 
 std::string Context::AddStaticLocal(const TypePtr& type) {
-    std::string label = NewLabel("static");
+    std::string label = NewSymbolName("static");
     globals_.push_back(GlobalVar{label, type, true, true, false, ""});
     return label;
 }
@@ -293,7 +298,7 @@ std::string Context::AddString(const std::string& bytes) {
     for (const auto& s : strings_) {
         if (s.second == bytes) return s.first;
     }
-    strings_.emplace_back(NewLabel("str"), bytes);
+    strings_.emplace_back(NewSymbolName("str"), bytes);
     return strings_.back().first;
 }
 
@@ -309,7 +314,7 @@ std::string Context::AddFloat(uint64_t bits, int size) {
     for (const FloatConst& f : floats_) {
         if (f.bits == bits && f.size == size) return f.label;
     }
-    floats_.push_back({NewLabel("flt"), bits, size});
+    floats_.push_back({NewSymbolName("flt"), bits, size});
     return floats_.back().label;
 }
 

@@ -226,6 +226,7 @@ private:
                 return false;
             }
             case Op::Label:
+                if (!in.label.empty() && in.label[0] == '.') Error("label " + in.label + " is assembler syntax");
                 if (!labels_.insert(in.label).second) Error("label " + in.label + " defined twice");
                 return false;
             case Op::Jump:
@@ -293,8 +294,23 @@ private:
 
 }  // namespace
 
+// Data entries: one entry per label, and a compiler-made one is internal and
+// has a name no C identifier can have (so it cannot clash with a global).
+void CheckData(const Module& module, std::vector<std::string>& errors) {
+    std::set<std::string> seen;
+    for (const DataEntry& d : module.data) {
+        std::string who = "data '" + d.label + "': ";
+        if (!seen.insert(d.label).second) errors.push_back(who + "defined twice");
+        bool dotted = d.label.find('.') != std::string::npos;
+        if (d.compiler_made && !d.internal) errors.push_back(who + "compiler-made but not internal");
+        if (d.compiler_made && !dotted) errors.push_back(who + "compiler-made name must contain '.'");
+        if (!d.compiler_made && dotted) errors.push_back(who + "a C-named entry cannot contain '.'");
+    }
+}
+
 std::vector<std::string> CheckIR(const Module& module) {
     std::vector<std::string> errors;
+    CheckData(module, errors);
     for (const Function& fn : module.functions) {
         FunctionChecker(module, fn, errors).Run();
     }

@@ -76,6 +76,7 @@ bool ReportIRErrors(const ir::Module& module) {
 int CompileViaIR(const Options& opts, const ast::TranslationUnit& root, std::ostream& out) {
     ir::Module module;
     Context ctx;
+    ctx.UseNeutralNames();  // the backend spells labels (21.2a)
     IRGen gen(module, ctx);
     try {
         root.EmitIR(gen);

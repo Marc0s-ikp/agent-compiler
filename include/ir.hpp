@@ -121,7 +121,11 @@ struct DataEntry {
     std::string label;
     int size = 0, align = 1;
     bool read_only = false;
-    bool internal = false;
+    bool internal = false;       // no .globl: 'static', or compiler-made
+    // Made by the compiler (string, float constant, static local). The name is
+    // neutral and contains a '.', which no C name does; the backend decides how
+    // it is spelled (RISC-V: a local ".L" label). Implies 'internal'.
+    bool compiler_made = false;
     std::vector<DataItem> items;  // empty and not read-only: zero-filled
 };
 
