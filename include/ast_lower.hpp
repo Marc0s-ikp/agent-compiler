@@ -29,6 +29,11 @@ ir::Operand ValueAs(IRGen& gen, const Expr& e, const Type& to);
 // address as an integer.
 ir::Operand Condition(IRGen& gen, const Expr& e);
 
+// The value of the object of C type 'type' at 'address'. An array has no value
+// but its address (D10), so it is not loaded; anything else is loaded with its
+// IR type (a narrow integer is extended later, by the C type, when it is used).
+ir::Operand LoadObject(IRGen& gen, ir::Operand address, const Type& type);
+
 // Pointer arithmetic (21.10). 'pointer' is an evaluated Ptr of C type
 // 'pointer_type'; 'index' an evaluated integer of C type 'index_type'.
 // Result: pointer +/- index * element size, as a ptradd.

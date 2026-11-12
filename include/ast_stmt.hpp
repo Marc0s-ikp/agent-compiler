@@ -41,6 +41,8 @@ public:
 private:
     void DeclareLocal(std::ostream& os, const std::string& name, TypePtr type,
                       const Initializer* init, Context& ctx) const;
+    void DeclareLocalIR(IRGen& gen, const std::string& name, TypePtr type,
+                        const Initializer* init) const;
     void DeclareStatic(const std::string& name, const TypePtr& type,
                        const Initializer* init, Context& ctx) const;
 

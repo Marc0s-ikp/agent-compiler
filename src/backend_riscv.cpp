@@ -288,6 +288,21 @@ private:
         StoreResult("t0", in.dst);
     }
 
+    // Zeroes in words when the address and the size allow it, else in bytes:
+    // unrolled when short, otherwise a loop from t0 up to t1 (a local label).
+    void WriteMemZero(const Instruction& in) {
+        Load("t0", in.args[0]);
+        bool word = in.align >= 4 && in.size % 4 == 0;
+        const char* store = word ? "sw" : "sb";
+        int step = word ? 4 : 1;
+        if (in.size <= 64) {
+            for (long off = 0; off < in.size; off += step) EmitMem(os_, store, "zero", "t0", static_cast<int>(off));
+            return;
+        }
+        os_ << "\tli t1, " << in.size << "\n\tadd t1, t0, t1\n";
+        os_ << "1:\n\t" << store << " zero, 0(t0)\n\taddi t0, t0, " << step << "\n\tbne t0, t1, 1b\n";
+    }
+
     void WriteInstruction(size_t index, const Instruction& in) {
         if (ir::IsBinaryArith(in.op)) return WriteBinary(in);
         if (ir::IsCompare(in.op)) return WriteCompare(in);
@@ -319,6 +334,7 @@ private:
                 Load("t0", in.args[0]);
                 Load("t1", in.args[1]);
                 return EmitMem(os_, StoreOp(in.type), "t0", "t1", 0);
+            case Op::MemZero: return WriteMemZero(in);
             case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
             case Op::Jump: os_ << "\tj " << LocalLabel(in.label) << "\n"; return;
             case Op::Branch:

@@ -81,6 +81,12 @@ Operand Condition(IRGen& gen, const Expr& e) {
     return type->IsPointer() ? gen.PtrToInt(value) : value;
 }
 
+Operand LoadObject(IRGen& gen, Operand address, const Type& type) {
+    if (type.IsArray()) return address;
+    RequireIrScalar(type);
+    return gen.Load(IRGen::ToIr(type), address);
+}
+
 namespace {
 
 // n * size, folded when n is a constant; the type is the pointer-width integer.

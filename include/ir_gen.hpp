@@ -41,6 +41,8 @@ public:
     ir::Operand IntToPtr(ir::Operand integer);
     ir::Operand Load(ir::IrType type, ir::Operand address);
     void Store(ir::IrType type, ir::Operand value, ir::Operand address);
+    // Zeroes 'size' bytes at 'address', which is aligned to 'align'.
+    void MemZero(ir::Operand address, long size, long align);
     // A call; args are already converted to arg_types. Returns the result, or
     // an operand of kind None for a void callee.
     ir::Operand Call(const std::string& callee, const std::vector<ir::Operand>& args,

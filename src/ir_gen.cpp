@@ -157,6 +157,15 @@ void IRGen::Store(IrType type, Operand value, Operand address) {
     Append(in);
 }
 
+void IRGen::MemZero(Operand address, long size, long align) {
+    Instruction in;
+    in.op = Op::MemZero;
+    in.args = {address};
+    in.size = size;
+    in.align = align;
+    Append(in);
+}
+
 // The result is None for a void function. Every callee is recorded as an
 // external; EndModule removes the ones this module defines.
 Operand IRGen::Call(const std::string& callee, const std::vector<Operand>& args,
