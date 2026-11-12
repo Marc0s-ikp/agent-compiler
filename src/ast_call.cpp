@@ -147,10 +147,12 @@ ir::Operand FunctionCall::EmitValue(IRGen& gen) const {
     Context& ctx = gen.Ctx();
     std::vector<TypePtr> types = ArgumentTypes(ctx);
     TypePtr result_type = GetType(ctx);
-    if (!result_type->IsVoid()) RequireIrScalar(*result_type);
+    if (!result_type->IsVoid()) RequireIrValue(*result_type);
     std::vector<ir::Operand> values;
     for (size_t i = 0; i < args_.size(); ++i) {
-        values.push_back(ValueAs(gen, *args_[i], *types[i]));
+        ir::Operand value = ValueAs(gen, *args_[i], *types[i]);
+        // A struct argument is a copy, so the callee and later arguments cannot change it (21.5).
+        values.push_back(types[i]->IsRecord() ? gen.CopyRecord(value, *types[i]) : value);
     }
     return gen.Call(name_, values, types, result_type);
 }

@@ -716,9 +716,10 @@ Operand LogicalOr::EmitValue(IRGen& gen) const {
 
 Operand Ternary::EmitValue(IRGen& gen) const {
     TypePtr type = GetType(gen.Ctx());
-    RequireIrScalar(*type);
+    RequireIrValue(*type);
     IrType ir_type = IRGen::ToIr(*type);
-    Operand slot = gen.AddFrameObject("sel", *type);
+    // A struct arm yields the address of its object, so the slot holds a pointer.
+    Operand slot = gen.AddFrameObject("sel", type->IsRecord() ? *Type::Pointer(type) : *type);
     std::string then_label = gen.NewLabel("qthen"), else_label = gen.NewLabel("qelse");
     std::string end = gen.NewLabel("qend");
     gen.Branch(Condition(gen, *cond_), then_label, else_label);

@@ -47,6 +47,8 @@ void IRGen::EndFunction() {
         IrType type = fn_.return_type;
         if (ir::IsFloatType(type)) {
             Return(FloatConstant(0.0, type));
+        } else if (fn_.c_return->IsRecord()) {  // no value was returned: any object will do
+            Return(AddressOf(AddFrameObject("noret", *fn_.c_return)));
         } else if (type == IrType::Ptr) {
             Return(IntToPtr(Operand::Int(0, ir::PointerIntType())));
         } else {
@@ -185,6 +187,22 @@ void IRGen::MemZero(Operand address, long size, long align) {
     Append(in);
 }
 
+void IRGen::MemCpy(Operand dst, Operand src, long size, long align) {
+    Instruction in;
+    in.op = Op::MemCpy;
+    in.args = {dst, src};
+    in.size = size;
+    in.align = align;
+    Append(in);
+}
+
+Operand IRGen::CopyRecord(Operand source, const Type& type) {
+    Operand copy = AddFrameObject("copy", type);
+    Operand address = AddressOf(copy);
+    MemCpy(address, source, type.Size(), type.Align());
+    return address;
+}
+
 // The result is None for a void function. Every callee is recorded as an
 // external; EndModule removes the ones this module defines.
 Operand IRGen::Call(const std::string& callee, const std::vector<Operand>& args,
@@ -199,6 +217,11 @@ Operand IRGen::Call(const std::string& callee, const std::vector<Operand>& args,
     if (ret_type->IsVoid()) {
         Append(in);
         return Operand();
+    }
+    if (ret_type->IsRecord()) {  // received in a frame object of the call site
+        in.result_object = AddFrameObject("ret", *ret_type);
+        Append(in);
+        return AddressOf(in.result_object);
     }
     in.type = ToIr(*ret_type);
     return Emit(in, in.type);

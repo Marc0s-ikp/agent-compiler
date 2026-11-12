@@ -48,8 +48,16 @@ public:
     void Store(ir::IrType type, ir::Operand value, ir::Operand address);
     // Zeroes 'size' bytes at 'address', which is aligned to 'align'.
     void MemZero(ir::Operand address, long size, long align);
+    // Copies 'size' bytes from 'src' to 'dst' (both Ptr), which are aligned to
+    // 'align' and do not overlap.
+    void MemCpy(ir::Operand dst, ir::Operand src, long size, long align);
+    // A fresh frame object holding a copy of the struct or union at 'source'
+    // (a Ptr); returns the copy's address. This is how a struct argument is
+    // passed (21.5): the callee can never change the caller's object.
+    ir::Operand CopyRecord(ir::Operand source, const Type& type);
     // A call; args are already converted to arg_types. Returns the result, or
-    // an operand of kind None for a void callee.
+    // an operand of kind None for a void callee. A callee that returns a struct
+    // or union gets a fresh result_object, and the result is its address (Ptr).
     ir::Operand Call(const std::string& callee, const std::vector<ir::Operand>& args,
                      const std::vector<TypePtr>& arg_types, const TypePtr& ret_type);
     // After the last function: a callee defined in this module is not external.

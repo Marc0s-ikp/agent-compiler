@@ -172,11 +172,21 @@ using ir::Operand;
 // The address is evaluated first, then the right side, as on the old path.
 Operand Assign::EmitValue(IRGen& gen) const {
     TypePtr type = GetType(gen.Ctx());
+    if (type->IsRecord()) return EmitRecordCopy(gen, *type);
     RequireIrScalar(*type);
     Operand address = lhs_->EmitIRAddress(gen);
     Operand value = ValueAs(gen, *rhs_, *type);
     gen.Store(IRGen::ToIr(*type), value, address);
     return value;
+}
+
+// A struct or union is copied byte for byte; the value of the assignment is
+// the target's address, as on the old path.
+Operand Assign::EmitRecordCopy(IRGen& gen, const Type& type) const {
+    Operand address = lhs_->EmitIRAddress(gen);
+    Operand source = ValueAs(gen, *rhs_, type);
+    gen.MemCpy(address, source, type.Size(), type.Align());
+    return address;
 }
 
 // lhs op= rhs: the old value is converted to the operation's type, combined

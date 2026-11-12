@@ -131,7 +131,7 @@ void DeclarationStmt::DeclareLocalIR(IRGen& gen, const std::string& name, TypePt
         type = flat.type;
     }
     if (type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
-    if (!type->IsArray()) RequireIrScalar(*type);
+    if (!type->IsArray()) RequireIrValue(*type);
     Operand object = gen.AddFrameObject(name, *type);
     ctx.Declare(name, Symbol::IrLocal(type, object.name));
     if (init) EmitLocalInitIR(gen, flat, object);
@@ -140,7 +140,7 @@ void DeclarationStmt::DeclareLocalIR(IRGen& gen, const std::string& name, TypePt
 void ReturnStmt::EmitIR(IRGen& gen) const {
     if (!value_) return gen.Return();
     const TypePtr& to = gen.Ctx().ReturnType();
-    RequireIrScalar(*to);
+    RequireIrValue(*to);
     gen.Return(ValueAs(gen, *value_, *to));
 }
 

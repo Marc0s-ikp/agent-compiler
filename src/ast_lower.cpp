@@ -23,6 +23,11 @@ const Type& RequireIrScalar(const Type& type) {
     return type;
 }
 
+const Type& RequireIrValue(const Type& type) {
+    if (!type.IsScalar() && !type.IsRecord()) throw std::runtime_error("not in IR yet: this type");
+    return type;
+}
+
 namespace {
 
 Op ArithOp(BinOp op, bool is_signed) {
@@ -100,6 +105,10 @@ Operand ConvertScalar(IRGen& gen, Operand value, const Type& from, const Type& t
 
 Operand ValueAs(IRGen& gen, const Expr& e, const Type& to) {
     TypePtr from = e.ValueType(gen.Ctx());
+    if (to.IsRecord() || from->IsRecord()) {  // only the same struct or union converts
+        if (!from->Equals(to)) throw std::runtime_error("invalid type conversion");
+        return e.EmitValue(gen);
+    }
     return ConvertScalar(gen, e.EmitValue(gen), *from, to);
 }
 
@@ -120,7 +129,7 @@ Operand Condition(IRGen& gen, const Expr& e) {
 }
 
 Operand LoadObject(IRGen& gen, Operand address, const Type& type) {
-    if (type.IsArray()) return address;
+    if (type.IsArray() || type.IsRecord()) return address;
     RequireIrScalar(type);
     return gen.Load(IRGen::ToIr(type), address);
 }

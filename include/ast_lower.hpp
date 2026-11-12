@@ -14,6 +14,11 @@ const Type& RequireIrInteger(const Type& type);
 // a value can have while it is only moved (stored, passed, returned).
 const Type& RequireIrScalar(const Type& type);
 
+// Throws "not in IR yet" unless 'type' is a scalar, a struct or a union: the
+// types a value can have while it is only moved (assigned, passed, returned).
+// The value of a struct or union is a Ptr to the object that holds it.
+const Type& RequireIrValue(const Type& type);
+
 // a <op> b, both already converted to 'common'.
 ir::Operand Arith(IRGen& gen, BinOp op, const Type& common, ir::Operand a, ir::Operand b);
 
@@ -28,7 +33,8 @@ ir::Operand ConvertFloating(IRGen& gen, ir::Operand value, const Type& from, con
 // "x != 0.0" for a floating value, as an I32 0 or 1 (true for NaN).
 ir::Operand FloatCondition(IRGen& gen, ir::Operand value);
 
-// Evaluates 'e' and converts it to 'to' (a scalar type).
+// Evaluates 'e' and converts it to 'to' (a scalar type; for a struct or union
+// 'to', 'e' must have that very type and the result is its address).
 ir::Operand ValueAs(IRGen& gen, const Expr& e, const Type& to);
 
 // Evaluates a controlling expression (if, loops, ?:, &&, ||, switch) to an
@@ -37,7 +43,8 @@ ir::Operand ValueAs(IRGen& gen, const Expr& e, const Type& to);
 ir::Operand Condition(IRGen& gen, const Expr& e);
 
 // The value of the object of C type 'type' at 'address'. An array has no value
-// but its address (D10), so it is not loaded; anything else is loaded with its
+// but its address (D10), and a struct or union is its address too (D19), so
+// neither is loaded; anything else is loaded with its
 // IR type (a narrow integer is extended later, by the C type, when it is used).
 ir::Operand LoadObject(IRGen& gen, ir::Operand address, const Type& type);
 

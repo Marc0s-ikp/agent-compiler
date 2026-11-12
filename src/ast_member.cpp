@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "ast_lower.hpp"
 #include "emit.hpp"
 
 namespace ast {
@@ -53,6 +54,23 @@ void Member::EmitRISC(std::ostream& os, Context& ctx) const {
     EmitAddress(os, ctx);
     TypePtr type = GetType(ctx);
     EmitLoad(os, *type, AccReg(*type), "a0", 0);
+}
+
+
+
+// ---- --ir lowering ----
+
+// The base's value is the struct's address for '.', and the pointer for '->';
+// the member is that address plus its offset (no instruction for offset 0).
+ir::Operand Member::EmitIRAddress(IRGen& gen) const {
+    const RecordMember& member = Find(gen.Ctx());
+    ir::Operand base = base_->EmitValue(gen);
+    if (member.offset == 0) return base;
+    return gen.PtrAdd(base, ir::Operand::Int(member.offset, ir::PointerIntType()));
+}
+
+ir::Operand Member::EmitValue(IRGen& gen) const {
+    return LoadObject(gen, EmitIRAddress(gen), *GetType(gen.Ctx()));
 }
 
 }  // namespace ast

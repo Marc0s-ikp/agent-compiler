@@ -21,12 +21,15 @@
 // A register NUMBER is an index into the target's argument registers; only the
 // backend turns it into a name.
 //
-// Step 5 covers integers, pointers, float and double (a float or double is
-// one FloatReg piece, or one IntReg piece (float) / two IntReg pieces
-// (double), or IntReg plus StackWord (the a7 split), or one StackWord piece of
-// its size). Step 6 adds structs: a float-convention struct is one piece per
-// scalar field; a struct over 8 bytes has by_reference set and its pieces
-// describe the pointer.
+// A float or double is one FloatReg piece, or one IntReg piece (float) / two
+// IntReg pieces (double), or IntReg plus StackWord (the a7 split), or one
+// StackWord piece of its size. A struct or union (step 6) is: one piece per
+// scalar field in the floating convention (FloatReg or IntReg, each with the
+// field's offset); up to two integer words (IntReg, IntReg+IntReg, or IntReg
+// plus a StackWord of the rest, offset 4); a single StackWord piece as big as
+// the whole struct (offset 0) when the a registers are used up; or, over 8
+// bytes, by_reference set and one pointer-sized piece (IntReg or StackWord).
+// A struct return is the pieces of 'ret' (a0, a1, fa0, fa1) or in_memory.
 struct ArgPlace {
     bool by_reference = false;   // pieces hold a pointer to the caller's copy
     std::vector<Piece> pieces;

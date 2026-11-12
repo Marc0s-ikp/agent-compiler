@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: default 299/299 before, 304/304 after (86 of 86 compiler_tests, 218 of 218 custom). `--ir` 226/299 before, 256/304 after. No previously passing test fails on either path (checked per test against the baselines).
-Fixed: v3 step 5, float and double on the IR path. Classifier F32/F64 rows in `RiscV32Abi` (fa registers, then integer registers, a7/stack split, stack; returns in fa0) with the interface unchanged; float constants as read-only pool entries; signed and unsigned int<->float/double and float<->double conversions; compares (NaN-correct `!=`) and the full arithmetic set. New custom tests `ir_float_mixed_args`, `ir_float_double_in_ints`, `ir_float_split_a7`, `ir_float_utod`, `ir_float_dtou`. `tests/abi_check` now generates float/double signatures that exhaust fa0-fa7 and split doubles; seeds 101-505 x 300 pass in all four caller/callee combinations with GCC -O0 and -O2. BLOCKERS: new "Required before AArch64" items (pointer width, `AddCase`).
-Blocked: nothing. Review approved in round 1; notes under "Nice to have from the v3 step 5 review" in docs/BLOCKERS.md. All 48 remaining `--ir` failures are struct/union tests (step 6).
-Next: v3 step 6, structs and unions.
+Pass count: default 305/305 before, 319/319 after (86 of 86 compiler_tests, 233 of 233 custom). `--ir` 257/305 before, 319/319 after. No previously passing test fails on either path (checked per test against `results/baseline_default_step6.txt` and `results/baseline_ir_step6.txt`).
+Fixed: v3 step 6, structs and unions on the IR path. A struct value is a `Ptr` to its object; member access is `ptradd`; struct assignment, struct arguments and initialiser items are `memcpy`; `ir::Instruction::result_object` receives a returned struct; `RiscV32Abi` maps `ArgPieces`/`ClassifyReturn` (integer words, a7 split, stack, floating-convention fields, by reference, hidden return pointer) with the interface unchanged; the backend places and stores pieces by offset. 14 new custom tests `ir_struct_*` (one per ABI case, GCC on the other side) and struct/union types in `tests/abi_check` (seeds 101-505 x 300 and 606-1010 x 500 pass in all four combinations).
+Blocked: nothing. For Marcus: `result_object` is made for every struct-returning call; the frontend does not ask `Target().Abi()` (the reviewer recommends keeping this, see Step 6 notes). Review approved in round 1; `abi_check` `run_abi.sh` prints hit counts per ABI case (every case hit in seeds 101-505). Notes under "Step 6 notes" in docs/DECISIONS.md and "Nice to have from the v3 step 6 work" in docs/BLOCKERS.md.
+Next: v3 step 7, delete the old path.
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -37,6 +37,11 @@ Next: v3 step 6, structs and unions.
 | 5a float and double: classifier rows, conversions, compares, float pool entries, backend | 299/299 | 251/299 |
 | 5b custom tests `ir_float_mixed_args`, `ir_float_double_in_ints`, `ir_float_split_a7`, `ir_float_utod`, `ir_float_dtou`; float/double in `abi_check` | 304/304 | 256/304 |
 | 5c review: `abi_check` exhausts fa registers and splits doubles, split-double docs corrected | 304/304 | 256/304 |
+| 5d custom test `ir_float_round_nearest` | 305/305 | 257/305 |
+| 6a structs and unions without calls: struct value = Ptr, member access, struct assignment (memcpy), local/global initialisers, `?:` on structs, `result_object` in the IR | 305/305 | 283/305 |
+| 6b struct classifier rows (`RiscV32Abi`: integer words, a7 split, stack, `Fields`, by reference, hidden return pointer), backend pieces by offset, struct arguments and returns | 305/305 | 305/305 |
+| 6c 14 custom tests `ir_struct_*` (one per ABI case), `abi_check` draws structs and unions | 319/319 | 319/319 |
+| 6d review: `abi_check` models ilp32d struct rules, counts hits per ABI case (every case hit, seeds 101-505 x 300, 4 combinations, GCC -O0/-O2); test comment fixes | 319/319 | 319/319 |
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -56,7 +61,7 @@ Next: v3 step 6, structs and unions.
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 218 | 218 |
+| custom (written by tester, D13) | 233 | 233 |
 
 ## History
 | Date | Passing | Change |
@@ -77,3 +82,7 @@ Next: v3 step 6, structs and unions.
 | 2026-11-12 | 293/293 | v3 step 3: one definition per temp (D24), calls and ABI, classifier interface D25 (default 290→293, --ir 34→135) |
 | 2026-11-12 | 294/294 | v3 step 4 stage A: neutral labels, ptradd/ptrtoint/inttoptr, arrays and pointers, sizeof (default 293→294, --ir 135→176) |
 | 2026-11-12 | 299/299 | v3 step 4 stage B: globals, static locals and strings as data entries, five pointer tests (default 294→299, --ir 176→226) |
+
+## Step 6 baseline (before any struct/union work)
+Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.
+All 48 `--ir` failures are struct/union tests (all CRASH in the compiler): 40 stop at "not in IR yet: this type" (`IrTypeOf` / `RequireIrScalar` on a struct or union type), 5 at "not in IR yet: ast::Member" (global/local initialiser paths), 3 at "expression is not an lvalue" (array-of-struct element member access).

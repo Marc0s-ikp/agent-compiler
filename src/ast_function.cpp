@@ -199,13 +199,13 @@ void FunctionDefinition::EmitIR(IRGen& gen) const {
     const std::vector<Param>* declared = declarator_.Parameters();
     if (!declared) throw std::runtime_error("'" + name + "' is not a function");
     ResolvedParams params = ResolveParams(*declared, ctx);
-    if (!type->Base()->IsVoid()) RequireIrScalar(*type->Base());
+    if (!type->Base()->IsVoid()) RequireIrValue(*type->Base());
     ctx.DeclareFunction(name, type);
     ctx.BeginFunction(type->Base());
     gen.BeginFunction(name, storage_ != Storage::Static, type->Base());
     ctx.PushScope();
     for (size_t i = 0; i < params.types.size(); ++i) {
-        RequireIrScalar(*params.types[i]);
+        RequireIrValue(*params.types[i]);
         ir::Operand home = gen.AddParam(params.names[i], params.types[i]);
         ctx.Declare(params.names[i], Symbol::IrLocal(params.types[i], home.name));
     }
