@@ -238,9 +238,9 @@ From the step 4 review (2026-11-12, approved). None of these blocked the merge.
 4. `--emit-ir` prints a negative `addr` offset as `+ -4`.
 5. `memzero` of a char array over 64 bytes (alignment 1) is a byte loop; a word loop would need an alignment-aware head and tail.
 6. `Index::EmitIRAddress` calls `GetType` only for its checks. DONE: comment added.
-7. `Context` includes `ir.hpp` and owns `ExportGlobals`/`ExportStrings`. Step 7 must decide where they live (an `ir` data builder, or a frontend module).
+7. DECIDED in step 7: they stay in `Context` (they read its private pools; see "Step 7 notes" in DECISIONS.md). `Context` still includes `ir.hpp`. Was: `Context` includes `ir.hpp` and owns `ExportGlobals`/`ExportStrings`. Step 7 must decide where they live (an `ir` data builder, or a frontend module).
 8. Uninitialised globals go to `.data` with `.zero`, not `.bss`.
-9. `GlobalInit` carries both the directive text and the data items until step 7.
+9. DONE (step 7). `GlobalInit` is `{type, items}`; the directive text is gone. Was: `GlobalInit` carries both the directive text and the data items until step 7.
 
 ## Nice to have from the v3 step 5 review
 
@@ -257,12 +257,12 @@ From the step 5 review (2026-11-12, approved in round 1). None of these blocked 
 
 ## Nice to have from the v3 step 6 work
 
-1. `PlaceRecordReturn` writes the hidden-pointer register as the literal index 0 (a0). `abi.cpp` has the same fact as
-   `cursor.int_reg = 1` in `ClassifyArgs`. `RetLoc` could carry the register so that it exists once. Fine for one target.
+1. `PlaceRecordReturn` writes the hidden-pointer register as the literal index 0 (a0). `ClassifyArgs` (now in the same file, `call_abi_riscv.cpp`) has the same fact as
+   `cursor.int_reg = 1`. `RetLoc` could carry the register so that it exists once. Fine for one target.
 2. A `StackWord` piece of a whole struct (3 to 8 bytes) is larger than a word; the backend recognises it by
    `offset == 0 && bytes == struct size`. If a second target wants a clearer interface, a flag on `Piece` or `ArgPlace`
    ("whole object") would do; it was not added because D25 fixes the interface.
-3. `memcpy` of a struct is `EmitCopyMem`, shared with the old path: words only if `align >= 4`, so a struct of
+3. UPDATED in step 7: `EmitCopyMem` now lives in `src/backend_riscv.cpp` and nothing else uses it; the old path is gone. `memcpy` of a struct is `EmitCopyMem`: words only if `align >= 4`, so a struct of
    `char[1000]` is a 1000-iteration byte loop.
 4. A struct argument is copied by the frontend even if the callee only reads it (21.5 requires a private copy); the
    by-reference callee then copies again into its home. Two copies of a big struct per call; an optimisation for later.

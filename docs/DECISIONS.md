@@ -700,3 +700,56 @@ have).
   and 606-1010 x 500 pass in all four combinations (ours/GCC -O0/-O2), after the first run found that the generator
   itself must byte-check every double whose slot a struct or a hidden pointer can shift into a7 (pk's misaligned `fld`,
   see Step 5 notes).
+
+## Step 7 notes (implementer, 2026-11-12)
+
+The IR is the only code generation path. Default 319/319. Checked per commit: the assembly of every test `.c` under
+`tests/compiler_tests` and `tests/custom` (319 files), compiled with the new binary and no flag, is byte-identical to
+what the step 6 binary produced with `--ir`; `--emit-ir` of 36 IR tests is identical too. Also at the end:
+`scripts/test.py -s -m`, and `tests/abi_check` seeds 101-505 x300 and 606-1010 x500 at -O0/-O2.
+
+**Commit 1: `--ir` is gone.** `main.cpp` always runs `CompileViaIR`. `--emit-ir` and `--target` stay. An argument that
+starts with `-` and is not one of `-S`, `-o`, `--emit-ir`, `--target` is an error (a stale `--ir` is not taken as the
+input file). `tests/abi_check/run_abi.sh` defaults `OURS_FLAGS` to empty, README updated.
+
+**Commit 2: the old generator is deleted.**
+- Every `EmitRISC` and `Expr::EmitAddress` (D4) in all `src/ast_*.cpp` and `include/ast_*.hpp`; `Node::EmitRISC` was
+  pure virtual and is gone. The old-path-only helpers that went with them: `EmitCondition`, `EmitBinOp`,
+  `EmitPointerAdd`, `EmitPointerDiff` (`ast_operators`), `PlaceArg`/`SaveArg`/`OutgoingBytes` (`ast_call`),
+  `EmitPrologue`/`StoreParamHome`/`EmitParams`/`ResolveFunction` (`ast_function`), `Assign::EmitRecordCopy(os)`,
+  `IncDec::EmitFloating`, `DeclarationStmt::DeclareLocal(os)`, `StepSize`, `AddressType`, `EmitSize`.
+- `src/emit.cpp`/`include/emit.hpp` deleted (accumulator conventions, `EmitConvert`, `EmitLoad`/`EmitStore`,
+  `EmitZeroMem`, the branch helpers, `EmitFloatTruth`). `src/record_abi.cpp`/`include/record_abi.hpp` deleted (all of it
+  was old-path struct emission).
+- What the backend still needed moved into `src/backend_riscv.cpp` (anonymous namespace, section "memory access
+  helpers"), unchanged: `EmitMem` (with `FitsImm12`), `EmitAddrOffset`, `EmitCopyMem` (with `CopyUnit`),
+  `EmitLoadBytes`, `EmitStoreBytes`. They still take an `std::ostream&`.
+- `local_init`: the old `EmitLocalInit` and its helpers are gone; `EmitLocalInitIR` is now `EmitLocalInit`.
+- `global_init`: `InitWriter` no longer builds directive text, only `ir::DataItem`s; `GlobalInit` is `{type, items}`
+  (BLOCKERS step 4 item 9). `Word` still throws "unsupported initialiser size" for sizes other than 1, 2, 4, now
+  before it pushes the item. `AsmQuoted` (`escapes.cpp`) had no user left and was deleted; `DecodeEscapes` stays.
+- Context work that the deletions forced is described under commit 4 below; it landed in this commit.
+
+**Commit 3: the ilp32d rules live only in `RiscV32Abi`.** The contents of `abi.cpp` (`Flatten`,
+`FloatConventionFields`, `Cursor`, `ClassifyArgs`, `StackExtent`, `ArgPieces`, `ClassifyReturn`) and the types
+`FieldLoc`, `ArgLoc`, `RetLoc` moved into the anonymous namespace of `src/call_abi_riscv.cpp`, above the `Place*`
+functions that were already there. `abi.cpp`, `abi.hpp` and `ReturnsThroughPointer` (no caller left) are deleted.
+`TargetAbi`, `CallLayout`, `ArgPlace`, `RetPlace` are untouched; the one change in `call_abi.hpp` is that it now defines
+`Piece` itself (it used to include `abi.hpp` for it), because `Piece` is part of that interface and not a RISC-V rule.
+`ClassifyArgs`, `ArgPieces`, `ClassifyReturn` and `StackExtent` now appear in `call_abi_riscv.cpp` only (grep).
+
+**Commit 4: Context.** Deleted: the frame (`used_`, `max_used_`, `floor_`, `outgoing_`, `temp_marks_`, `Allocate`,
+`AllocLocal`, `PushTemp`, `PopTemp`, `ReserveOutgoing`, `FrameSize`), `return_label_`/`ReturnLabel`,
+`return_pointer_slot_`, `EmitGlobals`/`EmitStrings`/`EmitFloats`, `GlobalVar::data`, the `data` parameters of
+`InitGlobal` and `CompleteStaticLocal`, `UseNeutralNames` (labels are always neutral now, `NewLabel` is
+`prefix + n`, `NewSymbolName` is `prefix.n`), and `Symbol::offset` (`Symbol::IrLocal` became `Symbol::Local(type,
+object)`). `NewSymbolName` is private. Kept: scopes and tags, `NewRecord`, globals and the string/float pools,
+`PushLoop`/`PopLoop`/`BreakLabel`/`ContinueLabel`, `PushSwitch`/`PopSwitch`/`AddCase`/`AddDefault`, `ReturnType`,
+`BeginFunction`, the label generator. `ExportGlobals`/`ExportStrings`/`ExportFloats` stay in `Context`, and so does
+the `ir.hpp` include: they read `globals_`, `strings_`, `floats_`, which are private, and moving them would mean making
+the pools public or adding an accessor layer; BLOCKERS step 4 item 7 stays open as a naming question, not a defect.
+`Context::BeginFunction` still does `++label_count_`: it used to take the function's return label there, and keeping
+the count keeps every label number (`else3`, `str.0`) as it was, so the assembly stays byte-identical. Remove that
+line, and accept renumbered labels in one commit, whenever the identical-assembly check is no longer wanted.
+
+**Assembly diffs:** none.
