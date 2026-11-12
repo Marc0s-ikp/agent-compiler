@@ -90,7 +90,7 @@ Operand Identifier::EmitIRAddress(IRGen& gen) const {
 Operand Identifier::EmitValue(IRGen& gen) const {
     const Symbol& sym = IrVariable(gen.Ctx(), name_);
     if (sym.kind == SymbolKind::EnumConst) return Operand::Int(sym.value, IRGen::ToIr(*sym.type));
-    RequireIrInteger(*sym.type);
+    RequireIrScalar(*sym.type);
     return gen.Load(IRGen::ToIr(*sym.type), EmitIRAddress(gen));
 }
 

@@ -46,6 +46,13 @@ std::string Body(const Instruction& in) {
         case Op::MemZero:
             return name + " " + ArgList(in.args) + ", " + std::to_string(in.size) +
                    ", align " + std::to_string(in.align);
+        case Op::Call: {
+            std::string text = name + " " + (in.ret_type->IsVoid() ? "void" : type) + " @" + in.callee + "(";
+            for (size_t i = 0; i < in.args.size(); ++i) {
+                text += (i ? ", " : "") + std::string(TypeName(in.args[i].type)) + " " + OperandText(in.args[i]);
+            }
+            return text + ")";
+        }
         case Op::Ret: return in.args.empty() ? name : name + " " + type + " " + ArgList(in.args);
         default: break;
     }
@@ -57,7 +64,11 @@ std::string Body(const Instruction& in) {
 }
 
 void PrintFunction(const Function& fn, std::ostream& os) {
-    os << (fn.is_global ? "func " : "static func ") << fn.name << "() -> "
+    os << (fn.is_global ? "func " : "static func ") << fn.name << "(";
+    for (size_t i = 0; i < fn.params.size(); ++i) {
+        os << (i ? ", " : "") << TypeName(IrTypeOf(*fn.params[i].type)) << " $" << fn.params[i].object;
+    }
+    os << ") -> "
        << (fn.returns_value ? TypeName(fn.return_type) : "void") << " {\n";
     for (const FrameObject& o : fn.objects) {
         os << "  frame $" << o.name << " size " << o.size << " align " << o.align << "\n";

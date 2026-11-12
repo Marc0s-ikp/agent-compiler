@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "abi.hpp"
+#include "ast_lower.hpp"
 #include "ast_operators.hpp"
 #include "emit.hpp"
 #include "record_abi.hpp"
@@ -133,6 +134,25 @@ void FunctionCall::EmitRISC(std::ostream& os, Context& ctx) const {
     os << "\tcall " << name_ << "\n";
     if (is_record) EmitSaveReturnedRecord(os, *result_type, result);
     for (size_t i = 0; i < args_.size(); ++i) ctx.PopTemp();
+}
+
+
+// ---- --ir lowering ----
+
+// Arguments are evaluated in source order, each converted to its parameter's
+// type (or default-promoted when there is none); where they go is the
+// backend's business (21.5). A call is a value-producing instruction, so
+// nested calls need no special care: every value is already a temp.
+ir::Operand FunctionCall::EmitValue(IRGen& gen) const {
+    Context& ctx = gen.Ctx();
+    std::vector<TypePtr> types = ArgumentTypes(ctx);
+    TypePtr result_type = GetType(ctx);
+    if (!result_type->IsVoid()) RequireIrScalar(*result_type);
+    std::vector<ir::Operand> values;
+    for (size_t i = 0; i < args_.size(); ++i) {
+        values.push_back(ValueAs(gen, *args_[i], *types[i]));
+    }
+    return gen.Call(name_, values, types, result_type);
 }
 
 }  // namespace ast

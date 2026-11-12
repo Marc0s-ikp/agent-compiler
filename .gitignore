@@ -9,3 +9,4 @@ src/*.yy.*
 .DS_Store
 *Zone.Identifier
 *Zone.Identifier
+tests/abi_check/out/

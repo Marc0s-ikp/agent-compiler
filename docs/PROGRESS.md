@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: default 285/285 before, 290/290 after (86 of 86 compiler_tests, 204 of 204 custom). `--ir` 18/285 before, 34/290 after. No previously passing test fails on either path (checked by the reviewer against the baseline).
-Fixed: v3 step 2. Lowering code moved next to each `EmitRISC` (D23 a), partial `--emit-ir` dump on lowering failure (D23 c), large immediates verified with `ir_large_immediates`, and control flow in the IR: if/else, while, do-while, for, break/continue, `&&`, `||`, `?:`, switch. New custom tests: `ir_large_immediates`, `ir_loops`, `ir_short_circuit`, `ir_ternary`, `ir_switch`.
-Blocked: nothing. Review notes are under "Nice to have from the v3 step 2 review" in docs/BLOCKERS.md. D24 is pending Marcus.
-Next: v3 step 3, calls and ABI. Function parameters are the first blocker for 156 of the `--ir` failures.
+Pass count: default 290/290 before, 293/293 after (86 of 86 compiler_tests, 207 of 207 custom). `--ir` 34/290 before, 135/293 after. No previously passing test fails on either path (checked per test against the master baselines).
+Fixed: v3 step 3. D24 change: `?:`, `&&`, `||` go through a hidden frame object and the checker enforces one definition per temp. Calls and ABI on the IR path: IR `call`, parameters, outgoing area, narrow returns, and the per-target classifier interface (D25), shared by caller and callee and built on the old path's rules. New custom tests `ir_call_params`, `ir_call_stack_args`, `ir_recursion`; the random ABI check (`tests/abi_check/`) passed 6300/6300 runs against GCC -O0 and -O2 in all four caller/callee combinations.
+Blocked: nothing. D25 is pending Marcus. Review notes are under "Nice to have from the v3 step 3 review" in docs/BLOCKERS.md.
+Next: v3 step 4, arrays, pointers, globals. Remaining `--ir` failures by first blocker: unsupported type 70 (arrays, floats, structs), global variable 43, `SizeofType` 11, `StringLiteral`/`Deref`/`AddressOf` 6 each, others 16.
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -29,6 +29,8 @@ Next: v3 step 3, calls and ABI. Function parameters are the first blocker for 15
 | 2b partial `--emit-ir` dump when lowering throws (D23 c) | 285/285 | 18/285 |
 | 2c large immediates verified in the backend, custom test `ir_large_immediates` (default 286/286, --ir 19/286) | 286/286 | 19/286 |
 | 2d control flow: if/else, loops, break/continue, &&, ||, ?:, switch; custom tests `ir_loops`, `ir_short_circuit`, `ir_ternary`, `ir_switch` | 290/290 | 34/290 |
+| 3a `?:`, `&&`, `||` through a frame object, checker enforces one definition per temp (D24) | 290/290 | 34/290 |
+| 3b calls and ABI: IR `call`, parameters, outgoing area, classifier (D25), narrow returns; custom tests `ir_call_stack_args`, `ir_call_params`, `ir_recursion` | 293/293 | 135/293 |
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -48,7 +50,7 @@ Next: v3 step 3, calls and ABI. Function parameters are the first blocker for 15
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 199 | 199 |
+| custom (written by tester, D13) | 207 | 207 |
 
 ## History
 | Date | Passing | Change |
@@ -65,3 +67,5 @@ Next: v3 step 3, calls and ABI. Function parameters are the first blocker for 15
 | 2026-11-10 | 272/272 | cleanup: self-referencing initialisers, pointers in ?:, short (262→272) |
 | 2026-11-10 | 283/283 | constant folding: typed 32-bit folding for initialisers, case, enum, array sizes (272→283) |
 | 2026-11-11 | 285/285 | v3 step 1: TargetInfo, IR core, checker, backend skeleton, integer lowering (default 283→285, --ir 0→18) |
+| 2026-11-11 | 290/290 | v3 step 2: control flow in the IR (default 285→290, --ir 18→34) |
+| 2026-11-12 | 293/293 | v3 step 3: one definition per temp (D24), calls and ABI, classifier interface D25 (default 290→293, --ir 34→135) |

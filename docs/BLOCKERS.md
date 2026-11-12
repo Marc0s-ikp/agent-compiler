@@ -195,9 +195,20 @@ From the step 1 review (2026-11-11, approved in round 2). These are design quest
 
 From the step 2 review (2026-11-11, approved in round 1). None of these blocked the merge.
 
-1. **Checker does not enforce the one-site rule** (`src/ir_check.cpp:85-98`, `Define`). Any instruction may redefine a temp, where 21.2 allows only the `?:` temp two sites. Rule to add: a temp defined more than once must be defined only by `copy`/`const`. It holds today but is unchecked. Recommended before step 3.
-2. `&&`/`||` `EmitValue` (`src/ast_operators.cpp`) hard-code `IrType::I32` instead of `IRGen::ToIr(*GetType(ctx))`, the D22(b) contract. Harmless while `int` is 32 bits.
+1. DONE (step 3, D24 change, 21.10.4). The checker now enforces one definition site per temp; `?:`, `&&`, `||` go through a hidden frame object.
+2. DONE (step 3). `&&`/`||` `EmitValue` (`src/ast_operators.cpp`) hard-code `IrType::I32` instead of `IRGen::ToIr(*GetType(ctx))`, the D22(b) contract. Harmless while `int` is 32 bits.
 3. `Context::AddCase` (`src/context.cpp:270-280`) wraps case values to `Type::Int()`, not to the promoted controlling type. Wrong once `long` is parsed and is `I64` on a 64-bit target.
 4. **Step 7 must keep or move, not delete as dead:** the IR path now uses `Context::PushLoop`/`PopLoop`/`BreakLabel`/`ContinueLabel`, `PushSwitch`/`PopSwitch`/`AddCase`/`AddDefault`/`SwitchInfo`, and `NewLabel`. The backend's `beqz t0, 1f` relies on GNU numeric local labels (relevant to the AArch64 label item).
 5. Commit `3252e7f`'s message says "large immediates in the RISC-V backend", but the backend already handled them; the commit adds a comment and a test. Left as is, to avoid rewriting history.
 6. Tidiness: a whitespace-only line before `Condition` in `src/ast_lower.cpp`; `src/ast_lower.cpp` repeats the comments in `include/ast_lower.hpp`; an odd line break in the comment in `CompileViaIR` (`src/main.cpp:70-75`).
+
+## Nice to have from the v3 step 3 review
+
+From the step 3 review (2026-11-12, approved in round 1). None of these blocked the merge.
+
+1. **`Classify` is a free function** (`include/call_abi.hpp`, `src/call_abi_riscv.cpp`). Fine while there is one target, but a second target's `Classify` would not link, and `--target` selects at run time. Before a second backend: `riscv::Classify`, or call it through the backend. Part of D25, which is pending Marcus.
+2. **Work steps 5 and 6 must do in the backend, not in the interface:** `WriteCall`/`LoadForPiece` ignore `piece.offset`, `by_reference`, `FloatReg`, and an operand that is a `Ptr` to a struct copy; `StoreParameters` handles only integer registers and stack words of 4 bytes or less. `PlaceArg`/`PlaceReturn` in `src/call_abi_riscv.cpp` must go through `ArgPieces`/`ClassifyReturn` and copy `loc.by_reference` rather than grow their own mapping, or the record rules will exist twice. `IrTypeOf` throws on records although `CheckCall`/`IRGen::Call` call it for struct arguments. `ir::Instruction` has no `result_object` (21.5).
+3. `CheckCall`'s "unknown function" check cannot fire, because `IRGen::Call` adds every callee to `externals`. Drop it or explain it.
+4. `WordStore` also returns `sb`/`sh`; the name is misleading.
+5. `IsIntOrPointer` in the classifier repeats `RequireIrScalar`.
+6. The header comment of `include/ir.hpp` says it knows no C types, but `call` and `Function` now carry them (as 21.5 specifies).

@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "type.hpp"
+
 // The linear IR between the AST and code generation (D21, 21.2). Nothing in
 // this file knows about C types or about any machine, apart from the size of
 // a Ptr, which comes from Target().
@@ -16,6 +18,9 @@ int SizeOf(IrType type);  // bytes; Ptr is Target().pointer_size
 bool IsIntType(IrType type);    // I8 to I64
 bool IsFloatType(IrType type);  // F32, F64
 const char* TypeName(IrType type);
+// The IR type of a scalar C type (integer or pointer); throws "not in IR yet"
+// for the others. The one place C types meet IR types (21.5).
+IrType IrTypeOf(const Type& type);
 
 // An instruction argument. A temporary is typed and numbered per function; a
 // frame object ('$name') and a symbol ('@name') are both addresses (Ptr).
@@ -50,6 +55,9 @@ enum class Op {
     Load, Store, MemCpy, MemZero,
     // control
     Label, Jump, Branch, Ret,
+    // call: 'callee', args = the values, 'arg_types' their C types, 'ret_type'
+    // the C return type; the result (if not void) is 'dst' with 'type'
+    Call,
 };
 
 const char* OpName(Op op);
@@ -69,6 +77,10 @@ struct Instruction {
     std::string label2;         // Branch if zero
     long offset = 0;            // Addr: byte offset
     long size = 0, align = 0;   // MemCpy, MemZero
+    // Call (21.5): the C types are what the target's classifier needs
+    std::string callee;
+    std::vector<TypePtr> arg_types;
+    TypePtr ret_type;
 };
 
 struct FrameObject {
@@ -76,8 +88,17 @@ struct FrameObject {
     int size, align;
 };
 
+// A parameter: the frame object that is its home, and its C type. The backend
+// fills the home in the prologue, from the classifier's pieces (21.5).
+struct Param {
+    std::string object;
+    TypePtr type;
+};
+
 struct Function {
     std::string name;
+    std::vector<Param> params;
+    TypePtr c_return;           // the C return type (void included)
     bool is_global = true;
     bool returns_value = false;
     IrType return_type = IrType::I32;

@@ -565,6 +565,9 @@ namespace {
 TypePtr CompareCommonType(const Context& ctx, const Expr& lhs, const Expr& rhs) {
     TypePtr l = lhs.ValueType(ctx);
     TypePtr r = rhs.ValueType(ctx);
+    RequireIrScalar(*l);
+    RequireIrScalar(*r);
+    if (l->IsPointer() && r->IsPointer()) return l;  // compared as they are
     RequireIrInteger(*l);
     RequireIrInteger(*r);
     return UsualArithmetic(l, r);
@@ -627,55 +630,61 @@ Operand Comma::EmitValue(IRGen& gen) const {
 
 
 // ---- && || ?: (control flow that yields a value) ----
-// The result is one temp written at two sites, which the checker allows for
-// exactly this case (21.2); the backend needs nothing special, a temp is a slot.
+// Each arm stores its value into a hidden frame object, and one load after
+// the join defines the result temp, so every temp has one definition site
+// (21.10.4).
 
 Operand LogicalAnd::EmitValue(IRGen& gen) const {
-    Operand result = gen.NewTemp(IrType::I32);
+    TypePtr type = GetType(gen.Ctx());
+    IrType ir_type = IRGen::ToIr(*type);
+    Operand slot = gen.AddFrameObject("and", *type);
     std::string rhs = gen.NewLabel("andr"), is_true = gen.NewLabel("andt");
     std::string is_false = gen.NewLabel("andf"), end = gen.NewLabel("ande");
     gen.Branch(Condition(gen, *lhs_), rhs, is_false);
     gen.Label(rhs);
     gen.Branch(Condition(gen, *rhs_), is_true, is_false);
     gen.Label(is_true);
-    gen.Move(result, Operand::Int(1, IrType::I32));
+    gen.Store(ir_type, Operand::Int(1, ir_type), gen.AddressOf(slot));
     gen.Jump(end);
     gen.Label(is_false);
-    gen.Move(result, Operand::Int(0, IrType::I32));
+    gen.Store(ir_type, Operand::Int(0, ir_type), gen.AddressOf(slot));
     gen.Label(end);
-    return result;
+    return gen.Load(ir_type, gen.AddressOf(slot));
 }
 
 Operand LogicalOr::EmitValue(IRGen& gen) const {
-    Operand result = gen.NewTemp(IrType::I32);
+    TypePtr type = GetType(gen.Ctx());
+    IrType ir_type = IRGen::ToIr(*type);
+    Operand slot = gen.AddFrameObject("or", *type);
     std::string rhs = gen.NewLabel("orr"), is_true = gen.NewLabel("ort");
     std::string is_false = gen.NewLabel("orf"), end = gen.NewLabel("ore");
     gen.Branch(Condition(gen, *lhs_), is_true, rhs);
     gen.Label(rhs);
     gen.Branch(Condition(gen, *rhs_), is_true, is_false);
     gen.Label(is_false);
-    gen.Move(result, Operand::Int(0, IrType::I32));
+    gen.Store(ir_type, Operand::Int(0, ir_type), gen.AddressOf(slot));
     gen.Jump(end);
     gen.Label(is_true);
-    gen.Move(result, Operand::Int(1, IrType::I32));
+    gen.Store(ir_type, Operand::Int(1, ir_type), gen.AddressOf(slot));
     gen.Label(end);
-    return result;
+    return gen.Load(ir_type, gen.AddressOf(slot));
 }
 
 Operand Ternary::EmitValue(IRGen& gen) const {
     TypePtr type = GetType(gen.Ctx());
     RequireIrInteger(*type);
-    Operand result = gen.NewTemp(IRGen::ToIr(*type));
+    IrType ir_type = IRGen::ToIr(*type);
+    Operand slot = gen.AddFrameObject("sel", *type);
     std::string then_label = gen.NewLabel("qthen"), else_label = gen.NewLabel("qelse");
     std::string end = gen.NewLabel("qend");
     gen.Branch(Condition(gen, *cond_), then_label, else_label);
     gen.Label(then_label);
-    gen.Move(result, ValueAs(gen, *then_, *type));
+    gen.Store(ir_type, ValueAs(gen, *then_, *type), gen.AddressOf(slot));
     gen.Jump(end);
     gen.Label(else_label);
-    gen.Move(result, ValueAs(gen, *else_, *type));
+    gen.Store(ir_type, ValueAs(gen, *else_, *type), gen.AddressOf(slot));
     gen.Label(end);
-    return result;
+    return gen.Load(ir_type, gen.AddressOf(slot));
 }
 
 }  // namespace ast

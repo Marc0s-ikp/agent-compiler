@@ -27,6 +27,19 @@ const char* TypeName(IrType type) {
     return names[static_cast<int>(type)];
 }
 
+IrType IrTypeOf(const Type& type) {
+    if (type.IsPointer()) return IrType::Ptr;
+    if (type.IsInteger()) {
+        switch (type.Size()) {
+            case 1: return IrType::I8;
+            case 2: return IrType::I16;
+            case 4: return IrType::I32;
+            case 8: return IrType::I64;
+        }
+    }
+    throw std::runtime_error("not in IR yet: this type");
+}
+
 Operand Operand::Temp(int id, IrType type) {
     Operand o;
     o.kind = Kind::Temp;
@@ -73,7 +86,7 @@ const char* OpName(Op op) {
         "eq", "ne", "lt", "ltu", "le", "leu", "feq", "flt", "fle",
         "sext", "zext", "trunc", "itof", "utof", "ftoi", "ftou", "fext", "ftrunc",
         "load", "store", "memcpy", "memzero",
-        "label", "jump", "branch", "ret"};
+        "label", "jump", "branch", "ret", "call"};
     return names[static_cast<int>(op)];
 }
 
