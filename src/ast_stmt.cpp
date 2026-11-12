@@ -35,7 +35,7 @@ void DeclarationStmt::DeclareStatic(const std::string& name, const TypePtr& type
     }
     GlobalInit built = BuildGlobalInit(type, *init, ctx);
     if (built.type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
-    ctx.CompleteStaticLocal(label, built.type, built.data);
+    ctx.CompleteStaticLocal(label, built.type, built.data, built.items);
     ctx.Declare(name, Symbol::Global(built.type, label));
 }
 
@@ -109,19 +109,32 @@ void DeclarationStmt::EmitIR(IRGen& gen) const {
             ctx.Declare(name, Symbol::Typedef(type));
             continue;
         }
-        if (storage_ == Storage::Static) throw std::runtime_error("not in IR yet: static local");
         if (type->IsVoid() || type->IsFunction()) {
             throw std::runtime_error("invalid type for variable '" + name + "'");
         }
-        RequireIrScalar(*type);
-        if (d.init && d.init->IsList()) throw std::runtime_error("not in IR yet: initialiser list");
-        Operand object = gen.AddFrameObject(name, *type);
-        ctx.Declare(name, Symbol::IrLocal(type, object.name));
-        if (d.init) {
-            Operand value = ValueAs(gen, d.init->Value(), *type);
-            gen.Store(IRGen::ToIr(*type), value, gen.AddressOf(object));
+        if (storage_ == Storage::Static) {  // a data entry, no code
+            DeclareStatic(name, type, d.init.get(), ctx);
+            continue;
         }
+        DeclareLocalIR(gen, name, type, d.init.get());
     }
+}
+
+// A local is a frame object. The initialiser is laid out first because an
+// array declared without a length takes it from there ('char s[] = "abc"').
+void DeclarationStmt::DeclareLocalIR(IRGen& gen, const std::string& name, TypePtr type,
+                                     const Initializer* init) const {
+    Context& ctx = gen.Ctx();
+    FlatInit flat;
+    if (init) {
+        flat = FlattenInit(type, *init, ctx);
+        type = flat.type;
+    }
+    if (type->Size() == 0) throw std::runtime_error("incomplete type or missing array size");
+    if (!type->IsArray()) RequireIrScalar(*type);
+    Operand object = gen.AddFrameObject(name, *type);
+    ctx.Declare(name, Symbol::IrLocal(type, object.name));
+    if (init) EmitLocalInitIR(gen, flat, object);
 }
 
 void ReturnStmt::EmitIR(IRGen& gen) const {

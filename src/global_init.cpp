@@ -19,6 +19,7 @@ class InitWriter {
 public:
     explicit InitWriter(Context& ctx) : ctx_(ctx) {}
     std::string Text() const { return out_.str(); }
+    const std::vector<ir::DataItem>& Items() const { return items_; }
 
     // Writes the whole object of 'size' bytes: items in order, zeros between.
     void Object(const FlatInit& flat) {
@@ -60,38 +61,61 @@ private:
         } else {
             std::memcpy(&bits, &value, sizeof bits);
         }
+        items_.push_back(Item(ir::DataItem::Kind::Float, size, static_cast<long long>(bits)));
         out_ << "\t.word " << (bits & 0xffffffffu) << "\n";
         if (size == 8) out_ << "\t.word " << (bits >> 32) << "\n";
     }
 
     // The chars of a string initialiser, then zeros up to 'size' bytes.
     void Bytes(int size, const std::string& bytes) {
-        if (!bytes.empty()) out_ << "\t.ascii " << AsmQuoted(bytes) << "\n";
+        if (!bytes.empty()) {
+            ir::DataItem item = Item(ir::DataItem::Kind::Bytes, 0, 0);
+            item.bytes = bytes;
+            items_.push_back(item);
+            out_ << "\t.ascii " << AsmQuoted(bytes) << "\n";
+        }
         Zero(size - static_cast<int>(bytes.size()));
     }
 
     void Zero(int bytes) {
-        if (bytes > 0) out_ << "\t.zero " << bytes << "\n";
+        if (bytes <= 0) return;
+        items_.push_back(Item(ir::DataItem::Kind::Zero, bytes, 0));
+        out_ << "\t.zero " << bytes << "\n";
     }
 
     // One integer or address of 'size' bytes.
     void Word(int size, const ConstValue& value) {
         if (!value.label.empty()) {
             if (size != 4) throw std::runtime_error("address does not fit");
+            ir::DataItem item = Item(ir::DataItem::Kind::Address, size, 0);
+            item.bytes = value.label;
+            item.offset = value.offset;
+            items_.push_back(item);
             long magnitude = value.offset < 0 ? -value.offset : value.offset;
             out_ << "\t.word " << value.label << (value.offset < 0 ? "-" : "+")
                  << magnitude << "\n";
             return;
         }
         uint32_t bits = static_cast<uint32_t>(value.offset);
+        uint32_t kept = size == 1 ? bits & 0xff : size == 2 ? bits & 0xffff : bits;
+        items_.push_back(Item(ir::DataItem::Kind::Int, size, kept));
         if (size == 1) out_ << "\t.byte " << (bits & 0xff) << "\n";
         else if (size == 2) out_ << "\t.half " << (bits & 0xffff) << "\n";
         else if (size == 4) out_ << "\t.word " << bits << "\n";
         else throw std::runtime_error("unsupported initialiser size");
     }
 
+    static ir::DataItem Item(ir::DataItem::Kind kind, int size, long long value) {
+        ir::DataItem item;
+        item.kind = kind;
+        item.size = size;
+        item.value = value;
+        return item;
+    }
+
     Context& ctx_;
     std::ostringstream out_;
+    std::vector<ir::DataItem> items_;
 };
 
 }  // namespace
@@ -101,7 +125,7 @@ GlobalInit BuildGlobalInit(const TypePtr& type, const Initializer& init,
     FlatInit flat = FlattenInit(type, init, ctx);
     InitWriter writer(ctx);
     writer.Object(flat);
-    return GlobalInit{flat.type, writer.Text()};
+    return GlobalInit{flat.type, writer.Text(), writer.Items()};
 }
 
 }  // namespace ast

@@ -34,8 +34,15 @@ public:
     ir::Operand Compare(ir::Op op, ir::IrType type, ir::Operand a, ir::Operand b);
     ir::Operand Unary(ir::Op op, ir::IrType type, ir::Operand a);
     ir::Operand AddressOf(ir::Operand object_or_symbol, long offset = 0);
+    // Pointer arithmetic (21.10). 'offset' is a byte count of
+    // ir::PointerIntType(); the frontend scales and widens it first.
+    ir::Operand PtrAdd(ir::Operand pointer, ir::Operand offset);
+    ir::Operand PtrToInt(ir::Operand pointer);
+    ir::Operand IntToPtr(ir::Operand integer);
     ir::Operand Load(ir::IrType type, ir::Operand address);
     void Store(ir::IrType type, ir::Operand value, ir::Operand address);
+    // Zeroes 'size' bytes at 'address', which is aligned to 'align'.
+    void MemZero(ir::Operand address, long size, long align);
     // A call; args are already converted to arg_types. Returns the result, or
     // an operand of kind None for a void callee.
     ir::Operand Call(const std::string& callee, const std::vector<ir::Operand>& args,

@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "ast_lower.hpp"
 #include "ast_operators.hpp"
 #include "emit.hpp"
 
@@ -89,6 +90,37 @@ void Index::EmitAddress(std::ostream& os, Context& ctx) const {
 void Index::EmitRISC(std::ostream& os, Context& ctx) const {
     EmitAddress(os, ctx);
     EmitLoadThroughA0(os, *GetType(ctx));
+}
+
+
+// ---- --ir lowering ----
+
+// *p is the object at the pointer's value; a[i] is *(a + i), so its address is
+// the ptradd the sum lowers to. An array object is its own address (D10).
+using ir::Operand;
+
+Operand Deref::EmitIRAddress(IRGen& gen) const {
+    GetType(gen.Ctx());  // rejects a pointer to void or to a function
+    return operand_->EmitValue(gen);
+}
+
+Operand Deref::EmitValue(IRGen& gen) const {
+    return LoadObject(gen, EmitIRAddress(gen), *GetType(gen.Ctx()));
+}
+
+Operand AddressOf::EmitValue(IRGen& gen) const {
+    return operand_->EmitIRAddress(gen);
+}
+
+Operand Index::EmitIRAddress(IRGen& gen) const {
+    // Called only for its checks (a non-pointer base throws here); the address
+    // is the sum, a ptradd.
+    GetType(gen.Ctx());
+    return sum_->EmitValue(gen);
+}
+
+Operand Index::EmitValue(IRGen& gen) const {
+    return LoadObject(gen, EmitIRAddress(gen), *GetType(gen.Ctx()));
 }
 
 }  // namespace ast

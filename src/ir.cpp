@@ -40,6 +40,8 @@ IrType IrTypeOf(const Type& type) {
     throw std::runtime_error("not in IR yet: this type");
 }
 
+IrType PointerIntType() { return Target().pointer_size == 8 ? IrType::I64 : IrType::I32; }
+
 Operand Operand::Temp(int id, IrType type) {
     Operand o;
     o.kind = Kind::Temp;
@@ -82,9 +84,9 @@ const char* OpName(Op op) {
     static const char* names[] = {
         "copy", "const", "addr",
         "add", "sub", "mul", "div", "divu", "rem", "remu", "and", "or", "xor",
-        "shl", "shr", "sar", "neg", "not",
+        "shl", "shr", "sar", "neg", "not", "ptradd",
         "eq", "ne", "lt", "ltu", "le", "leu", "feq", "flt", "fle",
-        "sext", "zext", "trunc", "itof", "utof", "ftoi", "ftou", "fext", "ftrunc",
+        "sext", "zext", "trunc", "itof", "utof", "ftoi", "ftou", "fext", "ftrunc", "ptrtoint", "inttoptr",
         "load", "store", "memcpy", "memzero",
         "label", "jump", "branch", "ret", "call"};
     return names[static_cast<int>(op)];
@@ -92,6 +94,6 @@ const char* OpName(Op op) {
 
 bool IsBinaryArith(Op op) { return op >= Op::Add && op <= Op::Sar; }
 bool IsCompare(Op op) { return op >= Op::Eq && op <= Op::FLe; }
-bool IsConversion(Op op) { return op >= Op::SExt && op <= Op::FTrunc; }
+bool IsConversion(Op op) { return op >= Op::SExt && op <= Op::IntToPtr; }
 
 }  // namespace ir

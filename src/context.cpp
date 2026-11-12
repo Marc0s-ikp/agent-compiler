@@ -140,7 +140,12 @@ void Context::ReserveOutgoing(int bytes) {
 int Context::FrameSize() const { return RoundUp(max_used_ + outgoing_, 16); }
 
 std::string Context::NewLabel(const std::string& prefix) {
-    return ".L" + prefix + std::to_string(label_count_++);
+    return (neutral_names_ ? "" : ".L") + prefix + std::to_string(label_count_++);
+}
+
+std::string Context::NewSymbolName(const std::string& prefix) {
+    if (!neutral_names_) return NewLabel(prefix);
+    return prefix + "." + std::to_string(label_count_++);
 }
 
 void Context::PushLoop(const std::string& break_label,
@@ -193,7 +198,7 @@ void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
     Symbol& slot = scopes_.front()[name];
     if (!slot.type) {
         slot = Symbol::Global(type, name);
-        globals_.push_back(GlobalVar{name, type, false, !is_extern, false, ""});
+        globals_.push_back(GlobalVar{name, type, false, !is_extern, false, "", {}, false});
         return;
     }
     TypePtr merged = slot.kind == SymbolKind::Global
@@ -208,7 +213,8 @@ void Context::DeclareGlobal(const std::string& name, const TypePtr& type,
     if (!is_extern) var.has_storage = true;
 }
 
-void Context::InitGlobal(const std::string& name, const std::string& data) {
+void Context::InitGlobal(const std::string& name, const std::string& data,
+                         const std::vector<ir::DataItem>& items) {
     GlobalVar& var = FindGlobal(name);
     if (var.initialised) {
         throw std::runtime_error("redefinition of '" + name + "'");
@@ -216,20 +222,23 @@ void Context::InitGlobal(const std::string& name, const std::string& data) {
     var.initialised = true;
     var.has_storage = true;
     var.data = data;
+    var.items = items;
 }
 
 std::string Context::AddStaticLocal(const TypePtr& type) {
-    std::string label = NewLabel("static");
-    globals_.push_back(GlobalVar{label, type, true, true, false, ""});
+    std::string label = NewSymbolName("static");
+    globals_.push_back(GlobalVar{label, type, true, true, false, "", {}, true});
     return label;
 }
 
 void Context::CompleteStaticLocal(const std::string& label, const TypePtr& type,
-                                  const std::string& data) {
+                                  const std::string& data,
+                                  const std::vector<ir::DataItem>& items) {
     GlobalVar& var = FindGlobal(label);
     var.type = type;
     var.initialised = true;
     var.data = data;
+    var.items = items;
 }
 
 void Context::MakeGlobalInternal(const std::string& name) {
@@ -250,6 +259,43 @@ void Context::EmitGlobals(std::ostream& os) const {
         } else {
             os << "\t.zero " << g.type->Size() << "\n";
         }
+    }
+}
+
+void Context::ExportGlobals(ir::Module& module) const {
+    for (const GlobalVar& g : globals_) {
+        if (!g.has_storage) {
+            module.external_data.insert(g.name);
+            continue;
+        }
+        if (g.type->Size() == 0) throw std::runtime_error("'" + g.name + "' has incomplete type");
+        ir::DataEntry entry;
+        entry.label = g.name;
+        entry.size = g.type->Size();
+        entry.align = g.type->Align();
+        entry.internal = g.internal;
+        entry.compiler_made = g.compiler_made;
+        if (g.initialised) entry.items = g.items;  // else zero-filled: no items
+        module.data.push_back(entry);
+    }
+    ExportStrings(module);
+}
+
+// Each pooled string is a read-only, compiler-made entry: its bytes and the NUL.
+void Context::ExportStrings(ir::Module& module) const {
+    for (const auto& [label, bytes] : strings_) {
+        ir::DataItem item;
+        item.kind = ir::DataItem::Kind::Bytes;
+        item.bytes = bytes + std::string(1, '\0');
+        ir::DataEntry entry;
+        entry.label = label;
+        entry.size = static_cast<int>(item.bytes.size());
+        entry.align = 1;
+        entry.read_only = true;
+        entry.internal = true;
+        entry.compiler_made = true;
+        entry.items.push_back(item);
+        module.data.push_back(entry);
     }
 }
 
@@ -293,7 +339,7 @@ std::string Context::AddString(const std::string& bytes) {
     for (const auto& s : strings_) {
         if (s.second == bytes) return s.first;
     }
-    strings_.emplace_back(NewLabel("str"), bytes);
+    strings_.emplace_back(NewSymbolName("str"), bytes);
     return strings_.back().first;
 }
 
@@ -309,7 +355,7 @@ std::string Context::AddFloat(uint64_t bits, int size) {
     for (const FloatConst& f : floats_) {
         if (f.bits == bits && f.size == size) return f.label;
     }
-    floats_.push_back({NewLabel("flt"), bits, size});
+    floats_.push_back({NewSymbolName("flt"), bits, size});
     return floats_.back().label;
 }
 

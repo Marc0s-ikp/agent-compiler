@@ -2,6 +2,7 @@
 #include <set>
 
 #include "ir.hpp"
+#include "target.hpp"
 
 // The IR checker (D21, 21.2). It looks at one function at a time, walking the
 // instruction list in order, and reports every problem it finds.
@@ -46,6 +47,7 @@ private:
     }
 
     bool SymbolExists(const std::string& name) const {
+        if (module_.external_data.count(name) > 0) return true;
         for (const DataEntry& d : module_.data) if (d.label == name) return true;
         for (const Function& f : module_.functions) if (f.name == name) return true;
         return module_.externals.count(name) > 0;
@@ -63,7 +65,8 @@ private:
                 return;
             case Operand::Kind::None: return Error("missing operand");
             case Operand::Kind::Int:
-                if (!IsIntOrPtr(o.type)) Error("integer constant with type " + std::string(TypeName(o.type)));
+                // A null pointer is 'inttoptr' of an integer, not a Ptr constant.
+                if (!IsIntType(o.type)) Error("integer constant with type " + std::string(TypeName(o.type)));
                 return;
             case Operand::Kind::Float:
                 if (!IsFloatType(o.type)) Error("floating constant with type " + std::string(TypeName(o.type)));
@@ -127,6 +130,10 @@ private:
         if (real ? !IsFloatType(in.type) : !IsIntOrPtr(in.type)) Error("operand type not allowed");
         RequireType(in.args[0], in.type, "left operand");
         RequireType(in.args[1], in.type, "right operand");
+        // Pointers compare for equality or as unsigned numbers, never signed.
+        if (in.type == IrType::Ptr && (in.op == Op::Lt || in.op == Op::Le)) {
+            Error("pointers are compared with eq, ne, ltu or leu");
+        }
     }
 
     // Each conversion: the source kind, the result kind, and whether the
@@ -145,6 +152,8 @@ private:
             case Op::FToU: ok = IsFloatType(from) && IsIntType(to); break;
             case Op::FExt: ok = from == IrType::F32 && to == IrType::F64; break;
             case Op::FTrunc: ok = from == IrType::F64 && to == IrType::F32; break;
+            case Op::PtrToInt: ok = from == IrType::Ptr && to == PointerIntType(); break;
+            case Op::IntToPtr: ok = from == PointerIntType() && to == IrType::Ptr; break;
             default: break;
         }
         if (!ok) Error(std::string("cannot convert ") + TypeName(from) + " to " + TypeName(to));
@@ -195,6 +204,14 @@ private:
                     RequireType(in.args[0], in.type, "constant");
                 }
                 return true;
+            case Op::PtrAdd:  // the one arithmetic on a Ptr (21.10)
+                result = IrType::Ptr;
+                if (in.type != IrType::Ptr) Error("ptradd works on ptr");
+                if (HasArgs(in, 2)) {
+                    RequireType(in.args[0], IrType::Ptr, "pointer");
+                    RequireType(in.args[1], PointerIntType(), "offset");
+                }
+                return true;
             case Op::Neg:  // integers and floats; not Ptr
                 if (HasArgs(in, 1)) RequireType(in.args[0], in.type, "operand");
                 if (!IsIntType(in.type) && !IsFloatType(in.type)) Error("operand type not allowed");
@@ -226,6 +243,7 @@ private:
                 return false;
             }
             case Op::Label:
+                if (!in.label.empty() && in.label[0] == '.') Error("label " + in.label + " is assembler syntax");
                 if (!labels_.insert(in.label).second) Error("label " + in.label + " defined twice");
                 return false;
             case Op::Jump:
@@ -293,8 +311,31 @@ private:
 
 }  // namespace
 
+// Data entries: one entry per label, and a compiler-made one is internal and
+// has a name no C identifier can have (so it cannot clash with a global).
+void CheckData(const Module& module, std::vector<std::string>& errors) {
+    std::set<std::string> seen;
+    for (const DataEntry& d : module.data) {
+        std::string who = "data '" + d.label + "': ";
+        if (!seen.insert(d.label).second) errors.push_back(who + "defined twice");
+        bool dotted = d.label.find('.') != std::string::npos;
+        if (d.compiler_made && !d.internal) errors.push_back(who + "compiler-made but not internal");
+        if (d.compiler_made && !dotted) errors.push_back(who + "compiler-made name must contain '.'");
+        for (const DataItem& item : d.items) {
+            if (item.kind != DataItem::Kind::Address) continue;
+            bool known = module.external_data.count(item.bytes) > 0 || module.externals.count(item.bytes) > 0;
+            for (const DataEntry& e : module.data) known = known || e.label == item.bytes;
+            for (const Function& f : module.functions) known = known || f.name == item.bytes;
+            if (!known) errors.push_back(who + "address of unknown symbol " + item.bytes);
+            if (item.size != Target().pointer_size) errors.push_back(who + "address item is not pointer-sized");
+        }
+        if (!d.compiler_made && dotted) errors.push_back(who + "a C-named entry cannot contain '.'");
+    }
+}
+
 std::vector<std::string> CheckIR(const Module& module) {
     std::vector<std::string> errors;
+    CheckData(module, errors);
     for (const Function& fn : module.functions) {
         FunctionChecker(module, fn, errors).Run();
     }

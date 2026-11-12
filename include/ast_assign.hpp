@@ -29,6 +29,8 @@ public:
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
+    ir::Operand EmitPointerValue(IRGen& gen, const Type& type, const Type& rhs_type) const;
+
     BinOp op_;
     ExprPtr lhs_, rhs_;
 };
@@ -46,6 +48,8 @@ public:
 
 private:
     void EmitFloating(std::ostream& os, Context& ctx, const Type& type) const;
+    ir::Operand StepPointer(IRGen& gen, ir::Operand old, const Type& type) const;
+    ir::Operand StepInteger(IRGen& gen, ir::Operand old, const TypePtr& type) const;
 
     bool increment_, prefix_;
     ExprPtr operand_;

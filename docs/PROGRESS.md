@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: default 290/290 before, 293/293 after (86 of 86 compiler_tests, 207 of 207 custom). `--ir` 34/290 before, 135/293 after. No previously passing test fails on either path (checked per test against the master baselines).
-Fixed: v3 step 3. D24 change: `?:`, `&&`, `||` go through a hidden frame object and the checker enforces one definition per temp. Calls and ABI on the IR path: IR `call`, parameters, outgoing area, narrow returns, and the per-target classifier interface (D25), shared by caller and callee and built on the old path's rules. New custom tests `ir_call_params`, `ir_call_stack_args`, `ir_recursion`; the random ABI check (`tests/abi_check/`) passed 6300/6300 runs against GCC -O0 and -O2 in all four caller/callee combinations.
-Blocked: nothing. D25 is pending Marcus. Review notes are under "Nice to have from the v3 step 3 review" in docs/BLOCKERS.md.
-Next: v3 step 4, arrays, pointers, globals. Remaining `--ir` failures by first blocker: unsupported type 70 (arrays, floats, structs), global variable 43, `SizeofType` 11, `StringLiteral`/`Deref`/`AddressOf` 6 each, others 16.
+Pass count: default 293/293 before, 299/299 after (86 of 86 compiler_tests, 213 of 213 custom). `--ir` 135/293 before, 226/299 after. No previously passing test fails on either path (checked per test against the baselines at every commit).
+Fixed: D25 accepted with Marcus's change (`Target().Abi().Classify` through `RiscV32Abi`, chosen in `SetTarget`; `abi_check` always runs GCC -O2). v3 step 4 (arrays, pointers, globals). Neutral label and data-symbol names in the IR with the backend alone spelling `.L` labels; `ptradd`/`ptrtoint`/`inttoptr` and all pointer forms; arrays, Index, Deref, AddressOf, local array initialisers, `memzero`; `sizeof`; globals and static locals as module data entries built from the old initialiser walk; string literals as read-only compiler-made entries. New custom tests `ir_pointer_forms`, `ir_neg_index`, `ir_unsigned_index`, `ir_ptr_difference`, `ir_addr_of_elem`, `ir_global_ptr_elem`.
+Blocked: nothing. Review approved in round 1; notes under "Nice to have from the v3 step 4 review" in docs/BLOCKERS.md. Every remaining `--ir` failure uses float/double or struct/union (steps 5 and 6).
+Next: v3 step 5, float and double.
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -31,6 +31,9 @@ Next: v3 step 4, arrays, pointers, globals. Remaining `--ir` failures by first b
 | 2d control flow: if/else, loops, break/continue, &&, ||, ?:, switch; custom tests `ir_loops`, `ir_short_circuit`, `ir_ternary`, `ir_switch` | 290/290 | 34/290 |
 | 3a `?:`, `&&`, `||` through a frame object, checker enforces one definition per temp (D24) | 290/290 | 34/290 |
 | 3b calls and ABI: IR `call`, parameters, outgoing area, classifier (D25), narrow returns; custom tests `ir_call_stack_args`, `ir_call_params`, `ir_recursion` | 293/293 | 135/293 |
+| 4a neutral names, ptradd/ptrtoint/inttoptr, arrays, pointers, sizeof (custom test `ir_pointer_forms`) | 294/294 | 176/294 |
+| 4b globals and static locals as data entries, string literals as entries; custom tests `ir_neg_index`, `ir_unsigned_index`, `ir_ptr_difference`, `ir_addr_of_elem`, `ir_global_ptr_elem` | 299/299 | 226/299 |
+| 4c review fixes: `ir_addr_of_elem` checked against GCC-computed addresses, docs | 299/299 | 226/299 |
 
 ## Pass count by category
 | Category | Passing | Total |
@@ -50,7 +53,7 @@ Next: v3 step 4, arrays, pointers, globals. Remaining `--ir` failures by first b
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 207 | 207 |
+| custom (written by tester, D13) | 213 | 213 |
 
 ## History
 | Date | Passing | Change |
@@ -69,3 +72,5 @@ Next: v3 step 4, arrays, pointers, globals. Remaining `--ir` failures by first b
 | 2026-11-11 | 285/285 | v3 step 1: TargetInfo, IR core, checker, backend skeleton, integer lowering (default 283→285, --ir 0→18) |
 | 2026-11-11 | 290/290 | v3 step 2: control flow in the IR (default 285→290, --ir 18→34) |
 | 2026-11-12 | 293/293 | v3 step 3: one definition per temp (D24), calls and ABI, classifier interface D25 (default 290→293, --ir 34→135) |
+| 2026-11-12 | 294/294 | v3 step 4 stage A: neutral labels, ptradd/ptrtoint/inttoptr, arrays and pointers, sizeof (default 293→294, --ir 135→176) |
+| 2026-11-12 | 299/299 | v3 step 4 stage B: globals, static locals and strings as data entries, five pointer tests (default 294→299, --ir 176→226) |

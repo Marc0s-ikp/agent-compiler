@@ -57,7 +57,11 @@ using ir::Operand;
 
 Operand Cast::EmitValue(IRGen& gen) const {
     TypePtr to = GetType(gen.Ctx());
-    RequireIrInteger(*to);
+    if (to->IsVoid()) {  // evaluated for its effects, no value
+        operand_->EmitValue(gen);
+        return Operand();
+    }
+    RequireIrScalar(*to);
     return ValueAs(gen, *operand_, *to);
 }
 

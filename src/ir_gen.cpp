@@ -43,8 +43,10 @@ void IRGen::BeginFunction(const std::string& name, bool is_global, const TypePtr
 }
 
 void IRGen::EndFunction() {
-    if (fn_.returns_value) {
-        Return(Operand::Int(0, fn_.return_type));
+    if (fn_.returns_value) {  // falling off the end: return a zero of the right type
+        bool pointer = fn_.return_type == IrType::Ptr;
+        Operand zero = Operand::Int(0, pointer ? ir::PointerIntType() : fn_.return_type);
+        Return(pointer ? IntToPtr(zero) : zero);
     } else {
         Return();
     }
@@ -115,6 +117,30 @@ Operand IRGen::AddressOf(Operand object_or_symbol, long offset) {
     return Emit(in, IrType::Ptr);
 }
 
+Operand IRGen::PtrAdd(Operand pointer, Operand offset) {
+    Instruction in;
+    in.op = Op::PtrAdd;
+    in.type = IrType::Ptr;
+    in.args = {pointer, offset};
+    return Emit(in, IrType::Ptr);
+}
+
+Operand IRGen::PtrToInt(Operand pointer) {
+    Instruction in;
+    in.op = Op::PtrToInt;
+    in.type = ir::PointerIntType();
+    in.args = {pointer};
+    return Emit(in, in.type);
+}
+
+Operand IRGen::IntToPtr(Operand integer) {
+    Instruction in;
+    in.op = Op::IntToPtr;
+    in.type = IrType::Ptr;
+    in.args = {integer};
+    return Emit(in, IrType::Ptr);
+}
+
 Operand IRGen::Load(IrType type, Operand address) {
     Instruction in;
     in.op = Op::Load;
@@ -128,6 +154,15 @@ void IRGen::Store(IrType type, Operand value, Operand address) {
     in.op = Op::Store;
     in.type = type;
     in.args = {value, address};
+    Append(in);
+}
+
+void IRGen::MemZero(Operand address, long size, long align) {
+    Instruction in;
+    in.op = Op::MemZero;
+    in.args = {address};
+    in.size = size;
+    in.align = align;
     Append(in);
 }
 
@@ -152,6 +187,7 @@ Operand IRGen::Call(const std::string& callee, const std::vector<Operand>& args,
 
 void IRGen::EndModule() {
     for (const ir::Function& fn : module_.functions) module_.externals.erase(fn.name);
+    ctx_.ExportGlobals(module_);
 }
 
 void IRGen::Return() {

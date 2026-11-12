@@ -56,6 +56,7 @@ public:
 
 private:
     std::optional<ConstValue> FoldArithmetic(Context& ctx) const;
+    ir::Operand EmitPointerValue(IRGen& gen, PointerOp kind) const;
 
     BinOp op_;
     ExprPtr lhs_, rhs_;

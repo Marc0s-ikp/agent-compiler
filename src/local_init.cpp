@@ -1,5 +1,8 @@
 #include "local_init.hpp"
 
+#include <stdexcept>
+
+#include "ast_lower.hpp"
 #include "emit.hpp"
 #include "target.hpp"
 
@@ -47,6 +50,33 @@ void EmitLocalInit(std::ostream& os, Context& ctx, const FlatInit& flat,
             EmitStringItem(os, item, offset);
         }
     }
+}
+
+// ---- --ir lowering ----
+
+namespace {
+
+void StoreItemIR(IRGen& gen, const InitItem& item, const ir::Operand& object) {
+    ir::Operand address = gen.AddressOf(object, item.offset);
+    if (item.value) {
+        RequireIrScalar(*item.type);
+        gen.Store(IRGen::ToIr(*item.type), ValueAs(gen, *item.value, *item.type), address);
+        return;
+    }
+    ir::IrType byte = ir::IrType::I8;  // a char array's string bytes
+    for (size_t i = 0; i < item.bytes.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(item.bytes[i]);
+        if (c == 0) continue;  // already zero
+        gen.Store(byte, ir::Operand::Int(c, byte), gen.AddressOf(object, item.offset + static_cast<long>(i)));
+    }
+}
+
+}  // namespace
+
+void EmitLocalInitIR(IRGen& gen, const FlatInit& flat, const ir::Operand& object) {
+    if (flat.type->IsRecord()) throw std::runtime_error("not in IR yet: struct initialiser");
+    if (flat.type->IsArray()) gen.MemZero(gen.AddressOf(object), flat.type->Size(), flat.type->Align());
+    for (const InitItem& item : flat.items) StoreItemIR(gen, item, object);
 }
 
 }  // namespace ast

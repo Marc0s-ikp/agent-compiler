@@ -99,7 +99,7 @@ std::string ItemText(const DataItem& item) {
 
 void PrintData(const DataEntry& d, std::ostream& os) {
     os << "data @" << d.label << " size " << d.size << " align " << d.align
-       << (d.read_only ? " rodata" : "") << (d.internal ? " internal" : "") << "\n";
+       << (d.read_only ? " rodata" : "") << (d.internal ? " internal" : "") << (d.compiler_made ? " compiler-made" : "") << "\n";
     if (d.items.empty()) os << "  zero " << d.size << "\n";
     for (const DataItem& item : d.items) os << "  " << ItemText(item) << "\n";
 }
@@ -107,6 +107,7 @@ void PrintData(const DataEntry& d, std::ostream& os) {
 }  // namespace
 
 void Print(const Module& module, std::ostream& os) {
+    for (const std::string& name : module.external_data) os << "extern @" << name << "\n";
     for (const DataEntry& d : module.data) PrintData(d, os);
     for (const Function& fn : module.functions) PrintFunction(fn, os);
 }
