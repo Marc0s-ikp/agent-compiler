@@ -195,7 +195,7 @@ From the step 1 review (2026-11-11, approved in round 2). These are design quest
 
 From the step 2 review (2026-11-11, approved in round 1). None of these blocked the merge.
 
-1. **Checker does not enforce the one-site rule** (`src/ir_check.cpp:85-98`, `Define`). Any instruction may redefine a temp, where 21.2 allows only the `?:` temp two sites. Rule to add: a temp defined more than once must be defined only by `copy`/`const`. It holds today but is unchecked. Recommended before step 3.
+1. DECIDED (D24 change, 21.10.4): `?:`, `&&`, `||` go through a hidden frame object and the checker enforces exactly one definition site per temp. Done first in step 3. **Checker does not enforce the one-site rule** (`src/ir_check.cpp:85-98`, `Define`). Any instruction may redefine a temp, where 21.2 allows only the `?:` temp two sites. Rule to add: a temp defined more than once must be defined only by `copy`/`const`. It holds today but is unchecked. Recommended before step 3.
 2. `&&`/`||` `EmitValue` (`src/ast_operators.cpp`) hard-code `IrType::I32` instead of `IRGen::ToIr(*GetType(ctx))`, the D22(b) contract. Harmless while `int` is 32 bits.
 3. `Context::AddCase` (`src/context.cpp:270-280`) wraps case values to `Type::Int()`, not to the promoted controlling type. Wrong once `long` is parsed and is `I64` on a 64-bit target.
 4. **Step 7 must keep or move, not delete as dead:** the IR path now uses `Context::PushLoop`/`PopLoop`/`BreakLabel`/`ContinueLabel`, `PushSwitch`/`PopSwitch`/`AddCase`/`AddDefault`/`SwitchInfo`, and `NewLabel`. The backend's `beqz t0, 1f` relies on GNU numeric local labels (relevant to the AArch64 label item).
