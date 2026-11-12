@@ -180,17 +180,19 @@ Operand Assign::EmitValue(IRGen& gen) const {
 }
 
 // lhs op= rhs: the old value is converted to the operation's type, combined
-// with the right side, and converted back for the store.
+// with the right side, and converted back for the store. A pointer takes only
+// += and -= with an integer.
 Operand CompoundAssign::EmitValue(IRGen& gen) const {
     Context& ctx = gen.Ctx();
     TypePtr type = GetType(ctx);
     TypePtr rhs_type = rhs_->ValueType(ctx);
+    IrType ir_type = IRGen::ToIr(*type);
+    if (type->IsPointer()) return EmitPointerValue(gen, *type, *rhs_type);
     RequireIrInteger(*type);
     RequireIrInteger(*rhs_type);
     bool shift = op_ == BinOp::Shl || op_ == BinOp::Shr;
     TypePtr common = shift ? Promote(type) : UsualArithmetic(type, rhs_type);
     TypePtr rhs_to = shift ? Promote(rhs_type) : common;
-    IrType ir_type = IRGen::ToIr(*type);
 
     Operand address = lhs_->EmitIRAddress(gen);
     Operand old = gen.ConvertInt(gen.Load(ir_type, address), *type, *common);
@@ -200,19 +202,40 @@ Operand CompoundAssign::EmitValue(IRGen& gen) const {
     return result;
 }
 
+Operand CompoundAssign::EmitPointerValue(IRGen& gen, const Type& type, const Type& rhs_type) const {
+    if (op_ != BinOp::Add && op_ != BinOp::Sub) throw std::runtime_error("invalid operands to binary operator");
+    if (!rhs_type.IsInteger()) throw std::runtime_error("invalid operands to binary operator");
+    Operand address = lhs_->EmitIRAddress(gen);
+    Operand old = gen.Load(ir::IrType::Ptr, address);
+    Operand index = rhs_->EmitValue(gen);
+    Operand result = PointerOffset(gen, old, type, index, rhs_type, op_ == BinOp::Sub);
+    gen.Store(ir::IrType::Ptr, result, address);
+    return result;
+}
+
 Operand IncDec::EmitValue(IRGen& gen) const {
     TypePtr type = GetType(gen.Ctx());
-    RequireIrInteger(*type);
-    TypePtr wide = Promote(type);
     IrType ir_type = IRGen::ToIr(*type);
-
     Operand address = operand_->EmitIRAddress(gen);
     Operand old = gen.Load(ir_type, address);
-    Operand step = Operand::Int(increment_ ? 1 : -1, IRGen::ToIr(*wide));
-    Operand sum = Arith(gen, BinOp::Add, *wide, gen.ConvertInt(old, *type, *wide), step);
-    Operand updated = gen.ConvertInt(sum, *wide, *type);
+    Operand updated = type->IsPointer() ? StepPointer(gen, old, *type) : StepInteger(gen, old, type);
     gen.Store(ir_type, updated, address);
     return prefix_ ? updated : old;
+}
+
+// ++ and -- on a pointer move it by one element.
+Operand IncDec::StepPointer(IRGen& gen, Operand old, const Type& type) const {
+    Operand one = Operand::Int(1, IRGen::ToIr(*Type::Int()));
+    return PointerOffset(gen, old, type, one, *Type::Int(), !increment_);
+}
+
+// An integer is promoted, stepped by one, and converted back.
+Operand IncDec::StepInteger(IRGen& gen, Operand old, const TypePtr& type) const {
+    RequireIrInteger(*type);
+    TypePtr wide = Promote(type);
+    Operand step = Operand::Int(increment_ ? 1 : -1, IRGen::ToIr(*wide));
+    Operand sum = Arith(gen, BinOp::Add, *wide, gen.ConvertInt(old, *type, *wide), step);
+    return gen.ConvertInt(sum, *wide, *type);
 }
 
 }  // namespace ast

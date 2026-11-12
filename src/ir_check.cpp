@@ -63,7 +63,8 @@ private:
                 return;
             case Operand::Kind::None: return Error("missing operand");
             case Operand::Kind::Int:
-                if (!IsIntOrPtr(o.type)) Error("integer constant with type " + std::string(TypeName(o.type)));
+                // A null pointer is 'inttoptr' of an integer, not a Ptr constant.
+                if (!IsIntType(o.type)) Error("integer constant with type " + std::string(TypeName(o.type)));
                 return;
             case Operand::Kind::Float:
                 if (!IsFloatType(o.type)) Error("floating constant with type " + std::string(TypeName(o.type)));
@@ -127,6 +128,10 @@ private:
         if (real ? !IsFloatType(in.type) : !IsIntOrPtr(in.type)) Error("operand type not allowed");
         RequireType(in.args[0], in.type, "left operand");
         RequireType(in.args[1], in.type, "right operand");
+        // Pointers compare for equality or as unsigned numbers, never signed.
+        if (in.type == IrType::Ptr && (in.op == Op::Lt || in.op == Op::Le)) {
+            Error("pointers are compared with eq, ne, ltu or leu");
+        }
     }
 
     // Each conversion: the source kind, the result kind, and whether the
@@ -145,6 +150,8 @@ private:
             case Op::FToU: ok = IsFloatType(from) && IsIntType(to); break;
             case Op::FExt: ok = from == IrType::F32 && to == IrType::F64; break;
             case Op::FTrunc: ok = from == IrType::F64 && to == IrType::F32; break;
+            case Op::PtrToInt: ok = from == IrType::Ptr && to == PointerIntType(); break;
+            case Op::IntToPtr: ok = from == PointerIntType() && to == IrType::Ptr; break;
             default: break;
         }
         if (!ok) Error(std::string("cannot convert ") + TypeName(from) + " to " + TypeName(to));
@@ -193,6 +200,14 @@ private:
                 if (HasArgs(in, 1)) {
                     if (!in.args[0].IsConst()) Error("operand must be a constant");
                     RequireType(in.args[0], in.type, "constant");
+                }
+                return true;
+            case Op::PtrAdd:  // the one arithmetic on a Ptr (21.10)
+                result = IrType::Ptr;
+                if (in.type != IrType::Ptr) Error("ptradd works on ptr");
+                if (HasArgs(in, 2)) {
+                    RequireType(in.args[0], IrType::Ptr, "pointer");
+                    RequireType(in.args[1], PointerIntType(), "offset");
                 }
                 return true;
             case Op::Neg:  // integers and floats; not Ptr

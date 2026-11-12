@@ -43,8 +43,10 @@ void IRGen::BeginFunction(const std::string& name, bool is_global, const TypePtr
 }
 
 void IRGen::EndFunction() {
-    if (fn_.returns_value) {
-        Return(Operand::Int(0, fn_.return_type));
+    if (fn_.returns_value) {  // falling off the end: return a zero of the right type
+        bool pointer = fn_.return_type == IrType::Ptr;
+        Operand zero = Operand::Int(0, pointer ? ir::PointerIntType() : fn_.return_type);
+        Return(pointer ? IntToPtr(zero) : zero);
     } else {
         Return();
     }
@@ -112,6 +114,30 @@ Operand IRGen::AddressOf(Operand object_or_symbol, long offset) {
     in.type = IrType::Ptr;
     in.args = {object_or_symbol};
     in.offset = offset;
+    return Emit(in, IrType::Ptr);
+}
+
+Operand IRGen::PtrAdd(Operand pointer, Operand offset) {
+    Instruction in;
+    in.op = Op::PtrAdd;
+    in.type = IrType::Ptr;
+    in.args = {pointer, offset};
+    return Emit(in, IrType::Ptr);
+}
+
+Operand IRGen::PtrToInt(Operand pointer) {
+    Instruction in;
+    in.op = Op::PtrToInt;
+    in.type = ir::PointerIntType();
+    in.args = {pointer};
+    return Emit(in, in.type);
+}
+
+Operand IRGen::IntToPtr(Operand integer) {
+    Instruction in;
+    in.op = Op::IntToPtr;
+    in.type = IrType::Ptr;
+    in.args = {integer};
     return Emit(in, IrType::Ptr);
 }
 

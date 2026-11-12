@@ -21,6 +21,9 @@ const char* TypeName(IrType type);
 // The IR type of a scalar C type (integer or pointer); throws "not in IR yet"
 // for the others. The one place C types meet IR types (21.5).
 IrType IrTypeOf(const Type& type);
+// The integer type as wide as a pointer (I32 on RV32): the offset of ptradd
+// and the result of ptrtoint (21.10).
+IrType PointerIntType();
 
 // An instruction argument. A temporary is typed and numbered per function; a
 // frame object ('$name') and a symbol ('@name') are both addresses (Ptr).
@@ -47,10 +50,14 @@ enum class Op {
     Copy, Const, Addr,
     // arithmetic
     Add, Sub, Mul, Div, DivU, Rem, RemU, And, Or, Xor, Shl, Shr, Sar, Neg, Not,
+    // ptradd ptr, offset: Ptr + a byte count of PointerIntType() -> Ptr (21.10)
+    PtrAdd,
     // compare: the operands have 'type', the result is I32 0 or 1
     Eq, Ne, Lt, LtU, Le, LeU, FEq, FLt, FLe,
     // conversion: 'type' is the result type, the source is the operand's
     SExt, ZExt, Trunc, IToF, UToF, FToI, FToU, FExt, FTrunc,
+    // Ptr <-> PointerIntType()
+    PtrToInt, IntToPtr,
     // memory
     Load, Store, MemCpy, MemZero,
     // control
@@ -63,7 +70,7 @@ enum class Op {
 const char* OpName(Op op);
 bool IsBinaryArith(Op op);  // Add to Sar
 bool IsCompare(Op op);      // Eq to FLe
-bool IsConversion(Op op);   // SExt to FTrunc
+bool IsConversion(Op op);   // SExt to IntToPtr
 
 // One instruction. 'type' is the type the operation works on: the operands'
 // and the result's for arithmetic, the operands' for a compare, the result's

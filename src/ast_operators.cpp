@@ -561,13 +561,17 @@ using ir::Operand;
 
 namespace {
 
-// The usual arithmetic type of a compare's operands (integers only for now).
+// The type a compare's operands are converted to. With a pointer on either
+// side that is the pointer's type (an integer, such as the null constant, is
+// converted to it; pointers are unsigned, so lt/le become ltu/leu). Otherwise
+// the usual arithmetic type (integers only for now).
 TypePtr CompareCommonType(const Context& ctx, const Expr& lhs, const Expr& rhs) {
     TypePtr l = lhs.ValueType(ctx);
     TypePtr r = rhs.ValueType(ctx);
     RequireIrScalar(*l);
     RequireIrScalar(*r);
-    if (l->IsPointer() && r->IsPointer()) return l;  // compared as they are
+    if (l->IsPointer()) return l;
+    if (r->IsPointer()) return r;
     RequireIrInteger(*l);
     RequireIrInteger(*r);
     return UsualArithmetic(l, r);
@@ -575,8 +579,27 @@ TypePtr CompareCommonType(const Context& ctx, const Expr& lhs, const Expr& rhs) 
 
 }  // namespace
 
+// The pointer forms of + and -: both operands are evaluated in source order,
+// then combined.
+Operand BinaryArith::EmitPointerValue(IRGen& gen, PointerOp kind) const {
+    Context& ctx = gen.Ctx();
+    TypePtr l = lhs_->ValueType(ctx), r = rhs_->ValueType(ctx);
+    Operand a = lhs_->EmitValue(gen);
+    Operand b = rhs_->EmitValue(gen);
+    switch (kind) {
+        case PointerOp::PtrPlusInt: return PointerOffset(gen, a, *l, b, *r, false);
+        case PointerOp::PtrMinusInt: return PointerOffset(gen, a, *l, b, *r, true);
+        case PointerOp::IntPlusPtr: return PointerOffset(gen, b, *r, a, *l, false);
+        case PointerOp::PtrMinusPtr: return PointerDifference(gen, a, b, *l);
+        case PointerOp::None: break;
+    }
+    return a;
+}
+
 Operand BinaryArith::EmitValue(IRGen& gen) const {
     Context& ctx = gen.Ctx();
+    PointerOp kind = ClassifyPointerOp(op_, lhs_->ValueType(ctx), rhs_->ValueType(ctx));
+    if (kind != PointerOp::None) return EmitPointerValue(gen, kind);
     RequireIrInteger(*lhs_->ValueType(ctx));
     RequireIrInteger(*rhs_->ValueType(ctx));
     TypePtr result = GetType(ctx);
@@ -608,11 +631,11 @@ Operand BinaryCompare::EmitValue(IRGen& gen) const {
 Operand UnaryOp::EmitValue(IRGen& gen) const {
     Context& ctx = gen.Ctx();
     TypePtr operand_type = operand_->ValueType(ctx);
-    RequireIrInteger(*operand_type);
-    if (op_ == UnOp::LogNot) {  // !x is x == 0
-        IrType type = IRGen::ToIr(*operand_type);
-        return gen.Compare(Op::Eq, type, operand_->EmitValue(gen), Operand::Int(0, type));
+    if (op_ == UnOp::LogNot) {  // !x is x == 0 (a pointer as its integer value)
+        Operand value = Condition(gen, *operand_);
+        return gen.Compare(Op::Eq, value.type, value, Operand::Int(0, value.type));
     }
+    RequireIrInteger(*operand_type);
     TypePtr result = GetType(ctx);
     Operand v = ValueAs(gen, *operand_, *result);
     IrType type = IRGen::ToIr(*result);
@@ -672,7 +695,7 @@ Operand LogicalOr::EmitValue(IRGen& gen) const {
 
 Operand Ternary::EmitValue(IRGen& gen) const {
     TypePtr type = GetType(gen.Ctx());
-    RequireIrInteger(*type);
+    RequireIrScalar(*type);
     IrType ir_type = IRGen::ToIr(*type);
     Operand slot = gen.AddFrameObject("sel", *type);
     std::string then_label = gen.NewLabel("qthen"), else_label = gen.NewLabel("qelse");

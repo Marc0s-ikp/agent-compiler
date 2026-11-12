@@ -275,6 +275,8 @@ private:
             case Op::SExt: os_ << "\tslli t0, t0, " << shift << "\n\tsrai t0, t0, " << shift << "\n"; break;
             case Op::ZExt: os_ << "\tslli t0, t0, " << shift << "\n\tsrli t0, t0, " << shift << "\n"; break;
             case Op::Trunc: break;  // the store keeps the low bytes
+            case Op::PtrToInt:
+            case Op::IntToPtr: break;  // same width on this target
             default: NotYet("floating conversion");
         }
         StoreResult("t0", in.dst);
@@ -294,6 +296,11 @@ private:
             case Op::Copy:
             case Op::Const:
                 Load("t0", in.args[0]);
+                return StoreResult("t0", in.dst);
+            case Op::PtrAdd:
+                Load("t0", in.args[0]);
+                Load("t1", in.args[1]);
+                Emit3("add");
                 return StoreResult("t0", in.dst);
             case Op::Neg:
                 Load("t0", in.args[0]);

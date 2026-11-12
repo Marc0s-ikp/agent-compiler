@@ -17,11 +17,25 @@ const Type& RequireIrScalar(const Type& type);
 // a <op> b, both already converted to 'common'.
 ir::Operand Arith(IRGen& gen, BinOp op, const Type& common, ir::Operand a, ir::Operand b);
 
-// Evaluates 'e' and converts it to 'to' (an integer type).
+// Converts an already evaluated scalar value between two C scalar types
+// (integer or pointer). The one place integers and pointers meet (21.10).
+ir::Operand ConvertScalar(IRGen& gen, ir::Operand value, const Type& from, const Type& to);
+
+// Evaluates 'e' and converts it to 'to' (an integer or pointer type).
 ir::Operand ValueAs(IRGen& gen, const Expr& e, const Type& to);
 
 // Evaluates a controlling expression (if, loops, ?:, &&, ||, switch) to an
-// integer operand that a branch can test against zero.
+// integer operand that a branch can test against zero. A pointer becomes its
+// address as an integer.
 ir::Operand Condition(IRGen& gen, const Expr& e);
+
+// Pointer arithmetic (21.10). 'pointer' is an evaluated Ptr of C type
+// 'pointer_type'; 'index' an evaluated integer of C type 'index_type'.
+// Result: pointer +/- index * element size, as a ptradd.
+ir::Operand PointerOffset(IRGen& gen, ir::Operand pointer, const Type& pointer_type,
+                          ir::Operand index, const Type& index_type, bool subtract);
+
+// (a - b) / element size, as an int: both pointers have C type 'pointer_type'.
+ir::Operand PointerDifference(IRGen& gen, ir::Operand a, ir::Operand b, const Type& pointer_type);
 
 }  // namespace ast
