@@ -58,6 +58,10 @@ namespace {
 
 void StoreItemIR(IRGen& gen, const InitItem& item, const ir::Operand& object) {
     ir::Operand address = gen.AddressOf(object, item.offset);
+    if (item.value && item.type->IsRecord()) {  // a whole struct from an expression
+        gen.MemCpy(address, ValueAs(gen, *item.value, *item.type), item.type->Size(), item.type->Align());
+        return;
+    }
     if (item.value) {
         RequireIrScalar(*item.type);
         gen.Store(IRGen::ToIr(*item.type), ValueAs(gen, *item.value, *item.type), address);
@@ -74,8 +78,7 @@ void StoreItemIR(IRGen& gen, const InitItem& item, const ir::Operand& object) {
 }  // namespace
 
 void EmitLocalInitIR(IRGen& gen, const FlatInit& flat, const ir::Operand& object) {
-    if (flat.type->IsRecord()) throw std::runtime_error("not in IR yet: struct initialiser");
-    if (flat.type->IsArray()) gen.MemZero(gen.AddressOf(object), flat.type->Size(), flat.type->Align());
+    if (flat.type->IsArray() || flat.type->IsRecord()) gen.MemZero(gen.AddressOf(object), flat.type->Size(), flat.type->Align());
     for (const InitItem& item : flat.items) StoreItemIR(gen, item, object);
 }
 

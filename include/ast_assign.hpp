@@ -15,6 +15,7 @@ public:
 
 private:
     void EmitRecordCopy(std::ostream& os, const Type& type, int address_slot) const;
+    ir::Operand EmitRecordCopy(IRGen& gen, const Type& type) const;  // --ir
 
     ExprPtr lhs_, rhs_;
 };

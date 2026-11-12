@@ -240,6 +240,10 @@ private:
             case Op::MemZero: {
                 size_t n = in.op == Op::MemCpy ? 2 : 1;
                 if (HasArgs(in, n)) for (const Operand& a : in.args) RequireType(a, IrType::Ptr, "address");
+                if (in.size <= 0) Error("size must be positive");
+                if (in.align != 1 && in.align != 2 && in.align != 4 && in.align != 8) {
+                    Error("alignment must be 1, 2, 4 or 8");
+                }
                 return false;
             }
             case Op::Label:
@@ -267,6 +271,28 @@ private:
         return module_.externals.count(name) > 0;
     }
 
+    // A call that returns a struct or union has no result temporary (the generic
+    // check rejects a dst): its
+    // result_object is a frame object of exactly the record's size (21.5).
+    // Returns false: the call defines no temporary.
+    bool CheckRecordResult(const Instruction& in) {
+        const Operand& object = in.result_object;
+        if (object.kind != Operand::Kind::Object) {
+            Error("a call returning a struct needs a result_object");
+            return false;
+        }
+        for (const FrameObject& f : fn_.objects) {
+            if (f.name != object.name) continue;
+            if (f.size != in.ret_type->Size()) {
+                Error("result_object $" + object.name + " has size " + std::to_string(f.size) +
+                      ", the struct has " + std::to_string(in.ret_type->Size()));
+            }
+            return false;
+        }
+        Error("unknown result_object $" + object.name);
+        return false;
+    }
+
     // The callee is a function of the module or an external; each argument has
     // the IR type of its C type; the result has the IR type of the return type.
     bool CheckCall(const Instruction& in, IrType& result) {
@@ -283,6 +309,8 @@ private:
                 RequireType(in.args[i], IrTypeOf(*in.arg_types[i]), "argument");
             }
         }
+        if (in.ret_type->IsRecord()) return CheckRecordResult(in);
+        if (in.result_object.kind != Operand::Kind::None) Error("result_object on a call that returns no struct");
         if (in.ret_type->IsVoid()) return false;
         result = IrTypeOf(*in.ret_type);
         if (in.type != result) {

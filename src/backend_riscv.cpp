@@ -408,6 +408,13 @@ private:
         os_ << "1:\n\t" << store << " zero, 0(t0)\n\taddi t0, t0, " << step << "\n\tbne t0, t1, 1b\n";
     }
 
+    // dst in t1 and src in t2; EmitCopyMem uses t0, t3, t4 and t5 as its own.
+    void WriteMemCopy(const Instruction& in) {
+        Load("t1", in.args[0]);
+        Load("t2", in.args[1]);
+        EmitCopyMem(os_, "t1", "t2", static_cast<int>(in.size), static_cast<int>(in.align));
+    }
+
     void WriteInstruction(size_t index, const Instruction& in) {
         if (ir::IsBinaryArith(in.op)) return WriteBinary(in);
         if (ir::IsCompare(in.op)) return WriteCompare(in);
@@ -444,6 +451,7 @@ private:
                 Load("t1", in.args[1]);
                 return EmitMem(os_, StoreOp(in.type), Scratch(in.type, 0), "t1", 0);
             case Op::MemZero: return WriteMemZero(in);
+            case Op::MemCpy: return WriteMemCopy(in);
             case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
             case Op::Jump: os_ << "\tj " << LocalLabel(in.label) << "\n"; return;
             case Op::Branch:

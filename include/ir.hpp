@@ -18,8 +18,10 @@ int SizeOf(IrType type);  // bytes; Ptr is Target().pointer_size
 bool IsIntType(IrType type);    // I8 to I64
 bool IsFloatType(IrType type);  // F32, F64
 const char* TypeName(IrType type);
-// The IR type of a scalar C type (integer or pointer); throws "not in IR yet"
-// for the others. The one place C types meet IR types (21.5).
+// The IR type of a C type that a value can have: an integer, float or pointer
+// is itself; a struct or union is Ptr, because its value is the address of an
+// object that holds it (D19(b), 21.2). Throws "not in IR yet" for the others
+// (void, function). The one place C types meet IR types (21.5).
 IrType IrTypeOf(const Type& type);
 // The integer type as wide as a pointer (I32 on RV32): the offset of ptradd
 // and the result of ptrtoint (21.10).
@@ -88,6 +90,9 @@ struct Instruction {
     std::string callee;
     std::vector<TypePtr> arg_types;
     TypePtr ret_type;
+    // Call of a function that returns a struct or union (no 'dst'): the frame
+    // object that receives the value. Its size is the record's (21.5).
+    Operand result_object;
 };
 
 struct FrameObject {

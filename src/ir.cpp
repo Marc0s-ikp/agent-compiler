@@ -28,7 +28,7 @@ const char* TypeName(IrType type) {
 }
 
 IrType IrTypeOf(const Type& type) {
-    if (type.IsPointer()) return IrType::Ptr;
+    if (type.IsPointer() || type.IsRecord()) return IrType::Ptr;
     if (type.IsFloating()) return type.Size() == 4 ? IrType::F32 : IrType::F64;
     if (type.IsInteger()) {
         switch (type.Size()) {

@@ -47,11 +47,14 @@ std::string Body(const Instruction& in) {
             return name + " " + ArgList(in.args) + ", " + std::to_string(in.size) +
                    ", align " + std::to_string(in.align);
         case Op::Call: {
-            std::string text = name + " " + (in.ret_type->IsVoid() ? "void" : type) + " @" + in.callee + "(";
+            bool record = in.ret_type->IsRecord();
+            std::string text = name + " " + (in.ret_type->IsVoid() ? "void" : record ? "struct" : type) + " @" + in.callee + "(";
             for (size_t i = 0; i < in.args.size(); ++i) {
                 text += (i ? ", " : "") + std::string(TypeName(in.args[i].type)) + " " + OperandText(in.args[i]);
             }
-            return text + ")";
+            text += ")";
+            if (record) text += " -> " + OperandText(in.result_object);
+            return text;
         }
         case Op::Ret: return in.args.empty() ? name : name + " " + type + " " + ArgList(in.args);
         default: break;

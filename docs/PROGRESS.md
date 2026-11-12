@@ -37,6 +37,8 @@ Next: v3 step 6, structs and unions.
 | 5a float and double: classifier rows, conversions, compares, float pool entries, backend | 299/299 | 251/299 |
 | 5b custom tests `ir_float_mixed_args`, `ir_float_double_in_ints`, `ir_float_split_a7`, `ir_float_utod`, `ir_float_dtou`; float/double in `abi_check` | 304/304 | 256/304 |
 | 5c review: `abi_check` exhausts fa registers and splits doubles, split-double docs corrected | 304/304 | 256/304 |
+| 5d custom test `ir_float_round_nearest` | 305/305 | 257/305 |
+| 6a structs and unions without calls: struct value = Ptr, member access, struct assignment (memcpy), local/global initialisers, `?:` on structs, `result_object` in the IR | 305/305 | 283/305 |
 
 ## Pass count by category
 | Category | Passing | Total |

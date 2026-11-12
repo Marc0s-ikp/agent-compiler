@@ -17,6 +17,8 @@ public:
     std::optional<ConstValue> EvalConstAddress(Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitAddress(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
+    ir::Operand EmitIRAddress(IRGen& gen) const override;
 
 private:
     // The member found in the base's record type; throws if the base is not
