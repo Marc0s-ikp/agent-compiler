@@ -529,6 +529,22 @@ The prologue then copies each incoming register piece to its parameter's home, e
    `?:`, `&&` and `||` write their result to a hidden frame object from each arm and `load` it once
    after the join. The checker requires every temp to be defined by exactly one instruction site.
 
+## Step 4 stage A notes (implementer, 2026-11-12)
+
+- **Names in the IR are neutral.** After `Context::UseNeutralNames()` (set only on the `--ir` path) a
+  code label is `else3` and a compiler-made data symbol is `str.3`; the old path keeps `.Lelse3`. The
+  dot cannot occur in a C name, so a compiler-made symbol never clashes with a global. `DataEntry`
+  has `compiler_made` (implies `internal`); the RISC-V backend's `LocalLabel` and `SymbolNames::Spell`
+  are the only places that add the `.L` prefix (also for its own `ret.<fn>` label). The checker rejects
+  a code label that starts with `.`, a compiler-made name without `.` and a C-named entry with one.
+- **No `Ptr`-typed integer constants.** A null pointer is `inttoptr` of an integer constant; the checker
+  rejects an integer constant whose type is `Ptr`. The implicit `return 0` of a pointer function uses it too.
+- **Pointer compare** converts an integer operand to the pointer's type (inttoptr) and uses `ltu`/`leu`;
+  the checker rejects signed `lt`/`le` on `Ptr`. A pointer used as a condition becomes `ptrtoint` first,
+  since `branch` takes an integer.
+- **Index widening** is by the index's C signedness (`sext` signed, `zext` unsigned); the same width needs
+  no instruction, because the bits are identical and the sum wraps in pointer width (D20).
+
 ## D25 detail (ACCEPTED, Marcus, 2026-11-12, with one change)
 
 **Interface** (`include/call_abi.hpp`):

@@ -50,7 +50,7 @@ Next: v3 step 4, arrays, pointers, globals. Remaining `--ir` failures by first b
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 207 | 207 |
+| custom (written by tester, D13) | 208 | 208 |
 
 ## History
 | Date | Passing | Change |
@@ -69,3 +69,4 @@ Next: v3 step 4, arrays, pointers, globals. Remaining `--ir` failures by first b
 | 2026-11-11 | 285/285 | v3 step 1: TargetInfo, IR core, checker, backend skeleton, integer lowering (default 283→285, --ir 0→18) |
 | 2026-11-11 | 290/290 | v3 step 2: control flow in the IR (default 285→290, --ir 18→34) |
 | 2026-11-12 | 293/293 | v3 step 3: one definition per temp (D24), calls and ABI, classifier interface D25 (default 290→293, --ir 34→135) |
+| 2026-11-12 | 294/294 | v3 step 4 stage A: neutral labels, ptradd/ptrtoint/inttoptr, arrays and pointers, sizeof (default 293→294, --ir 135→176) |
