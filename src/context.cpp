@@ -263,7 +263,6 @@ void Context::EmitGlobals(std::ostream& os) const {
 }
 
 void Context::ExportGlobals(ir::Module& module) const {
-    if (!strings_.empty()) throw std::runtime_error("not in IR yet: string literal");
     for (const GlobalVar& g : globals_) {
         if (!g.has_storage) {
             module.external_data.insert(g.name);
@@ -277,6 +276,25 @@ void Context::ExportGlobals(ir::Module& module) const {
         entry.internal = g.internal;
         entry.compiler_made = g.compiler_made;
         if (g.initialised) entry.items = g.items;  // else zero-filled: no items
+        module.data.push_back(entry);
+    }
+    ExportStrings(module);
+}
+
+// Each pooled string is a read-only, compiler-made entry: its bytes and the NUL.
+void Context::ExportStrings(ir::Module& module) const {
+    for (const auto& [label, bytes] : strings_) {
+        ir::DataItem item;
+        item.kind = ir::DataItem::Kind::Bytes;
+        item.bytes = bytes + std::string(1, '\0');
+        ir::DataEntry entry;
+        entry.label = label;
+        entry.size = static_cast<int>(item.bytes.size());
+        entry.align = 1;
+        entry.read_only = true;
+        entry.internal = true;
+        entry.compiler_made = true;
+        entry.items.push_back(item);
         module.data.push_back(entry);
     }
 }

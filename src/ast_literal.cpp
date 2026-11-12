@@ -116,6 +116,13 @@ Operand IntLiteral::EmitValue(IRGen& gen) const {
     return Operand::Int(*EvalConst(gen.Ctx()), IRGen::ToIr(*GetType(gen.Ctx())));
 }
 
+// A string literal is an array in read-only data, so its value is its address.
+Operand StringLiteral::EmitIRAddress(IRGen& gen) const {
+    return gen.AddressOf(Operand::Symbol(gen.Ctx().AddString(bytes_)));
+}
+
+Operand StringLiteral::EmitValue(IRGen& gen) const { return EmitIRAddress(gen); }
+
 Operand CharLiteral::EmitValue(IRGen&) const {
     return Operand::Int(value_, IRGen::ToIr(*Type::Int()));
 }

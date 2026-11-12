@@ -102,7 +102,7 @@ public:
     void EmitGlobals(std::ostream& os) const;
     // The --ir twin of EmitGlobals: one data entry per object that has storage
     // (21.2a), and the extern-only names as module.external_data.
-    void ExportGlobals(ir::Module& module) const;
+    void ExportGlobals(ir::Module& module) const;  // also the string pool
 
     // String literals (read-only data). The same bytes get the same label, so
     // evaluating one literal twice adds nothing. A NUL is written after them.
@@ -177,6 +177,7 @@ private:
         bool compiler_made = false;       // a static local's label
     };
     GlobalVar& FindGlobal(const std::string& label);
+    void ExportStrings(ir::Module& module) const;
 
     int Allocate(const TypePtr& type);
 

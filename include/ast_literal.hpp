@@ -73,6 +73,8 @@ public:
     const std::string* StringBytes() const override { return &bytes_; }
     void EmitRISC(std::ostream& os, Context& ctx) const override;
     void EmitAddress(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
+    ir::Operand EmitIRAddress(IRGen& gen) const override;
 
 private:
     std::string bytes_;
