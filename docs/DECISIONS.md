@@ -5,7 +5,7 @@
 | 2026-11-08 | ACCEPTED D1, **SUPERSEDED by D21 (21.4) at v3 step 7, 2026-11-12**: the accumulator is gone; each IR instruction loads its operands into scratch registers and stores its result to the temp's own slot, so D1's rule (no register state held across code that may call) now holds per IR instruction, not per AST node. Original: every expression evaluates into one accumulator (`a0` or `fa0`), with intermediates saved in frame temp slots | No allocator and no live-register state to get wrong around calls. Speed is not tested | Register pool with spilling (more code, faster output, not needed for these tests); destination register passed down the tree |
 | 2026-11-08 | ACCEPTED D2, **SUPERSEDED by D21 (21.6) at v3 step 7, 2026-11-12**: the backend receives a whole `ir::Function`, so the frame size is known before printing and the body is no longer buffered; addressing from `s0`, the fixed `sp` and the outgoing area at `sp` remain as the RISC-V backend's layout rules. Original: frame addressed from `s0`, `sp` fixed after the prologue, function body buffered so the prologue is written last | Frame size is only known after the body. A fixed `sp` keeps 16-byte alignment and makes outgoing stack args simple | Pre-pass to compute frame size (a second tree walk to keep in sync); push/pop on `sp` (alignment bugs around calls) |
 | 2026-11-08 | ACCEPTED D3: `Type` is an immutable shared value object; `Expr::GetType` is pure and emits nothing | Types first-class from day one. `sizeof expr` must not generate code | Storing a type on each node at parse time (needs scopes the parser doesn't have) |
-| 2026-11-08 | ACCEPTED D4: separate `EmitRISC` (value) and `EmitAddress` (lvalue) on `Expr` | One rule for assignment, `&`, `++`, members and indexing | A boolean "want address" flag through `EmitRISC` |
+| 2026-11-08 | ACCEPTED D4 (since v3 step 7 the pair is `EmitValue`/`EmitIRAddress`, D21; `EmitRISC`/`EmitAddress` are deleted): separate `EmitRISC` (value) and `EmitAddress` (lvalue) on `Expr` | One rule for assignment, `&`, `++`, members and indexing | A boolean "want address" flag through `EmitRISC` |
 | 2026-11-08 | ACCEPTED D5: one ABI classifier shared by caller and callee | Both sides of a call cannot disagree | Separate logic in `FunctionCall` and `FunctionDefinition` |
 | 2026-11-08 | ACCEPTED D6: one conversion routine (`EmitConvert`) for all implicit and explicit conversions | Assignment, return, args, binary ops and casts behave the same | Conversions written inside each node |
 | 2026-11-08 | ACCEPTED D7: lexer asks a parse-time scoped `TypedefTable` whether an identifier is a type name | C's grammar needs this to be unambiguous, and it must exist before `Context` does | Using `Context` during parsing (couples parsing and code generation) |
@@ -55,6 +55,8 @@ test signal from this suite. `long double` and `long long` are out of scope.
 | `double` | 8 | 8 |
 
 ## 1. AST class hierarchy
+
+*Since v3 step 7 (2026-11-12) nodes have `EmitIR`/`EmitValue`/`EmitIRAddress` in place of `EmitRISC`/`EmitAddress` (D21, D23 a). The hierarchy itself is unchanged.*
 
 All nodes live in `namespace ast`. Each construct gets one class, in `include/ast_*.hpp` with its
 implementation in `src/ast_*.cpp`. `src/` must stay flat because the Makefile's wildcard doesn't recurse.

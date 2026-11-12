@@ -5,8 +5,8 @@
 
 namespace ast {
 
-// A variable or parameter: a local addressed from s0, or a global addressed
-// by its label.
+// A variable or parameter: a local or parameter is a frame object, a global
+// is addressed by its label.
 class Identifier : public Expr {
 public:
     explicit Identifier(std::string name) : name_(std::move(name)) {}

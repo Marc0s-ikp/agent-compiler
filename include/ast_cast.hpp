@@ -4,8 +4,8 @@
 
 namespace ast {
 
-// (type-name) operand. The conversion is EmitConvert, the same routine
-// assignment and calls use (D6). A cast to void evaluates and discards.
+// (type-name) operand. The conversion is ValueAs (ast_lower), the same
+// routine assignment and calls use (D6). A cast to void evaluates and discards.
 class Cast : public Expr {
 public:
     Cast(Param type_name, ExprPtr operand)

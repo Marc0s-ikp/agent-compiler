@@ -269,3 +269,17 @@ From the step 5 review (2026-11-12, approved in round 1). None of these blocked 
 5. RESOLVED (review commit 2bde714: `gen_abi.py` models the ilp32d struct rules and byte-checks only split doubles). Was: `tests/abi_check` does not model registers for structs, so every double of such a signature is byte-checked; a
    struct whose double is split (e.g. `{double}` after 7 ints and 8 doubles) is therefore only checked by bytes.
 6. The IR checker could reject two calls that share one `result_object` (from the step 6 review).
+
+
+## Nice to have from the v3 step 7 review
+
+From the step 7 review (2026-11-12, approved in round 1). None of these blocked the merge.
+
+1. `Context::BeginFunction` (`src/context.cpp`) keeps `++label_count_`, left from the old `.Lret` label, only so the
+   assembly stayed byte-identical to step 6 during the deletions. Remove it in its own commit; labels renumber, no
+   test depends on them.
+2. `WriteCall` stores a scalar result from a literal `"a0"`/`"fa0"` and `LoadReturnValue` writes the floating case to
+   a literal `"fa0"`, instead of `IntRegName`/`FloatRegName` of `ret.pieces[0]` as every other site does. Same
+   registers today; a consistency fix (predates step 7).
+3. `main.cpp`: a trailing `-o` with no value is reported as "unknown option '-o'" rather than "-o needs a value"
+   (still exits 1).
