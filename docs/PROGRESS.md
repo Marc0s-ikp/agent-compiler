@@ -11,11 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: default 285/285 before, 290/290 after (86 of 86 compiler_tests, 204 of 204 custom). `--ir` 18/285 before, 34/290 after. No previously passing test fails on either path (checked by the reviewer against the baseline).
-Fixed: v3 step 2. Lowering code moved next to each `EmitRISC` (D23 a), partial `--emit-ir` dump on lowering failure (D23 c), large immediates verified with `ir_large_immediates`, and control flow in the IR: if/else, while, do-while, for, break/continue, `&&`, `||`, `?:`, switch. New custom tests: `ir_large_immediates`, `ir_loops`, `ir_short_circuit`, `ir_ternary`, `ir_switch`.
-Blocked: nothing. Review notes are under "Nice to have from the v3 step 2 review" in docs/BLOCKERS.md. D24 is pending Marcus.
-Step 3 (calls and ABI) is done on the `--ir` path: default 293/293, `--ir` 135/293. Remaining `--ir` failures by first blocker: "this type" 70 (arrays, floats, structs), global variable 43, `SizeofType` 11, `StringLiteral` 6, `Deref` 6, `AddressOf` 6, non-integer operand 4, `SizeofExpr` 4, `Index` 4, others 4. D25 is pending Marcus.
-Next: v3 step 4, arrays, pointers, globals.
+Pass count: default 290/290 before, 293/293 after (86 of 86 compiler_tests, 207 of 207 custom). `--ir` 34/290 before, 135/293 after. No previously passing test fails on either path (checked per test against the master baselines).
+Fixed: v3 step 3. D24 change: `?:`, `&&`, `||` go through a hidden frame object and the checker enforces one definition per temp. Calls and ABI on the IR path: IR `call`, parameters, outgoing area, narrow returns, and the per-target classifier interface (D25), shared by caller and callee and built on the old path's rules. New custom tests `ir_call_params`, `ir_call_stack_args`, `ir_recursion`; the random ABI check (`tests/abi_check/`) passed 6300/6300 runs against GCC -O0 and -O2 in all four caller/callee combinations.
+Blocked: nothing. D25 is pending Marcus. Review notes are under "Nice to have from the v3 step 3 review" in docs/BLOCKERS.md.
+Next: v3 step 4, arrays, pointers, globals. Remaining `--ir` failures by first blocker: unsupported type 70 (arrays, floats, structs), global variable 43, `SizeofType` 11, `StringLiteral`/`Deref`/`AddressOf` 6 each, others 16.
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -51,7 +50,7 @@ Next: v3 step 4, arrays, pointers, globals.
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 199 | 199 |
+| custom (written by tester, D13) | 207 | 207 |
 
 ## History
 | Date | Passing | Change |
@@ -68,3 +67,5 @@ Next: v3 step 4, arrays, pointers, globals.
 | 2026-11-10 | 272/272 | cleanup: self-referencing initialisers, pointers in ?:, short (262→272) |
 | 2026-11-10 | 283/283 | constant folding: typed 32-bit folding for initialisers, case, enum, array sizes (272→283) |
 | 2026-11-11 | 285/285 | v3 step 1: TargetInfo, IR core, checker, backend skeleton, integer lowering (default 283→285, --ir 0→18) |
+| 2026-11-11 | 290/290 | v3 step 2: control flow in the IR (default 285→290, --ir 18→34) |
+| 2026-11-12 | 293/293 | v3 step 3: one definition per temp (D24), calls and ABI, classifier interface D25 (default 290→293, --ir 34→135) |
