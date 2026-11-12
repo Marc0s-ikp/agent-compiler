@@ -565,6 +565,9 @@ namespace {
 TypePtr CompareCommonType(const Context& ctx, const Expr& lhs, const Expr& rhs) {
     TypePtr l = lhs.ValueType(ctx);
     TypePtr r = rhs.ValueType(ctx);
+    RequireIrScalar(*l);
+    RequireIrScalar(*r);
+    if (l->IsPointer() && r->IsPointer()) return l;  // compared as they are
     RequireIrInteger(*l);
     RequireIrInteger(*r);
     return UsualArithmetic(l, r);

@@ -12,18 +12,7 @@ using ir::Operand;
 
 // ---- C types at the edge ----
 
-IrType IRGen::ToIr(const Type& type) {
-    if (type.IsPointer()) return IrType::Ptr;
-    if (type.IsInteger()) {
-        switch (type.Size()) {
-            case 1: return IrType::I8;
-            case 2: return IrType::I16;
-            case 4: return IrType::I32;
-            case 8: return IrType::I64;
-        }
-    }
-    throw std::runtime_error("not in IR yet: this type");
-}
+IrType IRGen::ToIr(const Type& type) { return ir::IrTypeOf(type); }
 
 // A constant converts at compile time; anything else gets sext, zext or
 // trunc. Equal sizes need nothing, because the IR type carries no sign.
@@ -48,6 +37,7 @@ void IRGen::BeginFunction(const std::string& name, bool is_global, const TypePtr
     fn_.name = name;
     fn_.is_global = is_global;
     fn_.returns_value = !return_type->IsVoid();
+    fn_.c_return = return_type;
     if (fn_.returns_value) fn_.return_type = ToIr(*return_type);
     object_count_ = 0;
 }
@@ -66,6 +56,13 @@ void IRGen::AppendPartialFunction() {
     if (fn_.name.empty()) return;
     module_.functions.push_back(std::move(fn_));
     fn_ = ir::Function();
+}
+
+Operand IRGen::AddParam(const std::string& name, const TypePtr& type) {
+    ToIr(*type);  // rejects a type the IR cannot hold yet
+    Operand home = AddFrameObject(name, *type);
+    fn_.params.push_back({home.name, type});
+    return home;
 }
 
 Operand IRGen::AddFrameObject(const std::string& name, const Type& type) {
@@ -132,6 +129,29 @@ void IRGen::Store(IrType type, Operand value, Operand address) {
     in.type = type;
     in.args = {value, address};
     Append(in);
+}
+
+// The result is None for a void function. Every callee is recorded as an
+// external; EndModule removes the ones this module defines.
+Operand IRGen::Call(const std::string& callee, const std::vector<Operand>& args,
+                    const std::vector<TypePtr>& arg_types, const TypePtr& ret_type) {
+    Instruction in;
+    in.op = Op::Call;
+    in.callee = callee;
+    in.args = args;
+    in.arg_types = arg_types;
+    in.ret_type = ret_type;
+    module_.externals.insert(callee);
+    if (ret_type->IsVoid()) {
+        Append(in);
+        return Operand();
+    }
+    in.type = ToIr(*ret_type);
+    return Emit(in, in.type);
+}
+
+void IRGen::EndModule() {
+    for (const ir::Function& fn : module_.functions) module_.externals.erase(fn.name);
 }
 
 void IRGen::Return() {

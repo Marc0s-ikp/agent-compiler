@@ -113,7 +113,7 @@ void DeclarationStmt::EmitIR(IRGen& gen) const {
         if (type->IsVoid() || type->IsFunction()) {
             throw std::runtime_error("invalid type for variable '" + name + "'");
         }
-        RequireIrInteger(*type);
+        RequireIrScalar(*type);
         if (d.init && d.init->IsList()) throw std::runtime_error("not in IR yet: initialiser list");
         Operand object = gen.AddFrameObject(name, *type);
         ctx.Declare(name, Symbol::IrLocal(type, object.name));
@@ -127,7 +127,7 @@ void DeclarationStmt::EmitIR(IRGen& gen) const {
 void ReturnStmt::EmitIR(IRGen& gen) const {
     if (!value_) return gen.Return();
     const TypePtr& to = gen.Ctx().ReturnType();
-    RequireIrInteger(*to);
+    RequireIrScalar(*to);
     gen.Return(ValueAs(gen, *value_, *to));
 }
 

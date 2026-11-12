@@ -1,9 +1,11 @@
 #include "backend.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <stdexcept>
 
+#include "call_abi.hpp"
 #include "emit.hpp"
 #include "target.hpp"
 
@@ -30,8 +32,8 @@ using ir::Operand;
 int RoundUp(int value, int multiple) { return (value + multiple - 1) / multiple * multiple; }
 
 // ---- frame layout (21.6) ----
-// Below s0: saved ra and s0, then the frame objects, then one slot per temp.
-// (Register-parameter homes and the outgoing argument area arrive with calls.)
+// Below s0: saved ra and s0, then the frame objects (locals and parameter
+// homes), then one slot per temp, then, at sp, the outgoing argument area.
 
 struct Frame {
     std::map<std::string, int> objects;  // name -> offset from s0
@@ -46,11 +48,11 @@ struct Frame {
     }
 };
 
-Frame LayoutFrame(const ir::Function& fn) {
+Frame LayoutFrame(const ir::Function& fn, int outgoing_bytes) {
     Frame frame;
     for (const ir::FrameObject& o : fn.objects) frame.objects[o.name] = frame.Reserve(o.size, o.align);
     for (ir::IrType t : fn.temps) frame.temps.push_back(frame.Reserve(ir::SizeOf(t), ir::SizeOf(t)));
-    frame.size = RoundUp(frame.used, Target().stack_align);
+    frame.size = RoundUp(frame.used + outgoing_bytes, Target().stack_align);
     return frame;
 }
 
@@ -78,20 +80,37 @@ const char* StoreOp(IrType type) {
 
 class FunctionWriter {
 public:
-    FunctionWriter(const ir::Function& fn, std::ostream& os)
-        : fn_(fn), os_(os), frame_(LayoutFrame(fn)) {}
+    // One Classify call for the function's own entry and one for each call
+    // (D5, 21.5); the frame layout needs the calls' stack sizes first.
+    FunctionWriter(const ir::Function& fn, std::ostream& os) : fn_(fn), os_(os) {
+        entry_ = Classify(ParamTypes(), fn.c_return);
+        int outgoing = 0;
+        for (size_t i = 0; i < fn.body.size(); ++i) {
+            const Instruction& in = fn.body[i];
+            if (in.op != Op::Call) continue;
+            calls_[i] = Classify(in.arg_types, in.ret_type);
+            outgoing = std::max(outgoing, calls_[i].stack_bytes);
+        }
+        frame_ = LayoutFrame(fn, outgoing);
+    }
 
     void Write() {
         os_ << "\t.text\n";
         if (fn_.is_global) os_ << "\t.globl " << fn_.name << "\n";
         os_ << fn_.name << ":\n";
         WritePrologue();
-        for (const Instruction& in : fn_.body) WriteInstruction(in);
+        for (size_t i = 0; i < fn_.body.size(); ++i) WriteInstruction(i, fn_.body[i]);
         os_ << ReturnLabel() << ":\n";
         WriteEpilogue();
     }
 
 private:
+    std::vector<TypePtr> ParamTypes() const {
+        std::vector<TypePtr> types;
+        for (const ir::Param& p : fn_.params) types.push_back(p.type);
+        return types;
+    }
+
     std::string ReturnLabel() const { return ".Lret_" + fn_.name; }
 
     void WritePrologue() {
@@ -100,6 +119,31 @@ private:
         EmitMem(os_, "sw", "ra", "sp", size - 4);
         EmitMem(os_, "sw", "s0", "sp", size - 8);
         EmitAddrOffset(os_, "s0", "sp", size);
+        StoreParameters();
+    }
+
+    // Each incoming piece goes to its parameter's home. A stack piece is in
+    // the caller's outgoing area, which starts at s0.
+    void StoreParameters() {
+        for (size_t i = 0; i < fn_.params.size(); ++i) {
+            int home = frame_.objects.at(fn_.params[i].object);
+            for (const Piece& piece : entry_.args[i].pieces) {
+                std::string reg = "t0";
+                if (piece.where == Piece::Where::IntReg) {
+                    reg = "a" + std::to_string(piece.index);
+                } else {
+                    EmitMem(os_, "lw", "t0", "s0", piece.index);
+                }
+                EmitMem(os_, WordStore(piece.bytes), reg, "s0", home + piece.offset);
+            }
+        }
+    }
+
+    static const char* WordStore(int bytes) {
+        if (bytes == 1) return "sb";
+        if (bytes == 2) return "sh";
+        if (bytes == 4) return "sw";
+        NotYet("a piece of " + std::to_string(bytes) + " bytes");
     }
 
     void WriteEpilogue() {
@@ -119,6 +163,41 @@ private:
             case Operand::Kind::Symbol: os_ << "\tla " << reg << ", " << o.name << "\n"; return;
             default: NotYet("floating constant");
         }
+    }
+
+    // Loads an operand as the psABI wants a value of this piece in a register
+    // or stack word: a narrow integer extended to 32 bits by its C signedness
+    // (which the IR type does not know).
+    void LoadForPiece(const std::string& reg, const Operand& o, const Piece& piece) {
+        int bytes = piece.bytes;
+        if (bytes >= 4) return Load(reg, o);
+        if (o.kind == Operand::Kind::Int) {
+            long mask = (1L << (8 * bytes)) - 1, v = o.int_value & mask;
+            if (piece.is_signed && (v >> (8 * bytes - 1)) & 1) v -= mask + 1;
+            os_ << "\tli " << reg << ", " << v << "\n";
+            return;
+        }
+        if (o.kind != Operand::Kind::Temp) NotYet("narrow operand that is not a temporary");
+        const char* op = bytes == 1 ? (piece.is_signed ? "lb" : "lbu") : (piece.is_signed ? "lh" : "lhu");
+        EmitMem(os_, op, reg, "s0", frame_.temps[o.temp]);
+    }
+
+    // Arguments go to a registers and outgoing stack words, then the call; the
+    // result comes back in a0, already extended, and its slot keeps the bits.
+    void WriteCall(size_t index, const Instruction& in) {
+        const CallLayout& layout = calls_.at(index);
+        for (size_t i = 0; i < in.args.size(); ++i) {
+            for (const Piece& piece : layout.args[i].pieces) {
+                if (piece.where == Piece::Where::IntReg) {
+                    LoadForPiece("a" + std::to_string(piece.index), in.args[i], piece);
+                } else {
+                    LoadForPiece("t0", in.args[i], piece);
+                    EmitMem(os_, "sw", "t0", "sp", piece.index);
+                }
+            }
+        }
+        os_ << "\tcall " << in.callee << "\n";
+        if (in.dst.kind == Operand::Kind::Temp) StoreResult("a0", in.dst);
     }
 
     void StoreResult(const std::string& reg, const Operand& dst) {
@@ -185,7 +264,7 @@ private:
         StoreResult("t0", in.dst);
     }
 
-    void WriteInstruction(const Instruction& in) {
+    void WriteInstruction(size_t index, const Instruction& in) {
         if (ir::IsBinaryArith(in.op)) return WriteBinary(in);
         if (ir::IsCompare(in.op)) return WriteCompare(in);
         if (ir::IsConversion(in.op)) return WriteConversion(in);
@@ -218,8 +297,9 @@ private:
                 // 'j' reaches the whole function; a conditional branch only +-4 KiB.
                 os_ << "\tbeqz t0, 1f\n\tj " << in.label << "\n1:\n\tj " << in.label2 << "\n";
                 return;
+            case Op::Call: return WriteCall(index, in);
             case Op::Ret:
-                if (!in.args.empty()) Load("a0", in.args[0]);
+                if (!in.args.empty()) LoadForPiece("a0", in.args[0], entry_.ret.pieces.at(0));
                 os_ << "\tj " << ReturnLabel() << "\n";
                 return;
             default: NotYet(ir::OpName(in.op));
@@ -228,6 +308,8 @@ private:
 
     const ir::Function& fn_;
     std::ostream& os_;
+    CallLayout entry_;
+    std::map<size_t, CallLayout> calls_;  // by instruction index
     Frame frame_;
 };
 

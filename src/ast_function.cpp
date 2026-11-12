@@ -199,28 +199,26 @@ void GlobalDeclaration::EmitIR(IRGen& gen) const {
     }
 }
 
-// Parameters wait for the calling convention (step 3).
+// Each parameter gets a frame object as its home; the backend fills it from
+// the classifier's pieces (21.5), so the frontend does not know where the
+// arguments arrive.
 void FunctionDefinition::EmitIR(IRGen& gen) const {
     Context& ctx = gen.Ctx();
     auto [name, type] = declarator_.Apply(spec_.Resolve(ctx), ctx);
     if (!type->IsFunction()) throw std::runtime_error("not a function");
     const std::vector<Param>* declared = declarator_.Parameters();
     if (!declared) throw std::runtime_error("'" + name + "' is not a function");
-    if (!ResolveParams(*declared, ctx).types.empty()) {
-        throw std::runtime_error("not in IR yet: function parameters");
-    }
-    if (!type->Base()->IsVoid()) {
-        RequireIrInteger(*type->Base());
-        // A narrow return value must be extended to the caller's convention,
-        // which is the step 3 classifier's job; fail loudly until then.
-        if (type->Base()->Size() < Target().int_size) {
-            throw std::runtime_error("not in IR yet: return type narrower than int");
-        }
-    }
+    ResolvedParams params = ResolveParams(*declared, ctx);
+    if (!type->Base()->IsVoid()) RequireIrScalar(*type->Base());
     ctx.DeclareFunction(name, type);
     ctx.BeginFunction(type->Base());
     gen.BeginFunction(name, storage_ != Storage::Static, type->Base());
     ctx.PushScope();
+    for (size_t i = 0; i < params.types.size(); ++i) {
+        RequireIrScalar(*params.types[i]);
+        ir::Operand home = gen.AddParam(params.names[i], params.types[i]);
+        ctx.Declare(params.names[i], Symbol::IrLocal(params.types[i], home.name));
+    }
     body_->EmitIR(gen);
     ctx.PopScope();
     gen.EndFunction();
@@ -230,6 +228,7 @@ void TranslationUnit::EmitIR(IRGen& gen) const {
     gen.Ctx().PushScope();
     for (const ExternalDeclPtr& decl : decls_) decl->EmitIR(gen);
     gen.Ctx().PopScope();
+    gen.EndModule();
 }
 
 }  // namespace ast

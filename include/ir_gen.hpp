@@ -24,6 +24,9 @@ public:
 
     // A frame object for a local. The returned operand names it uniquely
     // ('x' and a shadowing 'x' become $x.0 and $x.1).
+    // The home of the next parameter, a frame object; the backend fills it
+    // from the incoming registers or stack (21.5).
+    ir::Operand AddParam(const std::string& name, const TypePtr& type);
     ir::Operand AddFrameObject(const std::string& name, const Type& type);
 
     // ---- instructions ----
@@ -33,6 +36,12 @@ public:
     ir::Operand AddressOf(ir::Operand object_or_symbol, long offset = 0);
     ir::Operand Load(ir::IrType type, ir::Operand address);
     void Store(ir::IrType type, ir::Operand value, ir::Operand address);
+    // A call; args are already converted to arg_types. Returns the result, or
+    // an operand of kind None for a void callee.
+    ir::Operand Call(const std::string& callee, const std::vector<ir::Operand>& args,
+                     const std::vector<TypePtr>& arg_types, const TypePtr& ret_type);
+    // After the last function: a callee defined in this module is not external.
+    void EndModule();
     void Return();                      // 'return;'
     void Return(ir::Operand value);
 

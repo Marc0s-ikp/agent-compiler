@@ -13,6 +13,7 @@ public:
         : name_(std::move(name)), args_(std::move(args)) {}
     TypePtr GetType(const Context& ctx) const override;
     void EmitRISC(std::ostream& os, Context& ctx) const override;
+    ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
     // The type each argument is converted to: the declared parameter type if

@@ -172,7 +172,7 @@ using ir::Operand;
 // The address is evaluated first, then the right side, as on the old path.
 Operand Assign::EmitValue(IRGen& gen) const {
     TypePtr type = GetType(gen.Ctx());
-    RequireIrInteger(*type);
+    RequireIrScalar(*type);
     Operand address = lhs_->EmitIRAddress(gen);
     Operand value = ValueAs(gen, *rhs_, *type);
     gen.Store(IRGen::ToIr(*type), value, address);

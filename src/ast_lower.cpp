@@ -15,6 +15,11 @@ const Type& RequireIrInteger(const Type& type) {
     return type;
 }
 
+const Type& RequireIrScalar(const Type& type) {
+    if (!type.IsInteger() && !type.IsPointer()) throw std::runtime_error("not in IR yet: this type");
+    return type;
+}
+
 namespace {
 
 Op ArithOp(BinOp op, bool is_signed) {
@@ -43,7 +48,13 @@ Operand Arith(IRGen& gen, BinOp op, const Type& common, Operand a, Operand b) {
 // Evaluates 'e' and converts it to 'to' (an integer type).
 Operand ValueAs(IRGen& gen, const Expr& e, const Type& to) {
     TypePtr from = e.ValueType(gen.Ctx());
-    RequireIrInteger(*from);
+    RequireIrScalar(*from);
+    RequireIrScalar(to);
+    if (from->IsPointer() || to.IsPointer()) {
+        // Pointers are only passed through until step 4 (ptrtoint, inttoptr).
+        if (!from->IsPointer() || !to.IsPointer()) throw std::runtime_error("not in IR yet: pointer conversion");
+        return e.EmitValue(gen);
+    }
     return gen.ConvertInt(e.EmitValue(gen), *from, to);
 }
  

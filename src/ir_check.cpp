@@ -18,6 +18,7 @@ public:
         : module_(module), fn_(fn), errors_(errors), defined_(fn.temps.size(), false) {}
 
     void Run() {
+        CheckParams();
         for (index_ = 0; index_ < static_cast<int>(fn_.body.size()); ++index_) {
             CheckInstruction(fn_.body[index_]);
         }
@@ -67,6 +68,18 @@ private:
             case Operand::Kind::Float:
                 if (!IsFloatType(o.type)) Error("floating constant with type " + std::string(TypeName(o.type)));
                 return;
+        }
+    }
+
+    // Each parameter's home must be one of the function's frame objects.
+    void CheckParams() {
+        for (const Param& p : fn_.params) {
+            bool found = false;
+            for (const FrameObject& o : fn_.objects) found = found || o.name == p.object;
+            if (!found) {
+                errors_.push_back("function '" + fn_.name + "': parameter home $" + p.object +
+                                  " is not a frame object");
+            }
         }
     }
 
@@ -226,8 +239,38 @@ private:
             case Op::Ret:
                 CheckRet(in);
                 return false;
+            case Op::Call: return CheckCall(in, result);
             default: return false;
         }
+    }
+
+    bool IsFunction(const std::string& name) const {
+        for (const Function& f : module_.functions) if (f.name == name) return true;
+        return module_.externals.count(name) > 0;
+    }
+
+    // The callee is a function of the module or an external; each argument has
+    // the IR type of its C type; the result has the IR type of the return type.
+    bool CheckCall(const Instruction& in, IrType& result) {
+        if (!IsFunction(in.callee)) Error("unknown function " + in.callee);
+        if (!in.ret_type) {
+            Error("missing return type");
+            return false;
+        }
+        if (in.args.size() != in.arg_types.size()) {
+            Error("expected " + std::to_string(in.arg_types.size()) + " arguments, found " +
+                  std::to_string(in.args.size()));
+        } else {
+            for (size_t i = 0; i < in.args.size(); ++i) {
+                RequireType(in.args[i], IrTypeOf(*in.arg_types[i]), "argument");
+            }
+        }
+        if (in.ret_type->IsVoid()) return false;
+        result = IrTypeOf(*in.ret_type);
+        if (in.type != result) {
+            Error(std::string("result has type ") + TypeName(in.type) + ", expected " + TypeName(result));
+        }
+        return true;
     }
 
     void CheckJumpTargets() {
