@@ -44,7 +44,13 @@ struct CallLayout {
     int stack_bytes = 0;         // size of the outgoing stack argument area
 };
 
-// The active target's classifier. When a hidden result pointer is used, it is
-// part of 'ret', and the argument pieces already account for the registers it
-// takes.
-CallLayout Classify(const std::vector<TypePtr>& params, const TypePtr& ret);
+// The calling convention of one target. Callers (frontend and backend) reach
+// it as Target().Abi().Classify(...); SetTarget picks the object, so several
+// targets' ABIs can live in one binary. When a hidden result pointer is used,
+// it is part of 'ret', and the argument pieces already account for the
+// registers it takes.
+class TargetAbi {
+public:
+    virtual ~TargetAbi() = default;
+    virtual CallLayout Classify(const std::vector<TypePtr>& params, const TypePtr& ret) const = 0;
+};

@@ -2,12 +2,16 @@
 # Runs the random ABI check for every caller/callee combination.
 # Must run where riscv64-unknown-elf-gcc and spike exist (the Docker image).
 # Usage: tests/abi_check/run_abi.sh SEED COUNT [GCC_OPT...]
-# Combos: ours->ours, ours->gcc, gcc->ours, gcc->gcc for each GCC_OPT (default -O0 -O2).
+# Combos: ours->ours, ours->gcc, gcc->ours, gcc->gcc for each GCC_OPT (-O2 is always included; default -O0 -O2).
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 SEED=$1; COUNT=$2; shift 2
-if [ "$#" -eq 0 ]; then OPTS=(-O0 -O2); else OPTS=("$@"); fi
+# GCC -O2 is mandatory (-O0 GCC re-extends narrow values and hides bugs):
+# it is always in the list, once, even if the caller passes it too.
+OPTS=("$@")
+[ "$#" -eq 0 ] && OPTS=(-O0)
+case " ${OPTS[*]} " in *" -O2 "*) ;; *) OPTS+=(-O2) ;; esac
 GCC="riscv64-unknown-elf-gcc -march=rv32imfd -mabi=ilp32d"
 OURS="build/c_compiler ${OURS_FLAGS:---ir}"
 OUT="tests/abi_check/out/seed$SEED"

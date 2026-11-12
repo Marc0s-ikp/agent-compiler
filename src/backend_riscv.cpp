@@ -83,12 +83,12 @@ public:
     // One Classify call for the function's own entry and one for each call
     // (D5, 21.5); the frame layout needs the calls' stack sizes first.
     FunctionWriter(const ir::Function& fn, std::ostream& os) : fn_(fn), os_(os) {
-        entry_ = Classify(ParamTypes(), fn.c_return);
+        entry_ = Target().Abi().Classify(ParamTypes(), fn.c_return);
         int outgoing = 0;
         for (size_t i = 0; i < fn.body.size(); ++i) {
             const Instruction& in = fn.body[i];
             if (in.op != Op::Call) continue;
-            calls_[i] = Classify(in.arg_types, in.ret_type);
+            calls_[i] = Target().Abi().Classify(in.arg_types, in.ret_type);
             outgoing = std::max(outgoing, calls_[i].stack_bytes);
         }
         frame_ = LayoutFrame(fn, outgoing);

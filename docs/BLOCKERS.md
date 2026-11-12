@@ -206,7 +206,7 @@ From the step 2 review (2026-11-11, approved in round 1). None of these blocked 
 
 From the step 3 review (2026-11-12, approved in round 1). None of these blocked the merge.
 
-1. **`Classify` is a free function** (`include/call_abi.hpp`, `src/call_abi_riscv.cpp`). Fine while there is one target, but a second target's `Classify` would not link, and `--target` selects at run time. Before a second backend: `riscv::Classify`, or call it through the backend. Part of D25, which is pending Marcus.
+1. **RESOLVED (D25 accepted, ir/4): `Classify` is now `Target().Abi().Classify` via `RiscV32Abi`.** Was: **`Classify` is a free function** (`include/call_abi.hpp`, `src/call_abi_riscv.cpp`). Fine while there is one target, but a second target's `Classify` would not link, and `--target` selects at run time. Before a second backend: `riscv::Classify`, or call it through the backend. Part of D25, which is pending Marcus.
 2. **Work steps 5 and 6 must do in the backend, not in the interface:** `WriteCall`/`LoadForPiece` ignore `piece.offset`, `by_reference`, `FloatReg`, and an operand that is a `Ptr` to a struct copy; `StoreParameters` handles only integer registers and stack words of 4 bytes or less. `PlaceArg`/`PlaceReturn` in `src/call_abi_riscv.cpp` must go through `ArgPieces`/`ClassifyReturn` and copy `loc.by_reference` rather than grow their own mapping, or the record rules will exist twice. `IrTypeOf` throws on records although `CheckCall`/`IRGen::Call` call it for struct arguments. `ir::Instruction` has no `result_object` (21.5).
 3. `CheckCall`'s "unknown function" check cannot fire, because `IRGen::Call` adds every callee to `externals`. Drop it or explain it.
 4. `WordStore` also returns `sb`/`sh`; the name is misleading.

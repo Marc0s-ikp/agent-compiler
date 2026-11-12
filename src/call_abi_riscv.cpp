@@ -1,4 +1,4 @@
-#include "call_abi.hpp"
+#include "call_abi_riscv.hpp"
 
 #include <algorithm>
 #include <stdexcept>
@@ -40,7 +40,7 @@ RetPlace PlaceReturn(const Type& type) {
 
 }  // namespace
 
-CallLayout Classify(const std::vector<TypePtr>& params, const TypePtr& ret) {
+CallLayout RiscV32Abi::Classify(const std::vector<TypePtr>& params, const TypePtr& ret) const {
     CallLayout layout;
     layout.ret = PlaceReturn(*ret);
     std::vector<ArgLoc> locs = ClassifyArgs(params, layout.ret.in_memory);
