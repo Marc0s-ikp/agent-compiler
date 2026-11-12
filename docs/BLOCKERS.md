@@ -117,8 +117,10 @@ For feature 8: DONE (D19). `src/local_init.cpp` now zeroes structs and unions as
 
 - `long double` and the `L` suffix on a floating literal are rejected. Hex floating literals do not lex.
 - `LogicalAnd`, `LogicalOr` and `Ternary` have no `EvalConstValue`, so `double d = 1 ? 2.0 : 3.0;` at file scope is rejected.
-- A double split across a7 and the stack is not tested against GCC: GCC's own callee reads it with a misaligned `fld`
-  that gives a wrong value under spike pk. `tests/custom/float_split_double.c` checks our caller against our callee.
+- A GCC callee that reads a double split across a7 and the stack uses a misaligned `fld`, which spike pk emulates
+  wrongly (GCC to GCC fails too). `tests/custom/ir_float_split_a7.c` is the real split test (ours to ours, GCC caller
+  to our callee); `float_split_double.c` does not split (its double travels in fa0). Since v3 step 5, `tests/abi_check`
+  checks split doubles in all four caller/callee combinations, reading them byte by byte in the callee.
 - Constant folding of an out-of-range floating value (`int x = 1e20;`) is rejected as "not a constant" instead of
   saturating, and a literal beyond double's range becomes infinity without a warning.
 - Nice to have (feature 7 review): `Cast::EvalConst` only folds integer operands, so a cast of a floating constant is
@@ -239,3 +241,16 @@ From the step 4 review (2026-11-12, approved). None of these blocked the merge.
 7. `Context` includes `ir.hpp` and owns `ExportGlobals`/`ExportStrings`. Step 7 must decide where they live (an `ir` data builder, or a frontend module).
 8. Uninitialised globals go to `.data` with `.zero`, not `.bss`.
 9. `GlobalInit` carries both the directive text and the data items until step 7.
+
+## Nice to have from the v3 step 5 review
+
+From the step 5 review (2026-11-12, approved in round 1). None of these blocked the merge.
+
+1. `WriteConversion` (`src/backend_riscv.cpp`) picks out float conversions with `in.op >= Op::IToF && in.op <= Op::FTrunc`,
+   which depends on the order of the `Op` enum. A named `IsFloatConversion(Op)` next to `IsConversion` in `ir.hpp` would be clearer.
+2. Double to `unsigned char`/`unsigned short` goes through `fcvt.w` (signed) and then truncates. Correct for every in-range
+   value (out-of-range is undefined in C), but the reason needs a comment.
+3. `LoadFloatWord` calls `NotYet` for a float operand that is not a temporary. Fine while the frontend always loads float
+   constants into a temporary; revisit if a backend takes floating `const` operands.
+4. The backend rejects `itof`/`ftoi` on integers that are not 32 bits, while the checker allows `I64`. Needed once `long`
+   is 64 bits or `long long` exists.

@@ -635,11 +635,17 @@ have).
   true for both, as C requires. `>` and `>=` swap the operands of `flt`/`fle`. No new IR op was added.
 - **Float `++`/`--`** add or subtract a pooled 1.0 in the float's own type. Float `%`, shifts and `~`
   throw "invalid operands".
-- **Random ABI check** (`tests/abi_check`) now draws `float` and `double` parameters and returns. Seeds
-  101, 202, 303, 404 x 300 signatures pass in all combinations, GCC -O0 and -O2.
-- **Split double and GCC.** GCC 12.2 compiles a callee for "eight doubles, seven ints, a double, an int"
-  that saves a7 at `12(s0)`, loads the double from there and the next int from `20(s0)`, while GCC's
-  own caller writes the high word at `0(sp)` and the int at `4(sp)`. So GCC disagrees with itself and
+- **Random ABI check** (`tests/abi_check`) now draws `float` and `double` parameters and returns. The
+  implementer's first version never produced a signature that uses up fa0-fa7, so its passing runs did
+  not exercise those cases. The reviewer's `gen_params` (`fp_heavy` and `split` shapes) does: per 300
+  signatures about 150 exhaust fa0-fa7, 42-62 put a double in an integer pair, 72-97 split a double
+  across a7 and the stack, about 25 put a double on the stack. Seeds 101-505 x 300 pass in all four
+  caller/callee combinations, GCC -O0 and -O2. A split double is checked byte by byte in the callee.
+- **Split double and GCC (corrected by the review).** GCC follows the psABI on both sides: its caller
+  puts the low word in a7 and the high word at `0(sp)`, and its callee stores a7 just below the incoming
+  stack area and reads the double with one `fld` from there. That address is 4 mod 8, and spike pk
+  emulates a misaligned `fld` wrongly, so a GCC callee reading a split double fails under pk (GCC to GCC
+  fails too). Our callee stores the two words with `sw` into an 8-aligned home and is unaffected. So
   `tests/custom/ir_float_split_a7.c` checks ours-to-ours and GCC-caller-to-our-callee only. NOTE:
   the older `float_split_double.c` does not actually produce a split, because its double finds fa0
   free and travels in fa0; `ir_float_split_a7.c` is the real a7 split.
