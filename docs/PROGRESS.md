@@ -39,6 +39,7 @@ Next: v3 step 6, structs and unions.
 | 5c review: `abi_check` exhausts fa registers and splits doubles, split-double docs corrected | 304/304 | 256/304 |
 | 5d custom test `ir_float_round_nearest` | 305/305 | 257/305 |
 | 6a structs and unions without calls: struct value = Ptr, member access, struct assignment (memcpy), local/global initialisers, `?:` on structs, `result_object` in the IR | 305/305 | 283/305 |
+| 6b struct classifier rows (`RiscV32Abi`: integer words, a7 split, stack, `Fields`, by reference, hidden return pointer), backend pieces by offset, struct arguments and returns | 305/305 | 305/305 |
 
 ## Pass count by category
 | Category | Passing | Total |

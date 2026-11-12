@@ -60,6 +60,7 @@ int RoundUp(int value, int multiple) { return (value + multiple - 1) / multiple 
 struct Frame {
     std::map<std::string, int> objects;  // name -> offset from s0
     std::vector<int> temps;              // temp id -> offset from s0
+    int return_pointer = 0;              // the saved hidden result pointer, if any
     int size = 0;                        // multiple of the stack alignment
 
     int used = 8;  // bytes below s0 handed out so far (ra and s0)
@@ -70,8 +71,9 @@ struct Frame {
     }
 };
 
-Frame LayoutFrame(const ir::Function& fn, int outgoing_bytes) {
+Frame LayoutFrame(const ir::Function& fn, int outgoing_bytes, bool hidden_pointer) {
     Frame frame;
+    if (hidden_pointer) frame.return_pointer = frame.Reserve(Target().pointer_size, Target().pointer_size);
     for (const ir::FrameObject& o : fn.objects) frame.objects[o.name] = frame.Reserve(o.size, o.align);
     for (ir::IrType t : fn.temps) frame.temps.push_back(frame.Reserve(ir::SizeOf(t), ir::SizeOf(t)));
     frame.size = RoundUp(frame.used + outgoing_bytes, Target().stack_align);
@@ -126,7 +128,7 @@ public:
             calls_[i] = Target().Abi().Classify(in.arg_types, in.ret_type);
             outgoing = std::max(outgoing, calls_[i].stack_bytes);
         }
-        frame_ = LayoutFrame(fn, outgoing);
+        frame_ = LayoutFrame(fn, outgoing, entry_.ret.in_memory);
     }
 
     void Write() {
@@ -154,16 +156,138 @@ private:
         EmitMem(os_, "sw", "ra", "sp", size - 4);
         EmitMem(os_, "sw", "s0", "sp", size - 8);
         EmitAddrOffset(os_, "s0", "sp", size);
+        if (entry_.ret.in_memory) {  // the caller's result object, kept for 'ret'
+            EmitMem(os_, "sw", IntRegName(entry_.ret.pointer), "s0", frame_.return_pointer);
+        }
         StoreParameters();
     }
+
+    static std::string IntRegName(const Piece& piece) { return "a" + std::to_string(piece.index); }
+    static std::string FloatRegName(const Piece& piece) { return "fa" + std::to_string(piece.index); }
 
     // Each incoming piece goes to its parameter's home. A stack piece is in
     // the caller's outgoing area, which starts at s0.
     void StoreParameters() {
         for (size_t i = 0; i < fn_.params.size(); ++i) {
             int home = frame_.objects.at(fn_.params[i].object);
+            const Type& type = *fn_.params[i].type;
+            if (type.IsRecord()) {
+                StoreRecordParameter(entry_.args[i], type, home);
+                continue;
+            }
             for (const Piece& piece : entry_.args[i].pieces) StoreIncomingPiece(piece, home);
         }
+    }
+
+    // ---- structs and unions (D19, 21.5) ----
+    // A struct is always memory in the IR: its value is the address of an
+    // object. Only at a call, an entry and a return is it split into pieces,
+    // each with its byte offset inside the struct.
+
+    // A piece that is a whole record on the stack, not a part of one.
+    static bool IsWholeStackRecord(const Piece& piece, const Type& record) {
+        return piece.where == Piece::Where::StackWord && piece.offset == 0 && piece.bytes == record.Size();
+    }
+
+    // The pointer of a by-reference argument, as it arrives.
+    void LoadIncomingPointer(const std::string& reg, const Piece& piece) {
+        if (piece.where == Piece::Where::IntReg) {
+            os_ << "\tmv " << reg << ", " << IntRegName(piece) << "\n";
+        } else {
+            EmitMem(os_, "lw", reg, "s0", piece.index);
+        }
+    }
+
+    // By reference: copy from the caller's copy into the home. Otherwise each
+    // piece is stored at its offset in the home (a stack word is read from the
+    // caller's outgoing area at s0 + index).
+    void StoreRecordParameter(const ArgPlace& place, const Type& type, int home) {
+        if (place.by_reference) {
+            LoadIncomingPointer("t1", place.pieces.at(0));
+            EmitAddrOffset(os_, "t2", "s0", home);
+            return EmitCopyMem(os_, "t2", "t1", type.Size(), type.Align());
+        }
+        for (const Piece& piece : place.pieces) StoreIncomingRecordPiece(piece, type, home);
+    }
+
+    void StoreIncomingRecordPiece(const Piece& piece, const Type& type, int home) {
+        int dst = home + piece.offset;
+        switch (piece.where) {
+            case Piece::Where::FloatReg:
+                return EmitMem(os_, piece.bytes == 8 ? "fsd" : "fsw", FloatRegName(piece), "s0", dst);
+            case Piece::Where::IntReg:
+                return EmitStoreBytes(os_, IntRegName(piece), piece.bytes, type.Align(), "s0", dst);
+            case Piece::Where::StackWord:
+                if (IsWholeStackRecord(piece, type)) {
+                    EmitAddrOffset(os_, "t1", "s0", piece.index);
+                    EmitAddrOffset(os_, "t2", "s0", home);
+                    return EmitCopyMem(os_, "t2", "t1", piece.bytes, type.Align());
+                }
+                EmitMem(os_, "lw", "t1", "s0", piece.index);  // the high part after an a7 split
+                return EmitStoreBytes(os_, "t1", piece.bytes, type.Align(), "s0", dst);
+        }
+    }
+
+    // The caller: the operand is the address of the argument's copy. By
+    // reference it is passed as it is; otherwise the pieces are loaded from it.
+    void PlaceOutgoingRecord(const Operand& o, const ArgPlace& place, const Type& type) {
+        if (place.by_reference) return PlaceOutgoingPointer(o, place.pieces.at(0));
+        Load("t1", o);
+        for (const Piece& piece : place.pieces) PlaceOutgoingRecordPiece(piece, type);
+    }
+
+    void PlaceOutgoingPointer(const Operand& o, const Piece& piece) {
+        if (piece.where == Piece::Where::IntReg) return Load(IntRegName(piece), o);
+        Load("t0", o);
+        EmitMem(os_, "sw", "t0", "sp", piece.index);
+    }
+
+    // The struct's address is in t1.
+    void PlaceOutgoingRecordPiece(const Piece& piece, const Type& type) {
+        switch (piece.where) {
+            case Piece::Where::FloatReg:
+                return EmitMem(os_, piece.bytes == 8 ? "fld" : "flw", FloatRegName(piece), "t1", piece.offset);
+            case Piece::Where::IntReg:
+                return EmitLoadBytes(os_, IntRegName(piece), piece.bytes, piece.is_signed, type.Align(), "t1", piece.offset);
+            case Piece::Where::StackWord:
+                if (IsWholeStackRecord(piece, type)) {
+                    EmitAddrOffset(os_, "t2", "sp", piece.index);
+                    return EmitCopyMem(os_, "t2", "t1", piece.bytes, type.Align());
+                }
+                EmitLoadBytes(os_, "t2", piece.bytes, false, type.Align(), "t1", piece.offset);
+                return EmitMem(os_, "sw", "t2", "sp", piece.index);
+        }
+    }
+
+    // After the call: the returned pieces are in a0, a1, fa0, fa1; store them
+    // into the call's result object. A hidden pointer needs nothing.
+    void SaveReturnedRecord(const RetPlace& ret, const Instruction& in) {
+        if (ret.in_memory) return;
+        const Type& type = *in.ret_type;
+        Load("t1", in.result_object);
+        for (const Piece& piece : ret.pieces) {
+            if (piece.where == Piece::Where::FloatReg) {
+                EmitMem(os_, piece.bytes == 8 ? "fsd" : "fsw", FloatRegName(piece), "t1", piece.offset);
+            } else {
+                EmitStoreBytes(os_, IntRegName(piece), piece.bytes, type.Align(), "t1", piece.offset);
+            }
+        }
+    }
+
+    // 'ret' of a struct: the operand is the address of the value. Through the
+    // hidden pointer it is copied there (and the pointer comes back in a0);
+    // otherwise the pieces are loaded into the return registers.
+    void LoadReturnRecord(const Operand& value) {
+        const Type& type = *fn_.c_return;
+        if (entry_.ret.in_memory) {
+            EmitMem(os_, "lw", "t1", "s0", frame_.return_pointer);
+            Load("t2", value);
+            EmitCopyMem(os_, "t1", "t2", type.Size(), type.Align());
+            os_ << "\tmv " << IntRegName(entry_.ret.pointer) << ", t1\n";
+            return;
+        }
+        Load("t1", value);
+        for (const Piece& piece : entry_.ret.pieces) PlaceOutgoingRecordPiece(piece, type);
     }
 
     // An fa register is stored as a float or double; an a register as a word
@@ -261,16 +385,24 @@ private:
     // the bits) or fa0.
     void WriteCall(size_t index, const Instruction& in) {
         const CallLayout& layout = calls_.at(index);
+        if (layout.ret.in_memory) Load(IntRegName(layout.ret.pointer), in.result_object);
         for (size_t i = 0; i < in.args.size(); ++i) {
+            if (in.arg_types[i]->IsRecord()) {
+                PlaceOutgoingRecord(in.args[i], layout.args[i], *in.arg_types[i]);
+                continue;
+            }
             for (const Piece& piece : layout.args[i].pieces) PlaceOutgoingPiece(in.args[i], piece);
         }
         os_ << "\tcall " << in.callee << "\n";
         if (in.dst.kind == Operand::Kind::Temp) {
             StoreResult(ir::IsFloatType(in.dst.type) ? "fa0" : "a0", in.dst);
+        } else if (in.ret_type->IsRecord()) {
+            SaveReturnedRecord(layout.ret, in);
         }
     }
 
     void LoadReturnValue(const Operand& value) {
+        if (fn_.c_return->IsRecord()) return LoadReturnRecord(value);
         const Piece& piece = entry_.ret.pieces.at(0);
         if (piece.where == Piece::Where::FloatReg) return Load("fa0", value);
         LoadForPiece("a0", value, piece);
