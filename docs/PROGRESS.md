@@ -12,8 +12,8 @@
 
 ## Latest session
 Pass count: default 293/293 before, 299/299 after (86 of 86 compiler_tests, 213 of 213 custom). `--ir` 135/293 before, 226/299 after. No previously passing test fails on either path (checked per test against the baselines at every commit).
-Fixed: v3 step 4 (arrays, pointers, globals). Neutral label and data-symbol names in the IR with the backend alone spelling `.L` labels; `ptradd`/`ptrtoint`/`inttoptr` and all pointer forms; arrays, Index, Deref, AddressOf, local array initialisers, `memzero`; `sizeof`; globals and static locals as module data entries built from the old initialiser walk; string literals as read-only compiler-made entries. New custom tests `ir_pointer_forms`, `ir_neg_index`, `ir_unsigned_index`, `ir_ptr_difference`, `ir_addr_of_elem`, `ir_global_ptr_elem`.
-Blocked: nothing. Every remaining `--ir` failure uses float/double or struct/union (steps 5 and 6).
+Fixed: D25 accepted with Marcus's change (`Target().Abi().Classify` through `RiscV32Abi`, chosen in `SetTarget`; `abi_check` always runs GCC -O2). v3 step 4 (arrays, pointers, globals). Neutral label and data-symbol names in the IR with the backend alone spelling `.L` labels; `ptradd`/`ptrtoint`/`inttoptr` and all pointer forms; arrays, Index, Deref, AddressOf, local array initialisers, `memzero`; `sizeof`; globals and static locals as module data entries built from the old initialiser walk; string literals as read-only compiler-made entries. New custom tests `ir_pointer_forms`, `ir_neg_index`, `ir_unsigned_index`, `ir_ptr_difference`, `ir_addr_of_elem`, `ir_global_ptr_elem`.
+Blocked: nothing. Review approved in round 1; notes under "Nice to have from the v3 step 4 review" in docs/BLOCKERS.md. Every remaining `--ir` failure uses float/double or struct/union (steps 5 and 6).
 Next: v3 step 5, float and double.
 
 ## v3 migration (IR path)
@@ -33,6 +33,7 @@ Next: v3 step 5, float and double.
 | 3b calls and ABI: IR `call`, parameters, outgoing area, classifier (D25), narrow returns; custom tests `ir_call_stack_args`, `ir_call_params`, `ir_recursion` | 293/293 | 135/293 |
 | 4a neutral names, ptradd/ptrtoint/inttoptr, arrays, pointers, sizeof (custom test `ir_pointer_forms`) | 294/294 | 176/294 |
 | 4b globals and static locals as data entries, string literals as entries; custom tests `ir_neg_index`, `ir_unsigned_index`, `ir_ptr_difference`, `ir_addr_of_elem`, `ir_global_ptr_elem` | 299/299 | 226/299 |
+| 4c review fixes: `ir_addr_of_elem` checked against GCC-computed addresses, docs | 299/299 | 226/299 |
 
 ## Pass count by category
 | Category | Passing | Total |
