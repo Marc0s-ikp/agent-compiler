@@ -104,16 +104,15 @@ public:
     // Starts a function: records its return type for 'return'.
     void BeginFunction(const TypePtr& return_type);
 
-    // Control. A loop sets both targets; a switch (feature 5) will set only
-    // break, so 'continue' inside a switch still finds the enclosing loop.
+    // Control. A loop sets both targets; a switch sets only break, so 'continue' inside a switch still finds the enclosing loop.
     void PushLoop(const std::string& break_label,
                   const std::string& continue_label);
     void PopLoop();
     const std::string& BreakLabel() const;
     const std::string& ContinueLabel() const;
 
-    // Switch. The dispatch is written after the body (the body is buffered),
-    // so each case registers its value here and gets a label back.
+    // Switch. The dispatch is written after the body, so each case registers
+    // its value here and gets a label back.
     // 'break' finds the switch through the same stack as loops; 'continue'
     // does not, because only PushLoop sets a continue target.
     struct SwitchInfo {
@@ -135,9 +134,10 @@ public:
     // never clashes with one. The backend alone decides how they are spelled
     // in assembler.
     std::string NewLabel(const std::string& prefix);
-    std::string NewSymbolName(const std::string& prefix);
 
 private:
+    std::string NewSymbolName(const std::string& prefix);  // "str.3"
+
     struct GlobalVar {
         std::string name;          // the label
         TypePtr type;
