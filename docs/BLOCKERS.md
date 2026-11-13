@@ -283,3 +283,18 @@ From the step 7 review (2026-11-12, approved in round 1). None of these blocked 
    registers today; a consistency fix (predates step 7).
 3. DONE. `main.cpp`: a trailing `-o` with no value is reported as "unknown option '-o'" rather than "-o needs a value"
    (still exits 1).
+
+## Nice to have from the cleanup before AArch64 review
+
+From the review of `cleanup/pre-aarch64` (2026-11-13, approved in round 1). None of these blocked the merge.
+
+1. `PointerDifference` (`src/ast_lower.cpp`) passes `gen.PtrToInt(a)` and `gen.PtrToInt(b)` as arguments of one call, so
+   their temp numbering depends on the host compiler's argument order. Correct either way; named locals would make it fixed.
+   Predates the branch.
+2. The DONE entries in "Required before AArch64" keep the original problem text after the DONE note.
+3. `scripts/run_tests.sh` and `tests/abi_check/run_abi.sh` each hold the TARGET-to-toolchain mapping; they must be kept
+   in step by hand. A DECISIONS.md line could record this, `Type::PtrDiff` and the switch type in `SwitchInfo`.
+4. Under `TARGET=aarch64`, abi_check's model is still ilp32d, so "every case hit" says nothing about AArch64 (the README
+   says so). `run_abi.sh` could refuse aarch64 until an AAPCS64 model exists.
+5. If the image lacks a target's toolchain, `run_tests.sh` inside the container tries to re-exec into Docker and fails
+   with "docker: not found". Predates the branch.
