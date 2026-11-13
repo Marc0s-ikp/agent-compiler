@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Runs the random ABI check for every caller/callee combination.
-# Must run where riscv64-unknown-elf-gcc and spike exist (the Docker image).
-# Usage: tests/abi_check/run_abi.sh SEED COUNT [GCC_OPT...]
+# Must run where the target's toolchain exists (the Docker image).
+# Usage: [TARGET=riscv32|aarch64] tests/abi_check/run_abi.sh SEED COUNT [GCC_OPT...]
+# TARGET (default riscv32) is passed to ours as --target and picks GCC, link flags
+# and simulator: riscv64-unknown-elf-gcc and spike pk, or aarch64-linux-gnu-gcc
+# -static and qemu-aarch64 (as scripts/run_tests.sh).
 # Combos: ours->ours, ours->gcc, gcc->ours, gcc->gcc for each GCC_OPT (-O2 is always included; default -O0 -O2).
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -12,8 +15,13 @@ SEED=$1; COUNT=$2; shift 2
 OPTS=("$@")
 [ "$#" -eq 0 ] && OPTS=(-O0)
 case " ${OPTS[*]} " in *" -O2 "*) ;; *) OPTS+=(-O2) ;; esac
-GCC="riscv64-unknown-elf-gcc -march=rv32imfd -mabi=ilp32d"
-OURS="build/c_compiler ${OURS_FLAGS:-}"
+TARGET="${TARGET:-riscv32}"
+case "$TARGET" in
+  riscv32) GCC="riscv64-unknown-elf-gcc -march=rv32imfd -mabi=ilp32d"; LINK_FLAGS=""; SIM="spike pk" ;;
+  aarch64) GCC="aarch64-linux-gnu-gcc"; LINK_FLAGS="-static"; SIM="qemu-aarch64" ;;
+  *) echo "unknown TARGET '$TARGET' (riscv32 or aarch64)"; exit 2 ;;
+esac
+OURS="build/c_compiler --target $TARGET ${OURS_FLAGS:-}"
 OUT="tests/abi_check/out/seed$SEED"
 mkdir -p "$OUT"
 # ELFs of an earlier run of this seed are stale (the loop below skips an existing ELF).
@@ -29,8 +37,8 @@ for opt in "${OPTS[@]}"; do
     set -- $combo
     elf="$OUT/$1_to_$2.elf"
     [ -f "$elf" ] && continue
-    $GCC -O0 -o "$elf" "$OUT/caller_$1.s" "$OUT/callee_$2.s" "$OUT/driver.c" || { echo "link failed $combo"; status=1; continue; }
-    result=$(timeout 60 spike pk "$elf" 2>&1); rc=$?
+    $GCC -O0 $LINK_FLAGS -o "$elf" "$OUT/caller_$1.s" "$OUT/callee_$2.s" "$OUT/driver.c" || { echo "link failed $combo"; status=1; continue; }
+    result=$(timeout 60 $SIM "$elf" 2>&1); rc=$?
     nfail=$(grep -c '^FAIL' <<<"$result")
     echo "seed $SEED caller=$1 callee=$2: rc=$rc failures=$nfail $(grep '^abi:' <<<"$result")"
     grep '^FAIL' <<<"$result" | head -20

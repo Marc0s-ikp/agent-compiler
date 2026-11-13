@@ -8,11 +8,14 @@ derived from them; the caller checks it. Mismatches call `abi_fail` in the drive
 `run_abi.sh SEED COUNT [GCC_OPT...]` builds caller and callee with ours (`build/c_compiler`,
 extra flags via `OURS_FLAGS`) and with GCC at each option (default `-O0 -O2`; `-O2` is always run, added if you pass other options, never twice), links all four
 combinations (ours->ours, ours->gcc, gcc->ours, gcc->gcc) and runs them under `spike pk`.
+`TARGET` (default `riscv32`) selects the target as in `scripts/run_tests.sh`: it is passed to ours as
+`--target`, and `TARGET=aarch64` builds with `aarch64-linux-gnu-gcc`, links with `-static` and runs under
+`qemu-aarch64`. The generator's register model (`classify`, below) is the ilp32d one either way.
 `-O2` is mandatory on the GCC side: `-O0` GCC re-extends narrow values and hides missing extensions.
 
 Run from the repo root (output goes to `tests/abi_check/out/`, delete it afterwards):
 
-    docker run --rm --entrypoint "" -v "$PWD":/w -w /w agent-compiler:latest bash -c \
+    docker run --rm --entrypoint "" --user "$(id -u):$(id -g)" -v "$PWD":/w -w /w agent-compiler:latest bash -c \
       'export PATH=$PATH:/opt/riscv/bin; make build/c_compiler && \
        for s in 101 202 303; do tests/abi_check/run_abi.sh $s 300; done'
 
