@@ -9,7 +9,7 @@ namespace ast {
 // The compile-time twin of the run-time conversions (D6, D18): converts a constant to type
 // 'to' with the same C rules (truncation toward zero, wrapping
 // to the width of an integer type, rounding to float). An address keeps its
-// label when it stays 4 bytes wide. Returns nullopt if the value cannot be
+// label when it stays pointer-wide (Target().pointer_size). Returns nullopt if the value cannot be
 // represented as a constant of that type (an address as a float, or a
 // floating value too large for an integer).
 std::optional<ConstValue> ConvertConst(const ConstValue& value, const Type& to);
