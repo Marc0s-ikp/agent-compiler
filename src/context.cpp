@@ -90,7 +90,6 @@ void Context::DeclareFunction(const std::string& name,
 
 void Context::BeginFunction(const TypePtr& return_type) {
     return_type_ = return_type;
-    ++label_count_;  // a function used to take its return label here; the numbers stay as they were
 }
 
 std::string Context::NewLabel(const std::string& prefix) {
@@ -252,9 +251,10 @@ void Context::ExportFloats(ir::Module& module) const {
     }
 }
 
-void Context::PushSwitch(const std::string& break_label) {
+void Context::PushSwitch(const std::string& break_label, const TypePtr& type) {
     break_labels_.push_back(break_label);
     switches_.emplace_back();
+    switches_.back().type = type;
 }
 
 Context::SwitchInfo Context::PopSwitch() {
@@ -264,12 +264,13 @@ Context::SwitchInfo Context::PopSwitch() {
     return info;
 }
 
-// Case values are compared as 32-bit integers, so they are wrapped to that
-// width first; two labels that wrap to the same value are duplicates.
+// A case value is converted to the promoted type of the controlling
+// expression (C90 6.6.4.2), so it is wrapped to that type's width and
+// signedness first; two labels that wrap to the same value are duplicates.
 std::string Context::AddCase(long value) {
     if (switches_.empty()) throw std::runtime_error("case outside switch");
     SwitchInfo& info = switches_.back();
-    long wrapped = ast::WrapToType(value, *Type::Int());
+    long wrapped = ast::WrapToType(value, *info.type);
     for (const auto& c : info.cases) {
         if (c.first == wrapped) throw std::runtime_error("duplicate case value");
     }

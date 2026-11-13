@@ -6,6 +6,7 @@
 
 #include "const_value.hpp"
 #include "init_layout.hpp"
+#include "target.hpp"
 
 namespace ast {
 
@@ -76,19 +77,19 @@ private:
         items_.push_back(Item(ir::DataItem::Kind::Zero, bytes, 0));
     }
 
-    // One integer or address of 'size' bytes.
+    // One integer or address of 'size' bytes. An address is pointer-wide.
     void Word(int size, const ConstValue& value) {
         if (!value.label.empty()) {
-            if (size != 4) throw std::runtime_error("address does not fit");
+            if (size != Target().pointer_size) throw std::runtime_error("address does not fit");
             ir::DataItem item = Item(ir::DataItem::Kind::Address, size, 0);
             item.bytes = value.label;
             item.offset = value.offset;
             items_.push_back(item);
             return;
         }
-        if (size != 1 && size != 2 && size != 4) throw std::runtime_error("unsupported initialiser size");
-        uint32_t bits = static_cast<uint32_t>(value.offset);
-        uint32_t kept = size == 1 ? bits & 0xff : size == 2 ? bits & 0xffff : bits;
+        if (size != 1 && size != 2 && size != 4 && size != 8) throw std::runtime_error("unsupported initialiser size");
+        long long bits = value.offset;
+        long long kept = size == 8 ? bits : bits & ((1LL << (8 * size)) - 1);  // the low 'size' bytes
         items_.push_back(Item(ir::DataItem::Kind::Int, size, kept));
     }
 

@@ -26,6 +26,8 @@ public:
     // Int and UInt have the target's int size (D21, 21.3).
     static TypePtr Int();
     static TypePtr UInt();
+    // ptrdiff_t: the signed integer type of the target's pointer width.
+    static TypePtr PtrDiff();
     // The size picks float or double; Float() and Double() use the target's.
     static TypePtr Floating(int size);
     static TypePtr Float();

@@ -25,18 +25,23 @@ struct Options {
     bool emit_ir = false;            // --emit-ir: write the IR as text
 };
 
+// True for an option that takes the next argument as its value.
+bool TakesValue(const char* arg) {
+    return std::strcmp(arg, "-o") == 0 || std::strcmp(arg, "--target") == 0;
+}
+
 bool ParseArgs(int argc, char** argv, Options& opts) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-S") == 0) continue;
-        if (std::strcmp(argv[i], "--target") == 0 && i + 1 >= argc) {
-            std::cerr << "error: --target needs a value\n";
+        if (TakesValue(argv[i]) && i + 1 >= argc) {
+            std::cerr << "error: " << argv[i] << " needs a value\n";
             return false;
         }
         if (std::strcmp(argv[i], "--emit-ir") == 0) {
             opts.emit_ir = true;
-        } else if (std::strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
+        } else if (std::strcmp(argv[i], "--target") == 0) {
             opts.target = argv[++i];
-        } else if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+        } else if (std::strcmp(argv[i], "-o") == 0) {
             opts.output = argv[++i];
         } else if (argv[i][0] == '-') {
             std::cerr << "error: unknown option '" << argv[i] << "'\n";

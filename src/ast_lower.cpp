@@ -162,12 +162,9 @@ Operand PointerOffset(IRGen& gen, Operand pointer, const Type& pointer_type, Ope
 
 Operand PointerDifference(IRGen& gen, Operand a, Operand b, const Type& pointer_type) {
     int size = PointeeSize(pointer_type);
-    TypePtr wide = Type::Integer(Target().pointer_size, true);
     Operand bytes = gen.Binary(Op::Sub, ir::PointerIntType(), gen.PtrToInt(a), gen.PtrToInt(b));
-    Operand count = size == 1 ? bytes
-                              : gen.Binary(Op::Div, ir::PointerIntType(), bytes,
-                                           Operand::Int(size, ir::PointerIntType()));
-    return gen.ConvertInt(count, *wide, *Type::Int());
+    if (size == 1) return bytes;
+    return gen.Binary(Op::Div, ir::PointerIntType(), bytes, Operand::Int(size, ir::PointerIntType()));
 }
 
 }  // namespace ast

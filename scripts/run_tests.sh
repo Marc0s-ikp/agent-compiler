@@ -2,17 +2,28 @@
 # Runs the compiler against every test (or the ones given as arguments).
 # Each test is <name>.c plus <name>_driver.c; the driver returns 0 on success.
 # Output: results/latest.txt and a summary line on stdout.
+# TARGET picks the target: riscv32 (default) or aarch64. It is passed to the
+# compiler as --target and selects the toolchain that links and runs the test.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-if ! command -v spike >/dev/null 2>&1 || ! command -v riscv64-unknown-elf-gcc >/dev/null 2>&1; then
-  exec docker run --rm -e COMPILER_FLAGS -e TARGET --user "$(id -u):$(id -g)" -v "$ROOT":/w -w /w agent-compiler ./scripts/run_tests.sh "$@"
+TARGET="${TARGET:-riscv32}"
+case "$TARGET" in
+  riscv32)
+    GCC="${RISCV_GCC:-riscv64-unknown-elf-gcc}"
+    ARCH_FLAGS="-march=rv32imfd -mabi=ilp32d"
+    SIM="${RISCV_SIM:-spike pk}" ;;
+  aarch64)
+    GCC="aarch64-linux-gnu-gcc"
+    ARCH_FLAGS="-static"
+    SIM="qemu-aarch64" ;;
+  *) echo "unknown TARGET '$TARGET' (riscv32 or aarch64)"; exit 1 ;;
+esac
+if ! command -v "${SIM%% *}" >/dev/null 2>&1 || ! command -v "$GCC" >/dev/null 2>&1; then
+  exec docker run --rm -e COMPILER_FLAGS -e TARGET="$TARGET" --user "$(id -u):$(id -g)" -v "$ROOT":/w -w /w agent-compiler ./scripts/run_tests.sh "$@"
 fi
 
-GCC="${RISCV_GCC:-riscv64-unknown-elf-gcc}"
-ARCH_FLAGS="-march=rv32imfd -mabi=ilp32d"
-SIM="${RISCV_SIM:-spike pk}"
 TIMEOUT="${TEST_TIMEOUT:-5}"
 OUT="$ROOT/results/latest.txt"
 WORK="$ROOT/build/test_out"
@@ -35,7 +46,7 @@ for t in "${TESTS[@]}"; do
   base="$WORK/${rel//\//_}"
   driver="${name}_driver.c"
 
-  if ! timeout "$TIMEOUT" build/c_compiler ${COMPILER_FLAGS:-} -S "$t" -o "$base.s" > "$base.compile.log" 2>&1; then
+  if ! timeout "$TIMEOUT" build/c_compiler --target "$TARGET" ${COMPILER_FLAGS:-} -S "$t" -o "$base.s" > "$base.compile.log" 2>&1; then
     echo "CRASH   $rel (compiler)" >> "$OUT"; continue
   fi
   if ! $GCC $ARCH_FLAGS -o "$base.elf" "$base.s" "$driver" > "$base.link.log" 2>&1; then

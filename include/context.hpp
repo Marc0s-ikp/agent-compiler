@@ -116,12 +116,14 @@ public:
     // 'break' finds the switch through the same stack as loops; 'continue'
     // does not, because only PushLoop sets a continue target.
     struct SwitchInfo {
-        std::vector<std::pair<long, std::string>> cases;  // value, label
+        TypePtr type;  // the promoted type of the controlling expression
+        std::vector<std::pair<long, std::string>> cases;  // value (of 'type'), label
         std::string default_label;                        // empty if none
     };
-    void PushSwitch(const std::string& break_label);
+    void PushSwitch(const std::string& break_label, const TypePtr& type);
     SwitchInfo PopSwitch();
     // Both throw outside a switch, or for a duplicate case / second default.
+    // AddCase converts the value to the switch's type first.
     std::string AddCase(long value);
     std::string AddDefault();
 
