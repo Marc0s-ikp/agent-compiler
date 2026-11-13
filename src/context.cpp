@@ -90,7 +90,6 @@ void Context::DeclareFunction(const std::string& name,
 
 void Context::BeginFunction(const TypePtr& return_type) {
     return_type_ = return_type;
-    ++label_count_;  // a function used to take its return label here; the numbers stay as they were
 }
 
 std::string Context::NewLabel(const std::string& prefix) {
