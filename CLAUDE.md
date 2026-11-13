@@ -67,3 +67,23 @@ Steps 1 to 7 are merged; the IR is the only code generation path and `EmitRISC`,
 frame code and the `--ir` flag are gone (Step 1 to 7 notes in `docs/DECISIONS.md`). Its standing rules
 are in the Architecture section above. A second ISA needs a new `TargetInfo`, a `TargetAbi` subclass and
 a backend; the frontend and the IR do not change.
+
+## AArch64 (D27, accepted by Marcus 2026-11-13)
+An AArch64 backend on the D21 IR: AAPCS64, LP64 (`int` 4, `long` and pointers 8, plain `char` unsigned).
+Design in `docs/DECISIONS.md`, "D27 detail". `AArch64Abi` (`src/call_abi_aarch64.cpp`) behind the unchanged
+`TargetAbi`; `src/backend_aarch64.cpp`; the IR does not change; the frontend changes are listed in 27.5.
+Measure each step with `TARGET=aarch64 ./scripts/run_tests.sh`; the aarch64 count never goes down, and riscv32
+stays at 321/321 (plus new custom tests). Both counts go in the commit message and `docs/PROGRESS.md`.
+Steps, in this order:
+- A1. Target, skeleton, expressions and locals: `run_abi.sh` refuses aarch64 (first commit); `Aarch64Target()`,
+  `--target aarch64`, backend selection in `main`; frame (x29/x30, sp 16-aligned), `movz`/`movk`, offset limits;
+  integer operators, assignment, locals.
+- A2. Control flow: branches (a conditional branch only skips one `b`), compares, `&&`, `||`, `?:`, `switch`.
+- A3. Calls: integer and pointer rows of `AArch64Abi` (x0-x7, 8-byte stack slots), >8 args, recursion; the
+  AAPCS64 case model in `tests/abi_check` with per-case hit counts, after which `run_abi.sh` accepts aarch64.
+- A4. Arrays, pointers, globals: 64-bit pointers, `adrp`, data entries, strings, `char`, `sizeof` (`size_t`),
+  literal types (C90 list with `Target()` sizes), 8-byte unsigned constant folding through `uint64_t` (27.5.5)
+  with a custom test of folded against run-time results.
+- A5. Floats: s/d registers, conversions, float-pool loads, floating ABI rows and abi_check cases.
+- A6. Structs and unions: HFAs, records up to 16 bytes in x registers, by reference, x8 result, abi_check
+  record cases.

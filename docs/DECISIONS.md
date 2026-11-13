@@ -29,7 +29,8 @@
 | 2026-11-11 | ACCEPTED D24 (implementer, accepted by Marcus 2026-11-12 with a change to (d), see below), implementation choices in v3 step 2: (a) `ast_lower.hpp`/`ast_lower.cpp` hold only the lowering helpers that several nodes share (`RequireIrInteger`, `Arith`, `ValueAs`, `Condition`); every `EmitIR`/`EmitValue` is in its node's file (D23 a), and `src/ast_ir.cpp` is deleted. (b) Loops and switches reuse `Context::PushLoop`/`PushSwitch`/`BreakLabel`/`ContinueLabel`/`AddCase`/`AddDefault`, so label and duplicate-case handling is the same on both paths. (c) `switch` computes the controlling value once (converted to the promoted type), jumps to a dispatch label, lowers the body, jumps to the end, then writes the dispatch chain (`eq` + `branch` per case, then a jump to `default` or the end) after the body; this is the IR equivalent of the old path's buffering and needs no pre-scan of the body. (d) `&&`, `||` and `?:` allocate their result with `IRGen::NewTemp` (now public) and write it at two sites with `IRGen::Move` (`const` for a constant source, `copy` otherwise), as 21.2 allows. (e) `branch` is written by the backend as `beqz t0, 1f; j if_nonzero; 1: j if_zero`, so a branch reaches the whole function (a bare `bnez` reaches only +-4 KiB). (f) `AppendPartialFunction` supports the D23 c partial dump. (g) Not done: skipping the trailing implicit `ret` (it is dead only when no label follows the last `ret`). **Change to (d) (Marcus, 2026-11-12), done first in step 3:** no temp has two definition sites. `?:` lowers through a hidden frame object: each arm stores its value to the object, and one `load` after the join defines the result temp. `&&` and `||` do the same, since they also had two-site temps. The checker then enforces that every temp is defined by exactly one instruction site. This replaces the exception in 21.2 (amendment 21.10.4). | Keeps the two paths' control-flow bookkeeping identical; no extra IR instructions beyond the existing ones | A pre-scan of the switch body for case labels; a `select` instruction for `?:`; storing the `?:` result through a frame object |
 | 2026-11-12 | D25 (implementer, **accepted by Marcus 2026-11-12, with one change: the classifier is a virtual on `Target().Abi()`**), the per-target call classifier interface and the IR `call`, v3 step 3 (detail: "D25 detail" below). (a) `include/call_abi.hpp` declares the abstract `TargetAbi` with `virtual CallLayout Classify(params, ret) const`, reached as `Target().Abi().Classify(...)` (`RiscV32Abi`, chosen in `SetTarget`); `CallLayout` holds one `ArgPlace` per parameter, a `RetPlace` and `stack_bytes`. Everything is a `Piece` (offset in the value, byte count, C signedness, and `IntReg`/`FloatReg`/`StackWord` plus a register number or stack offset). (b) The RISC-V classifier (`src/call_abi_riscv.cpp`) is built on `ClassifyArgs`, `ClassifyReturn` and `StackExtent`, which the old path still uses, so there is one rule set until step 7. Only integers (up to 4 bytes) and pointers are classified; any other type throws "not in IR yet". (c) The backend calls `Classify` once for the function's own entry and once per IR `call`, with the same types. (d) The psABI extension of narrow integers is carried by `Piece::is_signed` (the C signedness), never inferred from IR types. (e) IR `call` carries the callee, the argument values, their C types and the C return type; `ir::Function` carries its parameters (home frame object plus C type) and its C return type. The checker verifies callee, argument IR types and result type. | The frontend decides what is passed and with which C types; where it goes is one backend call used on both sides, so the two cannot disagree (D5). Pieces already express every kind in D18(d) and D19(d), so steps 5 and 6 only lift the throw | A free function `Classify` (see "D25 detail"); IR types alone in the call (lose signedness); separate caller and callee rule sets |
 | 2026-11-12 | ACCEPTED D26 (implementer, accepted by Marcus 2026-11-12), the struct result object in v3 step 6: every call whose C return type is a struct or union gets a result object, a frame object `ret.N` of the record's size that the frontend allocates for every such call and names in the call's `result_object`; the value of the call expression is `addr $ret.N`. The frontend never asks `Classify(...).ret.in_memory`. The backend decides: hidden pointer (it passes the object's address in `ret.pointer`) or registers (it stores the returned pieces into the object). The checker requires a `result_object` of exactly the record's size on every record call and none on any other call (detail: "Step 6 notes", `result_object`) | The frontend has nothing to decide and never learns the RISC-V rule, so a second target changes only its classifier and backend. The object is needed in both cases anyway | The frontend asks the classifier and allocates an object only for a hidden-pointer return (puts the RISC-V rule in the frontend); a result temporary of a record IR type (the IR has no record types, 21.2) |
-Status: all of the above was approved by Marcus (D15 to D18 on 2026-11-09, D19 and D20 on 2026-11-10, D21 on 2026-11-11, the rest on 2026-11-08). D21 steps 1 to 7 are merged (2026-11-11 to 2026-11-12); D1 and D2 are superseded by D21. D22 and D23 were accepted by Marcus on 2026-11-11, D24 on 2026-11-12 (with the change to (d)), D25 on 2026-11-12 (with one change: the classifier is a virtual on `Target().Abi()`), D26 on 2026-11-12.
+| 2026-11-13 | ACCEPTED D27 (implementer, accepted by Marcus 2026-11-13 with changes, see 27.8), an AArch64 backend on the D21 IR, targeting AAPCS64 and LP64 (detail: "D27 detail" below). (a) A second `TargetInfo`, `Aarch64Target()` (`--target aarch64`): `int` 4, `long` and pointers 8, `char` unsigned, `double` 8-aligned, sp 16-aligned, checked against `aarch64-linux-gnu-gcc` in the image. (b) `AArch64Abi`, behind the unchanged `TargetAbi` interface, in `src/call_abi_aarch64.cpp`: x0-x7 and v0-v7, 8-byte stack slots, HFAs of 1 to 4 floats or doubles in v registers, other records up to 16 bytes in up to two x registers or wholly on the stack, larger ones by reference, the indirect result in x8 (`IntReg` index 8: `IntReg` n is the target's n-th integer argument register, and a target may define indices beyond its argument registers). (c) `src/backend_aarch64.cpp`: x29/x30 frame record at the bottom of the locals, every slot at a positive offset from x29, outgoing area at sp, both parts multiples of 16; constants by `movz`/`movk`; scaled `ldr`/`str` offsets or an address in x16; floats from the existing pool by `adrp` + `ldr`; a conditional branch only ever skips one `b`. (d) The IR does not change. The frontend needs five small changes, all of which read `Target()` instead of an ILP32 fact: `sizeof` yields a pointer-width unsigned type, integer literals follow C90's int/long/unsigned long list with `Target()` sizes, the constant-folded pointer compare uses pointer width, `main` picks the backend from the target, and D20's constant folding handles 8-byte unsigned types through `uint64_t`. (e) `run_abi.sh` refuses `TARGET=aarch64` until `gen_abi.py` has an AAPCS64 case model, which step A3 builds and A5/A6 extend. (f) Six steps A1 to A6, mirroring v3 steps 1 to 6, each measured with `TARGET=aarch64 ./scripts/run_tests.sh` while riscv32 stays at 321/321 | The IR, the checker and `TargetAbi` were built so that a second ISA is a `TargetInfo`, a classifier and a backend (21.8); AArch64 is the target the Docker image has a toolchain and qemu for. The five frontend changes are ILP32 facts that were written as `int`/`unsigned` where C says `size_t`, `long` or pointer width; they change nothing on riscv32 | A new `Piece::Where` for x8 (changes the interface for one register); a frame addressed from x29 with negative offsets (`ldur` only reaches -256); `cbnz` straight to the target label (1 MB range); sharing a record-leaf walk with `RiscV32Abi` now (the two walks differ: HFAs accept unions and need one FP type) |
+Status: all of the above was approved by Marcus (D15 to D18 on 2026-11-09, D19 and D20 on 2026-11-10, D21 on 2026-11-11, the rest on 2026-11-08). D21 steps 1 to 7 are merged (2026-11-11 to 2026-11-12); D1 and D2 are superseded by D21. D22 and D23 were accepted by Marcus on 2026-11-11, D24 on 2026-11-12 (with the change to (d)), D25 on 2026-11-12 (with one change: the classifier is a virtual on `Target().Abi()`), D26 on 2026-11-12, D27 on 2026-11-13 (with the changes in 27.8).
 
 ---
 
@@ -763,3 +764,222 @@ the count keeps every label number (`else3`, `str.0`) as it was, so the assembly
 line, and accept renumbered labels in one commit, whenever the identical-assembly check is no longer wanted.
 
 **Assembly diffs:** none.
+
+## D27 detail (ACCEPTED, Marcus, 2026-11-13, with the changes in 27.8)
+
+An AArch64 backend on the D21 IR. The target is AAPCS64 with the LP64 data model, as GCC uses it for
+`aarch64-linux-gnu`. Tests link with `aarch64-linux-gnu-gcc -static` and run under `qemu-aarch64`
+(`TARGET=aarch64`, since the cleanup before AArch64). The aim is that the frontend and the IR do not change.
+27.5 lists what does have to change, and why.
+
+### 27.1 Target facts (checked against `aarch64-linux-gnu-gcc` in the Docker image, 2026-11-13)
+
+| Type | Size | Align |
+|------|------|-------|
+| `char` (unsigned: `__CHAR_UNSIGNED__` is defined) | 1 | 1 |
+| `short` | 2 | 2 |
+| `int`, enum, `float` | 4 | 4 |
+| `long`, pointer, `size_t` (`__LP64__`) | 8 | 8 |
+| `double` | 8 | 8 |
+
+`long double` is 16 bytes; it stays out of scope, as on riscv32. `Aarch64Target()` in `src/target.cpp`
+holds these values with `stack_align = 16`, and `FindTarget("aarch64")` returns it. Plain `char` is unsigned,
+as on riscv32 (D8), so no C rule changes with the target. Struct layout is the same on both targets for every
+type we support.
+
+### 27.2 `AArch64Abi` (the classifier)
+
+It lives in `src/call_abi_aarch64.cpp` and `include/call_abi_aarch64.hpp`, behind the unchanged `TargetAbi`
+interface (D25). `SetTarget` selects it through a new `AbiKind::AArch64`. It holds every AAPCS64 rule, in the
+same way that `RiscV32Abi` holds every ilp32d rule. The rules are AAPCS64's stages B and C, for our types:
+
+- **Registers.** Integers and pointers go in x0-x7 (`IntReg` 0 to 7). Floats and doubles go in v0-v7
+  (`FloatReg` 0 to 7). The two counts are independent: a float never goes in an x register, and an
+  integer never goes in a v register. There is no split register/stack case like ilp32d's a7 split.
+- **Stack.** Once a register class is used up, each argument takes 8-byte slots (`StackWord`, `index`
+  = byte offset), in order. A narrow integer or a float uses the low bytes of its slot. `stack_bytes` is
+  rounded up to 16.
+- **Narrow integers.** AAPCS64 leaves the upper bits of a narrow argument or result unspecified (GCC's
+  callee re-extends: `sxtb w0, w0`). Our callee already stores only the piece's bytes into the
+  parameter's home and extends again through the IR, and our caller stores only the result's bytes.
+  Both stay correct whatever the other side does. `Piece::is_signed` is still filled in.
+- **HFA.** A struct or union whose leaf fields, after looking through nested records and arrays, are 1
+  to 4 values of a single floating type (all `float` or all `double`). A union of floats counts: GCC
+  passes `union { float a; float b; }` in s0. An HFA goes in consecutive v registers, one `FloatReg`
+  piece per member, if enough remain. Otherwise it goes wholly on the stack, and no further floating
+  argument uses a v register (NSRN = 8).
+- **Other records of up to 16 bytes.** They go in one or two x registers (8-byte `IntReg` pieces, the
+  last one possibly shorter: a 12-byte struct is 8 + 4) if enough remain. Otherwise the whole record
+  goes on the stack as one `StackWord` piece the size of the record (offset 0, the form step 6 already
+  handles), and NGRN becomes 8. A record is never split between registers and the stack.
+- **Records over 16 bytes** have `by_reference` set, with one 8-byte pointer piece (x register or stack).
+  The caller's copy is the one the frontend already makes (21.5).
+- **Results.** An integer or pointer comes back in x0 (w0). A float or double comes back in v0. An HFA
+  comes back in v0-v3, and a record of up to 16 bytes in x0/x1. Anything larger has `in_memory` set:
+  the caller passes the result object's address in **x8**, and x8 is not an argument register, so the
+  argument pieces lose nothing. In `RetPlace::pointer` it is `IntReg` with `index` 8. The rule, worded by
+  Marcus (27.8.1): `IntReg` n is the target's n-th integer argument register; a target may define indices
+  beyond its argument registers (AArch64: 8 = x8). An index is not an architectural register number (on
+  RISC-V, index 0 is a0, which is x10). The comment in `include/call_abi.hpp` is updated to say so, and to
+  allow 8-byte integer pieces (it says "1 to 4" today). Those are comment changes only.
+
+The leaf walk for HFAs is written in `call_abi_aarch64.cpp`. It is not shared with the ilp32d `Flatten`,
+because the rules differ: ilp32d's floating convention rejects unions and allows a mix of float and int,
+while an HFA accepts unions and needs exactly one floating type. If the two walks turn out the same once
+written, they become one helper in a later commit.
+
+### 27.3 The backend (`src/backend_aarch64.cpp`)
+
+The same shape as `backend_riscv.cpp` (21.4, 21.6): one slot per temporary, and nothing held in a register
+between IR instructions. Scratch registers are x9/x10 (w9/w10) and d16/d17 (s16/s17). x16 and x17 hold
+addresses and large constants. All of them are caller-saved, so the prologue saves only x29 and x30.
+
+- **Frame.** The frame is two parts, each a multiple of 16, so sp is always 16-aligned (AArch64 can fault
+  on a misaligned sp).
+  - The upper part has the frame record (saved x29, x30) at its bottom, then the parameter homes, the
+    result-pointer slot, the frame objects and the temp slots.
+  - The lower part is the outgoing argument area at sp.
+  - Prologue: `sub sp, sp, #upper`; `stp x29, x30, [sp]`; `mov x29, sp`; `sub sp, sp, #outgoing`.
+  - Epilogue: `mov sp, x29`; `ldp x29, x30, [sp]`; `add sp, sp, #upper`; `ret`.
+  - Every slot is at a positive offset from x29. Incoming stack arguments are at `x29 + upper`. x29 points
+    at a valid frame record, so gdb backtraces work.
+  - An `upper` or `outgoing` too large for a 12-bit immediate goes through x16 (`sub sp, sp, x16`).
+  - This is D2's "address from the frame pointer, sp fixed after the prologue" with the record at the
+    bottom. AArch64 has no negative scaled offset, and `ldur` reaches only -256.
+- **Constants.** `movz` plus a `movk` for each further non-zero 16-bit chunk (at most 1 + 3), into a w or
+  x register by IR type. Since every operand is loaded into a scratch register (21.4), this is the only
+  place that encodes an immediate. Logical-immediate encodings are not used.
+- **Load/store offsets.** `ldr`/`str` take an unsigned 12-bit offset scaled by the access size: up to
+  4095 for bytes, 8190 for halves, 16380 for words, 32760 for doublewords, and it must be a multiple of the
+  size. Slots are aligned to their size, so the scaled form covers ordinary frames. A larger offset goes
+  through `movz`/`movk` into x16 plus `add x16, x29, x16`. One helper (`EmitMem`, as on RISC-V) chooses.
+- **Symbols and float constants.** The address of a global, string or float-pool entry is `adrp x16, sym`
+  plus `add x16, x16, :lo12:sym`. A float constant is loaded from the pool (21.2a), as on RISC-V:
+  `adrp` plus `ldr d16, [x16, :lo12:sym]`. No `fmov` immediates. Static linking needs no GOT.
+- **Branches.** `b`/`bl` reach ±128 MB, and `cbz`/`cbnz`/`b.cond` only ±1 MB. `branch v, T, F` becomes
+  `cbz w9, 1f; b T; 1: b F`, so a conditional branch only ever skips one instruction and every jump to a
+  label is a `b`. This is the same pattern as RISC-V's `beqz t0, 1f`. Compares are `cmp` plus `cset`.
+- **Operations.** `sdiv`/`udiv`, with `msub` for `rem`/`remu`. Register shifts (`lsl`/`lsr`/`asr`) take
+  the amount modulo the width, as RISC-V does. `sxtb`/`sxth`/`sxtw`/`uxtb`/`uxth`, `mov w` for a 32 to
+  64 zero extend, and `trunc` by using the w register. `scvtf`/`ucvtf`/`fcvtzs`/`fcvtzu` from and to
+  w or x (an `I64` source is reachable: `(double)(p - q)`), and `fcvt`.
+- **Pieces of odd size.** A 3, 5, 6 or 7 byte piece of a record in an x register is stored and loaded
+  byte by byte, as `EmitStoreBytes`/`EmitLoadBytes` do on RISC-V.
+- **Data.** `.byte`/`.hword`/`.word`/`.xword`, `.zero`, `.ascii`, `.p2align`, `.section .rodata`/`.data`,
+  and `.L` for local labels (ELF, the same as RISC-V). An `Address` item is a `.xword sym+off`.
+- **Driver.** `include/backend.hpp` declares `EmitAArch64` next to `EmitRiscv`. `TargetInfo` gets an `isa`
+  field (`Isa::RiscV32`, `Isa::AArch64`) set by the target's factory, and `main` calls the matching
+  backend. No other code reads `isa`.
+
+The RISC-V helpers (`EmitMem`, `EmitCopyMem`, the name spelling) are not shared. Each backend has its own,
+because the encodings differ. If the name spelling turns out identical, it can move to one helper later.
+
+### 27.4 IR
+
+No change. `Ptr` and `PointerIntType()` are already 8 bytes when `pointer_size` is 8 (21.10.1), and
+`I64` exists. The checker already allows `itof` and `ftoi` on `I64`. Compare results stay `I32`, and a
+branch on a pointer goes through `ptrtoint` (an `I64`), which `cbz x9` handles.
+
+### 27.5 Frontend: what turned out to be RISC-V or ILP32 specific
+
+Found by reading the code against LP64. Each item is a C fact that was written as `int` or `unsigned` where C
+says `size_t`, `long` or pointer width. Each fix reads `Target()`, and none changes riscv32 output (on riscv32
+the new type has the old type's size and signedness):
+
+1. `src/ast_sizeof.cpp`: `SizeType()` is `Type::UInt()` ("unsigned int on this target"). It should be a
+   `Type::SizeT()`, the unsigned integer of pointer width, next to `Type::PtrDiff()`. Visible on LP64 as
+   `sizeof(sizeof 0)`, and as `(double)(0 - sizeof(int))`.
+2. `src/ast_literal.cpp`: an unsuffixed literal above `INT_MAX` is `unsigned int`, and anything above
+   `0xFFFFFFFF` is rejected. C90 picks the first type that fits from int, long, unsigned long (decimal), or
+   int, unsigned int, long, unsigned long (octal and hex), or the unsigned ones (with `u`). With
+   `Target().long_size` that gives the same types as today on riscv32, and `long` (8 bytes) on LP64, where
+   `-2147483648 < 0` becomes true. `IntLiteral::EmitValue` must then take the IR type from `GetType`
+   instead of `Type::Int()`. `long` is still not a keyword. The type exists as `Type::Integer(8, true)`,
+   but only literals produce it.
+3. `src/ast_operators.cpp`, `CompareType`: when folding a constant pointer comparison, both sides are
+   wrapped to `Type::UInt()`. It should be the unsigned integer of pointer width. This only matters for
+   constant addresses above 4 GB.
+4. `src/main.cpp`: it calls `EmitRiscv` directly. Backend selection by `Target().isa` (27.3).
+5. Constant folding (D20) assumes types of at most 32 bits (added by Marcus, 2026-11-13; done in A4). Once item 2
+   lets a literal be an 8-byte `long`/`unsigned long` on LP64, a folded value of an 8-byte unsigned type can
+   exceed `LONG_MAX`, and folding it in `long` gives the wrong answer for comparisons, `/`, `%` and `>>`. Fold
+   8-byte unsigned types through `uint64_t` for those operations. A custom test compares folded and run-time
+   results for 64-bit literals on aarch64 (for example `0xFFFFFFFFFFFFFFFF / 3`, `>> 63`, `% 10`, and `<` against
+   0, each both in a constant context such as an enum value or `case` label and at run time). On riscv32 no type
+   is 8 bytes, so nothing changes there.
+
+Not ILP32-specific, already target-driven: pointer offsets and differences (cleanup before AArch64),
+`InitWriter::Word`, `AddCase`, `WrapToType`, `ConvertConst`, the float pool and string entries, and labels
+(D23 d).
+
+Reachable only once `long` is a keyword (not part of D27): `ConvertFloating` in `src/ast_lower.cpp`, float to integer, goes
+through an `int`-sized word, so a conversion to an 8-byte integer would truncate. Integer-to-float of an 8-byte
+source is already correct.
+
+**Interface comments that name RISC-V** (`include/call_abi.hpp`: "1 to 4" bytes, "the callee's s0 on
+RISC-V", "the psABI says so") are reworded in step A3. The types are untouched.
+
+### 27.6 Tests
+
+- `run_abi.sh` refuses `TARGET=aarch64` with "no AAPCS64 case model yet" (exit 2) until step A3 adds the
+  model. Its ilp32d `classify` would report "every case hit" for cases AArch64 does not have.
+- **AAPCS64 case model (A3, extended in A5 and A6).** `gen_abi.py` takes the target. It uses a per-target
+  scalar layout (pointer 8 on aarch64) and a `classify_aapcs64` written from the AAPCS64 text,
+  independent of the compiler. It counts hits per case and prints the table and the `every case hit` line,
+  as the ilp32d model does. Cases:
+  - A3: integer or pointer in an x register; a narrow integer in an x register (-O2 GCC callers leave
+    garbage above it); an integer on the stack after x0-x7 (narrow ones too).
+  - A5: float/double in a v register; float/double on the stack after v0-v7; integer and floating counts
+    used up independently.
+  - A6: HFA of 1, 2, 3 and 4 members (float and double, nested, an array, a union) in v registers; an HFA
+    on the stack once v registers run out (NSRN = 8, then a later double also on the stack); a record of up
+    to 8 bytes in one x register; 9 to 16 bytes in two; a record on the stack when only one x register is
+    left (NGRN = 8, no split); over 16 bytes by reference (pointer in a register and on the stack); x8
+    result; x0/x1 record result; HFA result in v0-v3.
+  - The split-double byte check is ilp32d-only (a `spike pk` workaround) and does not apply on aarch64.
+- **Custom tests.** Some custom drivers hard-code ILP32 answers (for example `sizeof_expr`:
+  `s_sizeof_sizeof() != 4`). When a step meets one, its driver is changed to compute the expected value
+  with GCC's `sizeof` for the same target. It never becomes a special case in the compiler, and riscv32
+  must still pass it. The reference tests (`tests/compiler_tests/`) were read and found target-neutral. If
+  one is not, it goes to BLOCKERS and is not edited (rule 3).
+
+### 27.7 Feature order (also in CLAUDE.md)
+
+Each step is measured with `TARGET=aarch64 ./scripts/run_tests.sh`. The aarch64 count never goes down. riscv32
+stays at 321/321 (plus any new custom tests), with its assembly byte-identical except where a commit says why.
+Both counts go in the commit message and in `docs/PROGRESS.md`.
+
+- **A1. Target, skeleton, expressions and locals.**
+  - `run_abi.sh` refuses aarch64 (first commit).
+  - `Aarch64Target()`, `--target aarch64`, `Isa` and backend selection in `main`.
+  - `AArch64Abi` for functions with no parameters that return an integer or nothing. Other types throw
+    "not in AArch64 yet".
+  - The backend skeleton: frame, prologue, epilogue, `ret`, `movz`/`movk`, `EmitMem`, an empty `WriteData`.
+  - Integer operators, assignment and locals.
+- **A2. Control flow.** Labels, `branch`/`jump` (27.3), compares, `&&`, `||`, `?:`, `switch`.
+- **A3. Calls.**
+  - `call`, and the integer and pointer rows of `AArch64Abi`: x0-x7, 8-byte stack slots, narrow integers.
+  - The outgoing area, more than 8 arguments, recursion.
+  - The `call_abi.hpp` comment rewording.
+  - The AAPCS64 case model in `gen_abi.py`, with A3's cases. `run_abi.sh` then accepts aarch64, and seeds
+    101 to 505 × 300 must pass in all four combinations at GCC -O0 and -O2.
+- **A4. Arrays, pointers, globals.**
+  - 64-bit `Ptr`, `ptradd`/`ptrtoint`/`inttoptr`, `adrp`/`add`.
+  - Data entries (`.xword` addresses), strings, `char`, `enum`, `static`.
+  - The frontend items 27.5.1 to 27.5.3 and 27.5.5, one commit each (27.5.5 after 27.5.2, with its custom test).
+- **A5. Floats.** `F32`/`F64` in s and d registers, conversions (including from `I64`), float-pool loads, the
+  floating rows of `AArch64Abi`, and the floating abi_check cases.
+- **A6. Structs and unions.** `memcpy`/`memzero`, HFAs, records up to 16 bytes in x registers, by reference,
+  x8, odd-sized pieces, record results, and the record abi_check cases.
+
+D27 is done when `TARGET=aarch64` passes everything riscv32 passes, and abi_check passes on both targets with
+every case hit. There is no step A7: nothing is deleted.
+
+### 27.8 Decided (Marcus, 2026-11-13)
+
+1. x8 as `IntReg` index 8 is accepted, with the rule worded as "`IntReg` n is the target's n-th integer argument
+   register; a target may define indices beyond its argument registers (AArch64: 8 = x8)". It is not the
+   architectural register number (on RISC-V, a0 is x10). 27.2 uses this wording.
+2. 27.5.1 and 27.5.2 stay in A4: only LP64 shows them, and A4 is where they can be tested.
+3. `long` as a keyword stays out of D27.
+4. Added: 27.5.5 (8-byte unsigned constant folding through `uint64_t`), done in A4 with a custom test.
