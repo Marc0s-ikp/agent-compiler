@@ -73,4 +73,6 @@ RUN ../configure --prefix=$RISCV --host=riscv64-unknown-elf --with-arch=rv32imfd
 RUN make
 RUN make install
 
+RUN apt-get update && apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user && rm -rf /var/lib/apt/lists/*
+
 ENTRYPOINT [ "/bin/bash" ]
