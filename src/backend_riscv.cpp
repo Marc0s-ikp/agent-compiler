@@ -254,6 +254,10 @@ private:
 
     static std::string IntRegName(const Piece& piece) { return "a" + std::to_string(piece.index); }
     static std::string FloatRegName(const Piece& piece) { return "fa" + std::to_string(piece.index); }
+    // The register of a scalar's single piece (an argument or a return value).
+    static std::string RegName(const Piece& piece) {
+        return piece.where == Piece::Where::FloatReg ? FloatRegName(piece) : IntRegName(piece);
+    }
 
     // Each incoming piece goes to its parameter's home. A stack piece is in
     // the caller's outgoing area, which starts at s0.
@@ -471,8 +475,8 @@ private:
     }
 
     // Arguments go to fa and a registers and outgoing stack words, then the
-    // call; the result comes back in a0 (already extended, and its slot keeps
-    // the bits) or fa0.
+    // call; a scalar result comes back in the register the classifier names for
+    // it (a0, already extended, and its slot keeps the bits; or fa0).
     void WriteCall(size_t index, const Instruction& in) {
         const CallLayout& layout = calls_.at(index);
         if (layout.ret.in_memory) Load(IntRegName(layout.ret.pointer), in.result_object);
@@ -485,7 +489,7 @@ private:
         }
         os_ << "\tcall " << in.callee << "\n";
         if (in.dst.kind == Operand::Kind::Temp) {
-            StoreResult(ir::IsFloatType(in.dst.type) ? "fa0" : "a0", in.dst);
+            StoreResult(RegName(layout.ret.pieces.at(0)), in.dst);
         } else if (in.ret_type->IsRecord()) {
             SaveReturnedRecord(layout.ret, in);
         }
@@ -494,8 +498,8 @@ private:
     void LoadReturnValue(const Operand& value) {
         if (fn_.c_return->IsRecord()) return LoadReturnRecord(value);
         const Piece& piece = entry_.ret.pieces.at(0);
-        if (piece.where == Piece::Where::FloatReg) return Load("fa0", value);
-        LoadForPiece("a0", value, piece);
+        if (piece.where == Piece::Where::FloatReg) return Load(FloatRegName(piece), value);
+        LoadForPiece(IntRegName(piece), value, piece);
     }
 
     void StoreResult(const std::string& reg, const Operand& dst) {
