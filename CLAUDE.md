@@ -49,6 +49,8 @@ Pipeline: source → `src/lexer.flex`, `src/parser.y` → AST → `EmitIR` (fron
 6. Record any architectural choice in `docs/DECISIONS.md` (date, decision, reason, alternatives).
 7. Keep functions small and code readable — Marcus must be able to explain every part.
 8. Don't edit Dockerfile, Makefile or the original scripts in scripts/ (only run_tests.sh may change, and only by Marcus).
+9. Every `docker run` must include `--user "$(id -u):$(id -g)"`, in scripts, docs and ad-hoc commands alike, so
+   files written to the mounted repo (`build/`, `results/`, test output) stay owned by you, not root.
 
 ## Feature order (do in this order, don't skip ahead)
 1. Integer expressions, locals, return

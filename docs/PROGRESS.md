@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: default 319/319 and `--ir` 319/319 before; 319/319 after on the only path (86 of 86 compiler_tests, 233 of 233 custom). `scripts/test.py` 319 passed; `tests/abi_check` seeds 101-505 x 300 and 606-1010 x 500 pass in all four combinations at GCC -O0/-O2, every ABI case hit. Generated assembly of all 319 tests byte-identical to step 6 `--ir` after every commit.
-Fixed: v3 step 7, the IR is the only code generation path. `--ir` removed; every `EmitRISC`/`EmitAddress`, `emit.cpp`, `abi.cpp`, `record_abi.cpp` and the Context frame state deleted; the ilp32d rules live only in `RiscV32Abi` (D25); loop/switch/label bookkeeping kept in Context (D24). D26 (struct result object) recorded as accepted. CLAUDE.md Architecture rewritten for the IR; D1, D2 and design sections 3-6 marked superseded by D21.
-Blocked: nothing. For Marcus: `Context::BeginFunction` keeps one `++label_count_` only so labels stay byte-identical to step 6 (reviewer: remove it in its own commit after the merge). Review approved in round 1.
-Next: v3 is complete. Follow-ups are under "Nice to have from the v3 step 7 review" in docs/BLOCKERS.md; whether to build a second target is a separate decision (21.8).
+Pass count: 319/319 before; 321/321 after (86 of 86 compiler_tests, 235 of 235 custom, two new: `ptrdiff_type`, `switch_case_conversion`). `tests/abi_check` seeds 101-505 x 300 pass in all four combinations at GCC -O0/-O2, every ABI case hit. Generated assembly of all 319 earlier tests byte-identical after every commit, except the first, which only renumbers labels.
+Fixed: cleanup before AArch64. The "Required before AArch64" items 2 to 5 (`InitWriter::Word`, `PtrMinusPtr` and `PointerDifference` take pointer width from `Target()`, via the new `Type::PtrDiff()`; `AddCase` converts to the promoted controlling type). Step 7 review items 1 to 3 (`++label_count_` removed; call and return take the result register from the classifier; a trailing `-o` reports "-o needs a value"). `scripts/run_tests.sh` and `tests/abi_check/run_abi.sh` take `TARGET=riscv32|aarch64` (aarch64: `--target aarch64`, `aarch64-linux-gnu-gcc -static`, `qemu-aarch64`). CLAUDE.md rule 9: every `docker run` has `--user "$(id -u):$(id -g)"`.
+Blocked: nothing. `TARGET=aarch64` fails every test with "unknown target 'aarch64'", as expected: the compiler has no aarch64 target yet. The toolchain mapping was checked by linking GCC's own aarch64 output (a custom test and the abi_check programs) under `qemu-aarch64`.
+Next: the AArch64 target (`TargetInfo`, a `TargetAbi` subclass, a backend), a separate decision (21.8).
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -84,6 +84,7 @@ Next: v3 is complete. Follow-ups are under "Nice to have from the v3 step 7 revi
 | 2026-11-12 | 294/294 | v3 step 4 stage A: neutral labels, ptradd/ptrtoint/inttoptr, arrays and pointers, sizeof (default 293→294, --ir 135→176) |
 | 2026-11-12 | 299/299 | v3 step 4 stage B: globals, static locals and strings as data entries, five pointer tests (default 294→299, --ir 176→226) |
 | 2026-11-12 | 319/319 | v3 step 7: the IR is the only path, EmitRISC and the old generator deleted, ilp32d rules in RiscV32Abi (default 319/319, `--ir` removed) |
+| 2026-11-13 | 321/321 | cleanup before AArch64: pointer width from Target(), case values in the controlling type, step 7 review items, TARGET in run_tests.sh and abi_check |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.

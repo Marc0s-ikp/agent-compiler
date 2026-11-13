@@ -196,13 +196,13 @@ From the step 1 review (2026-11-11, approved in round 2). These are design quest
 Pointer width (Marcus, 2026-11-12). Each of items 2 to 4 must take the width from `Target().pointer_size`
 (and the matching signed integer type), never from a literal 4 or from `int`.
 
-2. `InitWriter::Word` (`src/global_init.cpp`) rejects an address whose size is not 4: it assumes 4-byte addresses.
+2. DONE (cleanup before AArch64): checks `Target().pointer_size`; integer items may also be 8 bytes. `InitWriter::Word` (`src/global_init.cpp`) rejects an address whose size is not 4: it assumes 4-byte addresses.
    Moved from the step 4 review, item 3.
-3. `PtrMinusPtr` is typed `int`. It must be the signed integer type of pointer width (`ptrdiff_t`).
+3. DONE (cleanup before AArch64): `Type::PtrDiff()`. `PtrMinusPtr` is typed `int`. It must be the signed integer type of pointer width (`ptrdiff_t`).
    Moved from the step 4 review, item 3.
-4. `PointerDifference` truncates the difference to `int`. It must compute and return it in pointer width.
+4. DONE (cleanup before AArch64): no conversion, the result stays `PointerIntType()`. `PointerDifference` truncates the difference to `int`. It must compute and return it in pointer width.
    Moved from the step 4 review, item 3.
-5. `Context::AddCase` (`src/context.cpp:270-280`) wraps case values to `Type::Int()`, not to the promoted
+5. DONE (cleanup before AArch64): `SwitchInfo` holds the promoted type, `PushSwitch` takes it. `Context::AddCase` (`src/context.cpp:270-280`) wraps case values to `Type::Int()`, not to the promoted
    controlling type. Wrong once `long` is parsed and is `I64` on a 64-bit target. Its sizes must come from
    `Target()`. Moved from the step 2 review, item 3.
 
@@ -273,13 +273,13 @@ From the step 5 review (2026-11-12, approved in round 1). None of these blocked 
 
 ## Nice to have from the v3 step 7 review
 
-From the step 7 review (2026-11-12, approved in round 1). None of these blocked the merge.
+From the step 7 review (2026-11-12, approved in round 1). None of these blocked the merge. All three were fixed in the cleanup before AArch64 (2026-11-13).
 
-1. `Context::BeginFunction` (`src/context.cpp`) keeps `++label_count_`, left from the old `.Lret` label, only so the
+1. DONE. `Context::BeginFunction` (`src/context.cpp`) keeps `++label_count_`, left from the old `.Lret` label, only so the
    assembly stayed byte-identical to step 6 during the deletions. Remove it in its own commit; labels renumber, no
    test depends on them.
-2. `WriteCall` stores a scalar result from a literal `"a0"`/`"fa0"` and `LoadReturnValue` writes the floating case to
+2. DONE (`RegName(piece)`). `WriteCall` stores a scalar result from a literal `"a0"`/`"fa0"` and `LoadReturnValue` writes the floating case to
    a literal `"fa0"`, instead of `IntRegName`/`FloatRegName` of `ret.pieces[0]` as every other site does. Same
    registers today; a consistency fix (predates step 7).
-3. `main.cpp`: a trailing `-o` with no value is reported as "unknown option '-o'" rather than "-o needs a value"
+3. DONE. `main.cpp`: a trailing `-o` with no value is reported as "unknown option '-o'" rather than "-o needs a value"
    (still exits 1).
