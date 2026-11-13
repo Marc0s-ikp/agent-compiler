@@ -54,7 +54,8 @@ ir::Operand LoadObject(IRGen& gen, ir::Operand address, const Type& type);
 ir::Operand PointerOffset(IRGen& gen, ir::Operand pointer, const Type& pointer_type,
                           ir::Operand index, const Type& index_type, bool subtract);
 
-// (a - b) / element size, as an int: both pointers have C type 'pointer_type'.
+// (a - b) / element size, computed and returned in pointer width (Type::PtrDiff,
+// ptrdiff_t): both pointers have C type 'pointer_type'.
 ir::Operand PointerDifference(IRGen& gen, ir::Operand a, ir::Operand b, const Type& pointer_type);
 
 }  // namespace ast

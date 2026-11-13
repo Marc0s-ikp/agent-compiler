@@ -22,6 +22,7 @@ TypePtr Type::Integer(int size, bool is_signed) {
 
 TypePtr Type::Int() { return Integer(Target().int_size, true); }
 TypePtr Type::UInt() { return Integer(Target().int_size, false); }
+TypePtr Type::PtrDiff() { return Integer(Target().pointer_size, true); }
 TypePtr Type::Float() { return Floating(Target().float_size); }
 TypePtr Type::Double() { return Floating(Target().double_size); }
 

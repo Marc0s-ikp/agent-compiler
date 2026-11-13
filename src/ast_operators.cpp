@@ -111,7 +111,7 @@ TypePtr BinaryArith::GetType(const Context& ctx) const {
         case PointerOp::PtrPlusInt:
         case PointerOp::PtrMinusInt: return l;
         case PointerOp::IntPlusPtr: return r;
-        case PointerOp::PtrMinusPtr: return Type::Int();
+        case PointerOp::PtrMinusPtr: return Type::PtrDiff();
         case PointerOp::None: break;
     }
     RequireArithmetic(l);
