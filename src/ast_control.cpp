@@ -90,7 +90,7 @@ void SwitchStmt::EmitIR(IRGen& gen) const {
     std::string dispatch = gen.NewLabel("swdispatch");
     std::string end = gen.NewLabel("swend");
     gen.Jump(dispatch);
-    ctx.PushSwitch(end);
+    ctx.PushSwitch(end, type);
     body_->EmitIR(gen);
     Context::SwitchInfo info = ctx.PopSwitch();
     gen.Jump(end);
