@@ -14,7 +14,7 @@
 Pass count: riscv32 325/325 before, 331/331 after (new: `a4_pointer_cond`, `a4_literal_types`, `a4_global_ptr_init`, `a4_sizeof_size_t`, `a4_memzero`, `a4_size_t_folding`). aarch64 160/325 before, 253/331 after. riscv32 assembly of the 321 original tests byte-identical after every commit (`build/baseline/compare_asm.sh`).
 Fixed: AArch64 step A4 (D27): `ptradd`, `adrp`/`add` symbols, `WriteData`, `memzero` (pulled forward from A6), `Type::SizeT` (27.5.1), C90 literal types (27.5.2), `CompareType` at pointer width (27.5.3), 8-byte unsigned folding through `uint64_t` (27.5.5); seven custom drivers compute their expectations with GCC for the target.
 Blocked: nothing. A shift count is now converted to the result type (found on aarch64: an `int` count with an 8-byte left operand failed the IR checker).
-Next: A5, floats. The 79 aarch64 failures left are floats, records and `struct_sizeof_nested`.
+Next: A5, floats. The 78 aarch64 failures left are all floats (A5) and records (A6).
 
 ## AArch64 (D27)
 | Step | riscv32 | aarch64 |
@@ -97,7 +97,7 @@ Next: A5, floats. The 79 aarch64 failures left are floats, records and `struct_s
 | 2026-11-19 | 323/323 | AArch64 A1: target, backend skeleton, integer expressions and locals (riscv32 321→323, aarch64 0→36) |
 | 2026-11-19 | 324/324 | AArch64 A2: labels, jump, branch; Isa has no default (riscv32 323→324, aarch64 36→52) |
 | 2026-11-19 | 325/325 | AArch64 A3: calls, integer and pointer rows of AArch64Abi, stack arguments, AAPCS64 case model in abi_check (riscv32 324→325, aarch64 52→160) |
-| 2026-11-19 | 331/331 | AArch64 A4: ptradd, symbols, data entries, memzero, SizeT, C90 literal types, pointer-width compare, uint64_t folding, six custom tests (riscv32 325→331, aarch64 160→252) |
+| 2026-11-19 | 331/331 | AArch64 A4: ptradd, symbols, data entries, memzero, SizeT, C90 literal types, pointer-width compare, uint64_t folding, six custom tests (riscv32 325→331, aarch64 160→253) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.
