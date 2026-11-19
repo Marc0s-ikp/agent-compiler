@@ -14,7 +14,7 @@
 Pass count: riscv32 332/332 before, 335/335 after (new: `a6_c13_int_stack`, `a6_hfa4_double`, `a6_x8_result_full`). aarch64 293/332 before, 335/335 after: `TARGET=aarch64` passes everything riscv32 passes. riscv32 assembly of the original tests byte-identical (`build/baseline/compare_asm.sh`; the `a6_*` tests are new files). abi_check seeds 101 to 505 x 300 pass on both targets, all four combinations at GCC -O0 and -O2, every aarch64 case hit (`results/a6_abi_aarch64.txt`, `results/a6_abi_riscv32.txt`).
 Fixed: AArch64 step A6 (D27): the AAPCS64 record rules in the abi_check model (stage B and C as the standard's rule list, HFA test, results derived from stage C; written first and checked against GCC's `-O2` caller by `probe_aapcs64.py`), then `memcpy`, record parameters (HFAs in v registers, records up to 16 bytes in x registers, by reference, odd-sized pieces), record results (x0/x1, v0 to v3, x8). `struct_typedef`'s driver takes the pointer size from GCC.
 Blocked: nothing.
-Next: D27 is done (the AArch64 backend passes everything riscv32 passes and abi_check passes on both targets); review and merge.
+Next: D27 is done (the AArch64 backend passes everything riscv32 passes, abi_check passes on both targets with every case hit). Reviewed and merged (round 1); the review nice-to-haves are in BLOCKERS.md. Next feature is a decision for Marcus.
 
 ## AArch64 (D27)
 | Step | riscv32 | aarch64 |
