@@ -13,8 +13,8 @@
 ## Latest session
 Pass count: riscv32 323/323 before, 324/324 after (new: `a2_control_flow`). aarch64 36/323 before, 52/324 after. riscv32 assembly of the 321 original tests byte-identical (`build/baseline/compare_asm.sh`).
 Fixed: `Isa::None` is the default and aborts (BLOCKERS A1 review item 1). AArch64 step A2 (D27): `label`, `jump`, `branch` (`cbz`, `b`, `b`); every compare op was already covered.
-Blocked: nothing. `custom/sizeof_types` still fails on aarch64 (ILP32 driver, known).
-Next: A3, calls and parameters.
+Blocked: nothing. 2 review nice-to-haves are in BLOCKERS.md. `custom/sizeof_types` still fails on aarch64: its driver hard-codes ILP32 sizes (27.6: compute them with GCC's `sizeof`).
+Next: A3, calls and parameters (the first error in 200 of the 272 aarch64 failures).
 
 ## AArch64 (D27)
 | Step | riscv32 | aarch64 |
@@ -93,8 +93,8 @@ Next: A3, calls and parameters.
 | 2026-11-12 | 319/319 | v3 step 7: the IR is the only path, EmitRISC and the old generator deleted, ilp32d rules in RiscV32Abi (default 319/319, `--ir` removed) |
 | 2026-11-13 | 321/321 | cleanup before AArch64: pointer width from Target(), case values in the controlling type, step 7 review items, TARGET in run_tests.sh and abi_check |
 | 2026-11-19 | 323/323 | AArch64 A1: target, backend skeleton, integer expressions and locals (riscv32 321→323, aarch64 0→36) |
+| 2026-11-19 | 324/324 | AArch64 A2: labels, jump, branch; Isa has no default (riscv32 323→324, aarch64 36→52) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.
 All 48 `--ir` failures are struct/union tests (all CRASH in the compiler): 40 stop at "not in IR yet: this type" (`IrTypeOf` / `RequireIrScalar` on a struct or union type), 5 at "not in IR yet: ast::Member" (global/local initialiser paths), 3 at "expression is not an lvalue" (array-of-struct element member access).
-| 2026-11-19 | 324/324 | AArch64 A2: labels, jump, branch (aarch64 36→52) |
