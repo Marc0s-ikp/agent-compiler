@@ -71,7 +71,26 @@ double FoldReal(BinOp op, double a, double b) {
 
 bool IsShift(BinOp op) { return op == BinOp::Shl || op == BinOp::Shr; }
 
-std::optional<long> FoldBinary(BinOp op, long a, long b) {
+// An 8-byte unsigned value is held in a long as its bit pattern, so a value
+// above LONG_MAX is negative there. Division, remainder, right shift and
+// comparison must see it as unsigned (27.5.5).
+bool IsWideUnsigned(const Type& type) { return type.IsInteger() && type.Size() == 8 && !type.IsSigned(); }
+
+std::optional<long> FoldWideUnsigned(BinOp op, uint64_t a, uint64_t b) {
+    switch (op) {
+        case BinOp::Div: return b == 0 ? std::nullopt : std::optional<long>(static_cast<long>(a / b));
+        case BinOp::Mod: return b == 0 ? std::nullopt : std::optional<long>(static_cast<long>(a % b));
+        case BinOp::Shr: return static_cast<long>(a >> b);
+        default: return std::nullopt;
+    }
+}
+
+// 'width' is the result type's size in bits: a shift count must be below it.
+std::optional<long> FoldBinary(BinOp op, long a, long b, bool wide_unsigned, int width) {
+    if (IsShift(op) && (b < 0 || b >= width)) return std::nullopt;
+    if (wide_unsigned && (op == BinOp::Div || op == BinOp::Mod || op == BinOp::Shr)) {
+        return FoldWideUnsigned(op, static_cast<uint64_t>(a), static_cast<uint64_t>(b));
+    }
     switch (op) {
         case BinOp::Add: return a + b;
         case BinOp::Sub: return a - b;
@@ -79,8 +98,8 @@ std::optional<long> FoldBinary(BinOp op, long a, long b) {
             return static_cast<long>(static_cast<uint64_t>(a) * static_cast<uint64_t>(b));
         case BinOp::Div: return b == 0 ? std::nullopt : std::optional<long>(a / b);
         case BinOp::Mod: return b == 0 ? std::nullopt : std::optional<long>(a % b);
-        case BinOp::Shl: return (b < 0 || b > 31) ? std::nullopt : std::optional<long>(a << b);
-        case BinOp::Shr: return (b < 0 || b > 31) ? std::nullopt : std::optional<long>(a >> b);
+        case BinOp::Shl: return a << b;
+        case BinOp::Shr: return a >> b;
         case BinOp::And: return a & b;
         case BinOp::Or: return a | b;
         case BinOp::Xor: return a ^ b;
@@ -90,12 +109,12 @@ std::optional<long> FoldBinary(BinOp op, long a, long b) {
 
 // The one place integer binary folding happens. Both operands are canonical
 // (WrapToType form); they are converted to the types the instruction would
-// see, folded on long, and the result is wrapped to the result type, so the
-// value matches what the run-time code computes.
+// see, folded on long (8-byte unsigned types through uint64_t), and the result
+// is wrapped to the result type, so the value matches what the run-time code computes.
 std::optional<long> FoldIntBinary(BinOp op, long a, long b, const Type& result,
                                   const Type& rhs_type) {
-    std::optional<long> n =
-        FoldBinary(op, WrapToType(a, result), WrapToType(b, rhs_type));
+    std::optional<long> n = FoldBinary(op, WrapToType(a, result), WrapToType(b, rhs_type),
+                                       IsWideUnsigned(result), 8 * result.Size());
     if (!n) return std::nullopt;
     return WrapToType(*n, result);
 }
@@ -192,7 +211,7 @@ static TypePtr CompareType(const TypePtr& l, const TypePtr& r) {
         if (l->IsFloating() || r->IsFloating()) {
             throw std::runtime_error("comparison of pointer and floating value");
         }
-        return Type::UInt();
+        return Type::SizeT();  // the unsigned integer of pointer width (27.5.3)
     }
     return UsualArithmetic(l, r);
 }
@@ -223,7 +242,9 @@ std::optional<long> BinaryCompare::EvalConst(const Context& ctx) const {
     if (!a || !b) return std::nullopt;
     TypePtr common = CompareType(lhs_->ValueType(ctx), rhs_->ValueType(ctx));
     if (!common->IsInteger() && !common->IsPointer()) return std::nullopt;
-    return Compare(op_, WrapToType(*a, *common), WrapToType(*b, *common)) ? 1 : 0;
+    long x = WrapToType(*a, *common), y = WrapToType(*b, *common);
+    if (IsWideUnsigned(*common)) return Compare(op_, static_cast<uint64_t>(x), static_cast<uint64_t>(y)) ? 1 : 0;
+    return Compare(op_, x, y) ? 1 : 0;
 }
 
 std::optional<ConstValue> BinaryCompare::EvalConstValue(Context& ctx) const {
@@ -232,7 +253,8 @@ std::optional<ConstValue> BinaryCompare::EvalConstValue(Context& ctx) const {
     std::optional<ConstValue> b = ConstOperandAs(ctx, *rhs_, *common);
     if (!a || !b || !a->label.empty() || !b->label.empty()) return std::nullopt;
     bool result = common->IsFloating() ? Compare(op_, a->real, b->real)
-                                       : Compare(op_, a->offset, b->offset);
+                  : IsWideUnsigned(*common) ? Compare(op_, static_cast<uint64_t>(a->offset), static_cast<uint64_t>(b->offset))
+                                            : Compare(op_, a->offset, b->offset);
     return ConstValue{"", result ? 1 : 0};
 }
 
@@ -387,10 +409,10 @@ Operand BinaryArith::EmitValue(IRGen& gen) const {
         throw std::runtime_error("invalid operands to binary operator");
     }
     TypePtr result = GetType(ctx);
-    bool shift = op_ == BinOp::Shl || op_ == BinOp::Shr;
-    TypePtr rhs_type = shift ? Promote(rhs_->ValueType(ctx)) : result;
+    // A shift's result type is the promoted left operand; the count is converted
+    // to it too, because the IR needs both operands in one type.
     Operand a = ValueAs(gen, *lhs_, *result);
-    Operand b = ValueAs(gen, *rhs_, *rhs_type);
+    Operand b = ValueAs(gen, *rhs_, *result);
     return Arith(gen, op_, *result, a, b);
 }
 

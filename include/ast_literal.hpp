@@ -15,9 +15,10 @@ public:
     ir::Operand EmitValue(IRGen& gen) const override;
 
 private:
-    // Throws if the value does not fit 32 bits. Checked at code generation,
-    // not in the constructor, so the parser never throws.
-    void CheckRange() const;
+    // Octal and hex literals have a longer type list than decimal ones (C90).
+    // GetType throws if no type holds the value; that is checked at code
+    // generation, not in the constructor, so the parser never throws.
+    bool IsDecimal() const;
 
     unsigned long long value_;
     bool has_u_;
