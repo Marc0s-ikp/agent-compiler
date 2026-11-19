@@ -123,5 +123,6 @@ printed with `ok`/`BAD`.
     docker run --rm --entrypoint "" --user "$(id -u):$(id -g)" -v "$PWD":/w -w /w agent-compiler:latest bash -c \
       'make build/c_compiler && for s in 101 202 303 404 505; do TARGET=aarch64 tests/abi_check/run_abi.sh $s 300; done'
 
-Until the compiler passes records (A6), `run_abi.sh` on aarch64 stops at "ours failed"; the generator itself was checked with GCC
-only (caller, callee and driver at -O0 and -O2 under `qemu-aarch64`): seeds 101, 202, 303, 404, 505 x 300 pass and hit every case.
+Seeds 101, 202, 303, 404, 505 x 300 hit every aarch64 case at least 4 times per seed (`r_double`, `r_hfa4`, `h_last` are the rarest; most
+cases 10 to 200) and pass in all four combinations at GCC -O0 and -O2 under `qemu-aarch64` with records (step A6, `results/a6_abi_aarch64.txt`);
+the same seeds on riscv32 are unchanged and pass (`results/a6_abi_riscv32.txt`).
