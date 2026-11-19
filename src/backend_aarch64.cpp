@@ -20,7 +20,7 @@
 // x16 and x17 hold addresses and large constants. All four are caller-saved,
 // so the prologue saves only the frame record (x29 and x30).
 //
-// This is step A4: integer operators, assignment, locals, control flow and calls
+// This is step A5: integer and floating operators, assignment, locals, control flow and calls
 // with integer and pointer arguments and results. An instruction
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
@@ -43,11 +43,17 @@ int RoundUp(int value, int multiple) { return (value + multiple - 1) / multiple 
 // True for the types that live in an x register (64 bits); the others use w.
 bool IsWide(IrType type) { return type == IrType::I64 || type == IrType::Ptr; }
 
-// Register number n, as w<n> or x<n>, for a value of this IR type.
+// Register number n for a value of this IR type: w<n> or x<n>, or s<n> / d<n>
+// for a float or double (27.3).
 std::string Reg(int n, IrType type) {
-    if (ir::IsFloatType(type)) NotYet("floating registers");
+    if (type == IrType::F32) return "s" + std::to_string(n);
+    if (type == IrType::F64) return "d" + std::to_string(n);
     return std::string(IsWide(type) ? "x" : "w") + std::to_string(n);
 }
+
+// The scratch register number k (0 or 1) for a value of this type: x9/x10 for
+// integers and pointers, d16/d17 for floats and doubles (27.3).
+int Scratch(IrType type, int k) { return (ir::IsFloatType(type) ? 16 : 9) + k; }
 
 // 'reg' = a constant: movz of the low 16 bits, then a movk for each further
 // non-zero 16-bit chunk (at most 1 + 3). 'bits' is 32 for a w register, else 64.
@@ -114,9 +120,11 @@ const char* LoadOp(IrType type) {
         case IrType::I16: return "ldrh";
         case IrType::I32:
         case IrType::I64:
-        case IrType::Ptr: return "ldr";
-        default: NotYet("floating load");
+        case IrType::Ptr:
+        case IrType::F32:
+        case IrType::F64: return "ldr";
     }
+    NotYet("load type");
 }
 
 const char* StoreOp(IrType type) {
@@ -125,9 +133,11 @@ const char* StoreOp(IrType type) {
         case IrType::I16: return "strh";
         case IrType::I32:
         case IrType::I64:
-        case IrType::Ptr: return "str";
-        default: NotYet("floating store");
+        case IrType::Ptr:
+        case IrType::F32:
+        case IrType::F64: return "str";
     }
+    NotYet("store type");
 }
 
 // ---- frame layout (27.3) ----
@@ -295,8 +305,8 @@ private:
         switch (piece.where) {
             case Piece::Where::IntReg: return Load(piece.index, o);
             case Piece::Where::StackWord:
-                Load(9, o);
-                return EmitMem(os_, StoreOp(o.type), Reg(9, o.type), "sp", piece.index, ir::SizeOf(o.type));
+                Load(Scratch(o.type, 0), o);
+                return EmitMem(os_, StoreOp(o.type), Reg(Scratch(o.type, 0), o.type), "sp", piece.index, ir::SizeOf(o.type));
             case Piece::Where::FloatReg: break;
         }
         NotYet("floating argument");
@@ -326,8 +336,20 @@ private:
         }
     }
 
+    // fadd, fsub, fmul or fdiv on d16 and d17 (or s16, s17).
+    void WriteFloatBinary(const Instruction& in) {
+        const char* name = in.op == Op::Add ? "fadd" : in.op == Op::Sub ? "fsub" : in.op == Op::Mul ? "fmul"
+                         : in.op == Op::Div ? "fdiv" : nullptr;
+        if (!name) NotYet(std::string("floating ") + ir::OpName(in.op));
+        Load(16, in.args[0]);
+        Load(17, in.args[1]);
+        std::string a = Reg(16, in.type);
+        os_ << "\t" << name << " " << a << ", " << a << ", " << Reg(17, in.type) << "\n";
+        StoreResult(16, in.dst);
+    }
+
     void WriteBinary(const Instruction& in) {
-        if (ir::IsFloatType(in.type)) NotYet("floating arithmetic");
+        if (ir::IsFloatType(in.type)) return WriteFloatBinary(in);
         Load(9, in.args[0]);
         Load(10, in.args[1]);
         if (in.op == Op::Rem || in.op == Op::RemU) {
@@ -343,6 +365,12 @@ private:
         std::string q = Reg(17, in.type), a = Reg(9, in.type), b = Reg(10, in.type);
         os_ << "\t" << (in.op == Op::Rem ? "sdiv " : "udiv ") << q << ", " << a << ", " << b << "\n";
         os_ << "\tmsub " << a << ", " << q << ", " << b << ", " << a << "\n";
+    }
+
+    void WriteFloatNeg(const Instruction& in) {
+        Load(16, in.args[0]);
+        os_ << "\tfneg " << Reg(16, in.type) << ", " << Reg(16, in.type) << "\n";
+        StoreResult(16, in.dst);
     }
 
     static const char* Condition(Op op) {
@@ -432,9 +460,11 @@ private:
         if (ir::IsConversion(in.op)) return WriteConversion(in);
         switch (in.op) {
             case Op::Copy:
-            case Op::Const:
-                Load(9, in.args[0]);
-                return StoreResult(9, in.dst);
+            case Op::Const: {
+                int reg = Scratch(in.args[0].type, 0);
+                Load(reg, in.args[0]);
+                return StoreResult(reg, in.dst);
+            }
             case Op::PtrAdd:  // pointer + byte offset, both 64-bit (the frontend scaled it)
                 Load(9, in.args[0]);
                 Load(10, in.args[1]);
@@ -442,7 +472,7 @@ private:
                 return StoreResult(9, in.dst);
             case Op::Neg:
             case Op::Not:
-                if (ir::IsFloatType(in.type)) NotYet("floating neg");
+                if (ir::IsFloatType(in.type)) return WriteFloatNeg(in);
                 Load(9, in.args[0]);
                 os_ << "\t" << (in.op == Op::Neg ? "neg " : "mvn ") << Reg(9, in.type) << ", " << Reg(9, in.type) << "\n";
                 return StoreResult(9, in.dst);
@@ -452,12 +482,12 @@ private:
                 return StoreResult(9, in.dst);
             case Op::Load:
                 Load(9, in.args[0]);
-                EmitMem(os_, LoadOp(in.type), Reg(9, in.type), "x9", 0, ir::SizeOf(in.type));
-                return StoreResult(9, in.dst);
+                EmitMem(os_, LoadOp(in.type), Reg(Scratch(in.type, 0), in.type), "x9", 0, ir::SizeOf(in.type));
+                return StoreResult(Scratch(in.type, 0), in.dst);
             case Op::Store:
-                Load(9, in.args[0]);
+                Load(Scratch(in.type, 0), in.args[0]);
                 Load(10, in.args[1]);
-                return EmitMem(os_, StoreOp(in.type), Reg(9, in.type), "x10", 0, ir::SizeOf(in.type));
+                return EmitMem(os_, StoreOp(in.type), Reg(Scratch(in.type, 0), in.type), "x10", 0, ir::SizeOf(in.type));
             case Op::MemZero: return WriteMemZero(in);
             case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
             case Op::Jump: os_ << "\tb " << LocalLabel(in.label) << "\n"; return;
