@@ -4,7 +4,10 @@
 class TargetAbi;  // call_abi.hpp
 
 // Which calling convention a target uses; SetTarget maps it to an object.
-enum class AbiKind { None, RiscV32 };
+enum class AbiKind { None, RiscV32, AArch64 };
+
+// The instruction set; only main reads it, to choose the backend (D27, 27.3).
+enum class Isa { RiscV32, AArch64 };
 
 // Facts about the machine being compiled for (D21, 21.3). Sizes double as
 // alignments unless a field says otherwise.
@@ -12,7 +15,8 @@ struct TargetInfo {
     int char_size, short_size, int_size, long_size, pointer_size;
     int float_size, double_size, double_align;
     bool char_is_signed;  // D8: false on riscv32
-    int stack_align;      // 16 on ilp32d
+    int stack_align;      // 16 on ilp32d and AAPCS64
+    Isa isa = Isa::RiscV32;
     AbiKind abi_kind = AbiKind::None;
     const TargetAbi* abi = nullptr;  // set by SetTarget from abi_kind
 
@@ -22,6 +26,9 @@ struct TargetInfo {
 
 // The RISC-V 32-bit target (ilp32d).
 TargetInfo Riscv32Target();
+
+// The AArch64 target (AAPCS64, LP64; D27, 27.1).
+TargetInfo Aarch64Target();
 
 // Looks a target up by its --target name; returns false if there is none.
 bool FindTarget(const std::string& name, TargetInfo& out);
