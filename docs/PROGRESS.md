@@ -11,10 +11,16 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: 319/319 before; 321/321 after (86 of 86 compiler_tests, 235 of 235 custom, two new: `ptrdiff_type`, `switch_case_conversion`). `tests/abi_check` seeds 101-505 x 300 pass in all four combinations at GCC -O0/-O2, every ABI case hit. Generated assembly of all 319 earlier tests byte-identical after every commit, except the first, which only renumbers labels.
-Fixed: cleanup before AArch64. The "Required before AArch64" items 2 to 5 (`InitWriter::Word`, `PtrMinusPtr` and `PointerDifference` take pointer width from `Target()`, via the new `Type::PtrDiff()`; `AddCase` converts to the promoted controlling type). Step 7 review items 1 to 3 (`++label_count_` removed; call and return take the result register from the classifier; a trailing `-o` reports "-o needs a value"). `scripts/run_tests.sh` and `tests/abi_check/run_abi.sh` take `TARGET=riscv32|aarch64` (aarch64: `--target aarch64`, `aarch64-linux-gnu-gcc -static`, `qemu-aarch64`). CLAUDE.md rule 9: every `docker run` has `--user "$(id -u):$(id -g)"`.
-Blocked: nothing. `TARGET=aarch64` fails every test with "unknown target 'aarch64'", as expected: the compiler has no aarch64 target yet. The toolchain mapping was checked by linking GCC's own aarch64 output (a custom test and the abi_check programs) under `qemu-aarch64`.
-Next: the AArch64 target (`TargetInfo`, a `TargetAbi` subclass, a backend), a separate decision (21.8).
+Pass count: riscv32 321/321 before, 323/323 after (86 of 86 compiler_tests, 237 of 237 custom; new: `a1_int_ops`, `a1_big_frame`). aarch64 0/321 before, 36/323 after. riscv32 assembly of all 321 earlier tests byte-identical (`build/baseline/compare_asm.sh`).
+Fixed: AArch64 step A1 (D27). `run_abi.sh` refuses aarch64. `Aarch64Target()`, `--target aarch64`, `Isa`, backend chosen by `Target().isa`. `AArch64Abi` for no-parameter functions returning an integer or void. Backend skeleton: two-part frame, `movz`/`movk`, `EmitMem` with the x16 fallback. Integer operators, assignment and locals.
+Blocked: nothing. 4 review nice-to-haves are in BLOCKERS.md. Of the 287 aarch64 failures, 200 stop at function parameters (A3), 45 at symbols/`ptradd`/data (A4), 25 at labels/branches (A2), and the rest at non-integer returns or calls.
+Next: A2, control flow (labels, `branch`/`jump` per 27.3, `&&`, `||`, `?:`, `switch`).
+
+## AArch64 (D27)
+| Step | riscv32 | aarch64 |
+|------|---------|---------|
+| baseline (master after D27 docs) | 321/321 | 0/321 |
+| A1 target, skeleton, integer expressions and locals | 323/323 | 36/323 |
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -62,7 +68,7 @@ Next: the AArch64 target (`TargetInfo`, a `TargetAbi` subclass, a backend), a se
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 233 | 233 |
+| custom (written by tester, D13) | 237 | 237 |
 
 ## History
 | Date | Passing | Change |
@@ -85,6 +91,7 @@ Next: the AArch64 target (`TargetInfo`, a `TargetAbi` subclass, a backend), a se
 | 2026-11-12 | 299/299 | v3 step 4 stage B: globals, static locals and strings as data entries, five pointer tests (default 294→299, --ir 176→226) |
 | 2026-11-12 | 319/319 | v3 step 7: the IR is the only path, EmitRISC and the old generator deleted, ilp32d rules in RiscV32Abi (default 319/319, `--ir` removed) |
 | 2026-11-13 | 321/321 | cleanup before AArch64: pointer width from Target(), case values in the controlling type, step 7 review items, TARGET in run_tests.sh and abi_check |
+| 2026-11-19 | 323/323 | AArch64 A1: target, backend skeleton, integer expressions and locals (riscv32 321→323, aarch64 0→36) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.

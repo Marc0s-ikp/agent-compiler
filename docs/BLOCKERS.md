@@ -294,7 +294,22 @@ From the review of `cleanup/pre-aarch64` (2026-11-13, approved in round 1). None
 2. The DONE entries in "Required before AArch64" keep the original problem text after the DONE note.
 3. `scripts/run_tests.sh` and `tests/abi_check/run_abi.sh` each hold the TARGET-to-toolchain mapping; they must be kept
    in step by hand. A DECISIONS.md line could record this, `Type::PtrDiff` and the switch type in `SwitchInfo`.
-4. Under `TARGET=aarch64`, abi_check's model is still ilp32d, so "every case hit" says nothing about AArch64 (the README
+4. DONE (A1, e26b335: `run_abi.sh` refuses aarch64 with exit 2). Under `TARGET=aarch64`, abi_check's model is still ilp32d, so "every case hit" says nothing about AArch64 (the README
    says so). `run_abi.sh` could refuse aarch64 until an AAPCS64 model exists.
 5. If the image lacks a target's toolchain, `run_tests.sh` inside the container tries to re-exec into Docker and fails
    with "docker: not found". Predates the branch.
+
+## Nice to have from the AArch64 A1 review
+
+From the review of `feat/aarch64-a1` (2026-11-19, approved in round 1). None of these blocked the merge.
+
+1. `include/target.hpp`: `Isa isa = Isa::RiscV32;` is a silent default. A `TargetInfo` built outside a factory would
+   pick the RISC-V backend without complaint. `abi_kind` defaults to `None`, and an `Isa::None` that `main` rejects
+   would fit the "never fall back to a default" rule.
+2. `tests/custom/a1_int_ops.c`: the header says it tests 64-bit immediates, but every operand is 32-bit (I64
+   immediates can't be reached until A4). Reword the header, or cover 64-bit immediates in the A4 test for 27.5.5. Add
+   an unsigned `<=`/`>=` so `LeU` is covered.
+3. `src/backend_aarch64.cpp`: the misaligned-offset fallback in `EmitMem` and the negative-offset `sub` branch of
+   `EmitAddrOffset` have no test, and A1 can't reach them (slots are size-aligned and offsets are positive).
+4. `NotYet` is defined in both `src/backend_aarch64.cpp` and `src/call_abi_aarch64.cpp`. One shared helper would keep
+   the message text in one place.
