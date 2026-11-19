@@ -9,6 +9,7 @@
 
 #include "backend.hpp"
 #include "call_abi.hpp"
+#include "symbol_names.hpp"
 #include "target.hpp"
 
 // The AArch64 backend (D27, 27.3), AAPCS64 with LP64. It has the same shape as
@@ -24,6 +25,8 @@
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
 
+using backend::LocalLabel;
+using backend::SymbolNames;
 using ir::Instruction;
 using ir::IrType;
 using ir::Op;
@@ -34,24 +37,6 @@ using ir::Operand;
 }
 
 int RoundUp(int value, int multiple) { return (value + multiple - 1) / multiple * multiple; }
-
-std::string LocalLabel(const std::string& name) { return ".L" + name; }
-
-// Compiler-made data (strings, float constants, static locals) has a neutral name
-// with a '.', which no C name has; it is spelled as a local ".L" label, as on
-// RISC-V. A C-named global or function keeps its name.
-class SymbolNames {
-public:
-    explicit SymbolNames(const ir::Module& module) {
-        for (const ir::DataEntry& d : module.data) if (d.compiler_made) local_.insert(d.label);
-    }
-    std::string Spell(const std::string& name) const {
-        return local_.count(name) ? LocalLabel(name) : name;
-    }
-
-private:
-    std::set<std::string> local_;
-};
 
 // ---- registers and constants ----
 

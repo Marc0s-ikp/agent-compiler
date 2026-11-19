@@ -357,7 +357,7 @@ From the review of `feat/aarch64-a4` (2026-11-19, approved in round 1). None of 
    sum crossing `LONG_MAX` is signed overflow (UB) in the host. `Mul` already goes through `uint64_t`; these two could too.
 3. DONE (cleanup/pre-a5, literal suffixes). `src/ast_literal.cpp:17`: `strtoull` saturates a literal above `ULLONG_MAX`, so on aarch64 it is accepted as
    `unsigned long` instead of rejected. Check `errno == ERANGE`.
-4. `SymbolNames` is copied verbatim in `src/backend_aarch64.cpp:43` and `src/backend_riscv.cpp:41`. Move it to a shared
+4. DONE (cleanup/pre-a5, shared header `include/symbol_names.hpp`). `SymbolNames` is copied verbatim in `src/backend_aarch64.cpp:43` and `src/backend_riscv.cpp:41`. Move it to a shared
    header before A5 or A6 changes either copy.
 5. `tests/custom/a4_size_t_folding_driver.c:33-34`: the `&& E_DIV != …` and `E_SHR_TOP == E_DIV ? 1 : 3` guards can never
    matter (the values are distinct; equal case labels would not compile). Simplify them.
