@@ -55,6 +55,8 @@ Shapes beside `random`, `fp_heavy` and `split`: `structs` (1 to 6 records among 
 pointer, used up, then a 5 to 8 byte record; half the time fa0-fa7 are full first, so a floating struct is split
 too) and `a_full` (a0-a7 and sometimes the first stack word used, then records). Seeds 101, 202, 303, 404, 505
 x 300 hit every case 4 to 130 times per seed and pass in all four combinations with GCC -O0 and -O2.
+The release run, seeds 606, 707, 808, 909, 1010 x 500, hits every riscv32 case at least 16 times per seed and passes
+the same way (`docs/ABI_RESULTS.md` has the per-case table for both targets).
 `run_abi.sh` deletes the ELFs of an earlier run of the same seed (it skips an ELF that exists).
 
 ## AAPCS64 model (aarch64, steps A3, A5 and A6)
@@ -116,7 +118,7 @@ byte-wise check of a split double is ilp32d only.
 right. A hand-written assembly callee `probe` records x0-x8, d0-d7 and 96 words from sp, and returns known patterns in x0, x1,
 d0-d3 (and, when the model says memory, exactly the result's size of pattern bytes through [x8]). The caller GCC compiles at -O2 calls it through a cast to each generated
 signature with arguments of known bytes; the script compares the registers, the stack words, the bytes behind a by-reference
-pointer and the result with the placement the model predicts. Seeds 101 to 505 x 300 agree on every signature (a model with
+pointer and the result with the placement the model predicts. Seeds 101 to 505 x 300 and 606 to 1010 x 500 agree on every signature (a model with
 C.3 removed disagrees on 15 of 300, one with C.13 removed crashes on a wrong pointer), and the first signature for each case is
 printed with `ok`/`BAD`.
 
@@ -126,3 +128,5 @@ printed with `ok`/`BAD`.
 Seeds 101, 202, 303, 404, 505 x 300 hit every aarch64 case at least 4 times per seed (`r_double`, `r_hfa4`, `h_last` are the rarest; most
 cases 10 to 200) and pass in all four combinations at GCC -O0 and -O2 under `qemu-aarch64` with records (step A6, `results/a6_abi_aarch64.txt`);
 the same seeds on riscv32 are unchanged and pass (`results/a6_abi_riscv32.txt`).
+The release run, seeds 606, 707, 808, 909, 1010 x 500, hits every aarch64 case at least 6 times per seed (`c_x_last` and
+`h_last` are the rarest) and passes the same way on both targets (`docs/ABI_RESULTS.md`, per-case table).

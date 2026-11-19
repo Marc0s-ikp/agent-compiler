@@ -344,7 +344,7 @@ From the review of `feat/aarch64-a3` (2026-11-19, approved in round 1). None of 
 ## From A4 (implementer, 2026-11-19)
 
 1. DONE (commit `frontend: shift count converted to the result type`). A shift with an 8-byte left operand and an `int` count (`sizeof(x) >> 1`) at run time fails the IR checker on aarch64 ("right operand has type i32, expected i64"). `BinaryArith::EmitValue` converts the count to `Promote(rhs type)`; it should be converted to the result type. Folding is not affected. riscv32 never shows it. See the A4 notes.
-2. Drivers compiled by GCC use its default C17 literal rules, the compiler uses C90 (decimal above INT_MAX that does not fit `long`: `long long` versus `unsigned long`). `a4_literal_types` takes those two cases from the C90 rule. `-std=c90` for drivers in `run_tests.sh` would let it use the same expression (Marcus only).
+2. Drivers compiled by GCC use its default C17 literal rules, the compiler uses C90 (decimal above INT_MAX that does not fit `long`: `long long` versus `unsigned long`). `a4_literal_types` takes those two cases from the C90 rule. `-std=c90` for drivers in `run_tests.sh` would let it use the same expression (Marcus only). **Done** (release, 2026-11-19): `run_tests.sh` takes driver flags from `<name>.gccflags`; `a4_literal_types` uses the same expressions with `-std=gnu90`.
 
 ## Nice to have from the AArch64 A4 review
 
@@ -392,15 +392,17 @@ From the review of `feat/aarch64-a6` (2026-11-19, approved in round 1). None of 
 
 1. `tests/abi_check/probe_aapcs64.py:63`: for a result in memory the stub stores 64 bytes through x8, but such results are
    20 to 24 bytes, so it writes up to 44 bytes past `r` in the GCC caller's frame (undefined, harmless so far). Store only the
-   result's size.
+   result's size. **Done** (release, 2026-11-19): the caller sets `probe_mem` to the size and the stub copies that many bytes.
 2. The probe imports `gen_abi`, which leaves `tests/abi_check/__pycache__/`. Set `sys.dont_write_bytecode = True` or ignore it.
 3. `src/backend_aarch64.cpp:165`: the comment says `src`/`dst` "both stay unchanged", but the loop path with `dst` = x16 and
    more than 4095 bytes overwrites x16 in `EmitAddrOffset`. No caller uses it afterwards; only the comment is wrong.
+   **Done** (release, 2026-11-19): the comment says when `dst` is lost.
 4. `SaveReturnedRecord` and `StoreIncomingRecordPiece` repeat the "store a FloatReg or IntReg piece at base + offset" switch;
-   one helper could serve both.
+   one helper could serve both. **Done** (release, 2026-11-19): `StoreRecordRegisterPiece`, assembly byte-identical.
 5. `tests/abi_check/gen_abi.py:552` (`c4`): assert the "natural alignment <= 8" it relies on. The `c7`/`c8` asserts
    (`not hasattr(a, "scalable")`) cannot fail, and B.1, B.2, B.6 are only a docstring; assert something real (a known type).
 6. `tests/abi_check/README.md`: the result bullet says memory is used when "B.4 made it a pointer"; add "or it would be on
    the stack", which is what the code does.
 7. The AAPCS64 text does not say how a union's members are counted for an HFA. Both the model and the classifier take the
-   largest member, from GCC's assembly (A6 notes); `probe_aapcs64.py` agrees on random unions.
+   largest member, from GCC's assembly (A6 notes); `probe_aapcs64.py` agrees on random unions. **Decided** as D28 (Marcus,
+   2026-11-19): where AAPCS64 is silent, GCC's behaviour defines the ABI, confirmed by the probe.
