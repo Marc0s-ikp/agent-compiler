@@ -76,6 +76,10 @@ const TargetAbi* AbiFor(AbiKind kind) {
 }  // namespace
 
 void SetTarget(const TargetInfo& info) {
+    if (info.isa == Isa::None) {
+        std::cerr << "internal error: SetTarget called with no isa\n";
+        std::abort();
+    }
     if (g_is_set) {
         std::cerr << "internal error: SetTarget called twice\n";
         std::abort();

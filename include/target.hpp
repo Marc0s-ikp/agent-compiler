@@ -7,7 +7,7 @@ class TargetAbi;  // call_abi.hpp
 enum class AbiKind { None, RiscV32, AArch64 };
 
 // The instruction set; only main reads it, to choose the backend (D27, 27.3).
-enum class Isa { RiscV32, AArch64 };
+enum class Isa { None, RiscV32, AArch64 };
 
 // Facts about the machine being compiled for (D21, 21.3). Sizes double as
 // alignments unless a field says otherwise.
@@ -16,7 +16,7 @@ struct TargetInfo {
     int float_size, double_size, double_align;
     bool char_is_signed;  // D8: false on riscv32
     int stack_align;      // 16 on ilp32d and AAPCS64
-    Isa isa = Isa::RiscV32;
+    Isa isa = Isa::None;  // SetTarget aborts on None
     AbiKind abi_kind = AbiKind::None;
     const TargetAbi* abi = nullptr;  // set by SetTarget from abi_kind
 

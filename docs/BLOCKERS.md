@@ -303,7 +303,7 @@ From the review of `cleanup/pre-aarch64` (2026-11-13, approved in round 1). None
 
 From the review of `feat/aarch64-a1` (2026-11-19, approved in round 1). None of these blocked the merge.
 
-1. `include/target.hpp`: `Isa isa = Isa::RiscV32;` is a silent default. A `TargetInfo` built outside a factory would
+1. DONE (A2 commit 1: `Isa::None` is the default, `SetTarget` and `main` abort on it). `include/target.hpp`: `Isa isa = Isa::RiscV32;` is a silent default. A `TargetInfo` built outside a factory would
    pick the RISC-V backend without complaint. `abi_kind` defaults to `None`, and an `Isa::None` that `main` rejects
    would fit the "never fall back to a default" rule.
 2. `tests/custom/a1_int_ops.c`: the header says it tests 64-bit immediates, but every operand is 32-bit (I64
@@ -313,3 +313,14 @@ From the review of `feat/aarch64-a1` (2026-11-19, approved in round 1). None of 
    `EmitAddrOffset` have no test, and A1 can't reach them (slots are size-aligned and offsets are positive).
 4. `NotYet` is defined in both `src/backend_aarch64.cpp` and `src/call_abi_aarch64.cpp`. One shared helper would keep
    the message text in one place.
+
+## Nice to have from the AArch64 A2 review
+
+From the review of `feat/aarch64-a2` (2026-11-19, approved in round 1). None of these blocked the merge.
+
+1. DONE (merge commit). The PROGRESS history row for A2 sat after the "Step 6 baseline" paragraph and left out the riscv32 count.
+2. `src/backend_aarch64.cpp`, `WriteBranch`: the `cbz x9` path (an `I64`/`Ptr` condition) has no test. Only a pointer
+   condition through `PtrToInt` in `Condition()` reaches it, which needs A4. A4's custom tests should include `if (p)`,
+   `while (p)` and `p ? a : b` on aarch64.
+3. `custom/sizeof_types` fails on aarch64: the driver hard-codes ILP32 sizes (`sizeof(char *) == 4`). Per 27.6 its
+   expected values should come from GCC's `sizeof` for the same target; due in A4 with `sizeof`/`size_t`.

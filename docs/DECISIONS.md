@@ -1014,3 +1014,16 @@ Choices that D27 left open, made in step A1 (`src/backend_aarch64.cpp`, `src/cal
   return label is `.Lret.<name>`; no `.type` or `.size` directives.
 - **compare_asm.sh and new custom tests.** `build/baseline/gen.sh` compiles every test it finds, so the two
   new custom tests (`a1_int_ops`, `a1_big_frame`) show up as "Only in asm_new". The 321 original files are identical.
+
+## A2 notes (implementer, 2026-11-19)
+
+Choices that D27 left open, made in step A2 (`src/backend_aarch64.cpp`):
+
+- **Branch.** `branch v, T, F` is `cbz w9, 1f; b .LT; 1: b .LF`, with x9 when the condition is `I64` or `Ptr`
+  (the register is chosen from the operand's type). The condition is loaded into x9/w9 like every operand. `jump` is `b`.
+  Labels are `.L<name>`, through `LocalLabel`, as in the RISC-V backend.
+- **Compares.** `cmp` plus `cset w9` with `eq ne lt lo le ls`, for W and X registers. The IR has no Gt/Ge (the frontend
+  swaps operands), so these six cover every C compare. `LeU` is covered by `tests/custom/a2_control_flow`.
+- **No frontend change.** `&&`, `||`, `?:` and `switch` lower to compare/branch/label in the frontend; none needed a change.
+- **Test.** `a2_control_flow` has no parameters or calls (A3), no preprocessor use (the compiler has none), and runs on both targets.
+- **compare_asm.sh.** The 321 original files are identical; `a2_control_flow` shows up as a new file.

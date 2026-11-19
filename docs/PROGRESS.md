@@ -11,16 +11,17 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: riscv32 321/321 before, 323/323 after (86 of 86 compiler_tests, 237 of 237 custom; new: `a1_int_ops`, `a1_big_frame`). aarch64 0/321 before, 36/323 after. riscv32 assembly of all 321 earlier tests byte-identical (`build/baseline/compare_asm.sh`).
-Fixed: AArch64 step A1 (D27). `run_abi.sh` refuses aarch64. `Aarch64Target()`, `--target aarch64`, `Isa`, backend chosen by `Target().isa`. `AArch64Abi` for no-parameter functions returning an integer or void. Backend skeleton: two-part frame, `movz`/`movk`, `EmitMem` with the x16 fallback. Integer operators, assignment and locals.
-Blocked: nothing. 4 review nice-to-haves are in BLOCKERS.md. Of the 287 aarch64 failures, 200 stop at function parameters (A3), 45 at symbols/`ptradd`/data (A4), 25 at labels/branches (A2), and the rest at non-integer returns or calls.
-Next: A2, control flow (labels, `branch`/`jump` per 27.3, `&&`, `||`, `?:`, `switch`).
+Pass count: riscv32 323/323 before, 324/324 after (new: `a2_control_flow`). aarch64 36/323 before, 52/324 after. riscv32 assembly of the 321 original tests byte-identical (`build/baseline/compare_asm.sh`).
+Fixed: `Isa::None` is the default and aborts (BLOCKERS A1 review item 1). AArch64 step A2 (D27): `label`, `jump`, `branch` (`cbz`, `b`, `b`); every compare op was already covered.
+Blocked: nothing. 2 review nice-to-haves are in BLOCKERS.md. `custom/sizeof_types` still fails on aarch64: its driver hard-codes ILP32 sizes (27.6: compute them with GCC's `sizeof`).
+Next: A3, calls and parameters (the first error in 200 of the 272 aarch64 failures).
 
 ## AArch64 (D27)
 | Step | riscv32 | aarch64 |
 |------|---------|---------|
 | baseline (master after D27 docs) | 321/321 | 0/321 |
 | A1 target, skeleton, integer expressions and locals | 323/323 | 36/323 |
+| A2 control flow | 324/324 | 52/324 |
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -92,6 +93,7 @@ Next: A2, control flow (labels, `branch`/`jump` per 27.3, `&&`, `||`, `?:`, `swi
 | 2026-11-12 | 319/319 | v3 step 7: the IR is the only path, EmitRISC and the old generator deleted, ilp32d rules in RiscV32Abi (default 319/319, `--ir` removed) |
 | 2026-11-13 | 321/321 | cleanup before AArch64: pointer width from Target(), case values in the controlling type, step 7 review items, TARGET in run_tests.sh and abi_check |
 | 2026-11-19 | 323/323 | AArch64 A1: target, backend skeleton, integer expressions and locals (riscv32 321→323, aarch64 0→36) |
+| 2026-11-19 | 324/324 | AArch64 A2: labels, jump, branch; Isa has no default (riscv32 323→324, aarch64 36→52) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.
