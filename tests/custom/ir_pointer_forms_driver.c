@@ -7,6 +7,11 @@ int high_low(void);
 int negative_address(void);
 int void_cast(int x);
 
+int low[4]; /* a static address, below 4 GB on both targets */
+
+/* What roundtrip computes, by GCC for this target: through unsigned a 64-bit pointer is cut to 32 bits. */
+static int expect_roundtrip(int *p) { return (int *)(unsigned)p == p; }
+
 int main()
 {
     int x[400];
@@ -20,7 +25,8 @@ int main()
     if (idx(&x[100], -3, 250, -5, 299) != 2678) return 1;
     if (walk(a, a + 5) != 20504023) return 2;
     if (diffs(cb, sb + 5, ib + 2, cb + 7, sb + 2, ib + 7) != 477) return 3;
-    if (!roundtrip(ib) || !roundtrip(0)) return 4;
+    if (roundtrip(ib) != expect_roundtrip(ib) || roundtrip(0) != expect_roundtrip(0)) return 4;
+    if (roundtrip(low) != expect_roundtrip(low) || roundtrip(&low[3]) != expect_roundtrip(&low[3])) return 9;
     if (null_forms(0) != 35 || null_forms(ib) != 28) return 5;
     if (high_low() != 6) return 6;
     if (!negative_address()) return 7;
