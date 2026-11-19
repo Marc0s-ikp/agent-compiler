@@ -20,8 +20,8 @@
 // x16 and x17 hold addresses and large constants. All four are caller-saved,
 // so the prologue saves only the frame record (x29 and x30).
 //
-// This is step A5: integer and floating operators, assignment, locals, control flow and calls
-// with integer and pointer arguments and results. An instruction
+// This is step A6: integer and floating operators, assignment, locals, control flow, calls
+// with scalar arguments and results, and memcpy. An instruction
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
 
@@ -140,6 +140,46 @@ const char* StoreOp(IrType type) {
     NotYet("store type");
 }
 
+// The load and store of an access of 1, 2, 4 or 8 bytes (an integer piece, or a unit of a record).
+const char* LoadBytesOp(int bytes) { return bytes == 1 ? "ldrb" : bytes == 2 ? "ldrh" : "ldr"; }
+const char* StoreBytesOp(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
+
+// ---- records (27.3) ----
+// A record is memory in the IR: its value is the address of an object. Only at a call, an entry and a
+// return is it split into pieces (call_abi.hpp), each with its byte offset inside the record. The unit
+// of every access to a record is its alignment (at most 8 bytes), so a piece of a char-aligned record
+// is read and written a byte at a time and never touches a byte outside the record. A size that is a
+// multiple of the alignment is a multiple of the unit; the loops below shrink the unit if it is not.
+
+int AccessUnit(int align, int bytes) {
+    int unit = std::min(align, 8);
+    while (bytes % unit != 0) unit /= 2;
+    return unit;
+}
+
+// The w or x register number n for an access of 'unit' bytes.
+std::string UnitReg(int n, int unit) { return std::string(unit == 8 ? "x" : "w") + std::to_string(n); }
+
+// Copies 'bytes' bytes of alignment 'align' from the address in 'src' to the one in 'dst'. Up to 16
+// units it is straight-line code; beyond that a loop runs x12 (dst) up to x14 (the end) with x13 (src).
+// Clobbers x11 to x14 (and x16), so 'dst' and 'src' must be other registers; both stay unchanged.
+void EmitCopyMem(std::ostream& os, const std::string& dst, const std::string& src, int bytes, int align) {
+    const int kUnrolledMax = 16;
+    int unit = AccessUnit(align, bytes);
+    std::string tmp = UnitReg(11, unit);
+    if (bytes / unit <= kUnrolledMax) {
+        for (int off = 0; off < bytes; off += unit) {
+            EmitMem(os, LoadBytesOp(unit), tmp, src, off, unit);
+            EmitMem(os, StoreBytesOp(unit), tmp, dst, off, unit);
+        }
+        return;
+    }
+    os << "\tmov x12, " << dst << "\n\tmov x13, " << src << "\n";
+    EmitAddrOffset(os, "x14", "x12", bytes);
+    os << "1:\n\t" << LoadBytesOp(unit) << " " << tmp << ", [x13], #" << unit << "\n";
+    os << "\t" << StoreBytesOp(unit) << " " << tmp << ", [x12], #" << unit << "\n\tcmp x12, x14\n\tb.ne 1b\n";
+}
+
 // ---- frame layout (27.3) ----
 // Two parts, each a multiple of 16, so sp is always 16-aligned. The upper part
 // holds, from x29 upwards: the frame record (saved x29 and x30), the frame
@@ -231,9 +271,9 @@ private:
     void StoreIncomingPiece(const Piece& piece, int home) {
         std::string reg = PieceReg(piece);
         if (piece.where == Piece::Where::StackWord) {
-            EmitMem(os_, PieceLoadOp(piece.bytes), reg, "x29", frame_.upper + piece.index, piece.bytes);
+            EmitMem(os_, LoadBytesOp(piece.bytes), reg, "x29", frame_.upper + piece.index, piece.bytes);
         }
-        EmitMem(os_, PieceStoreOp(piece.bytes), reg, "x29", home + piece.offset, piece.bytes);
+        EmitMem(os_, StoreBytesOp(piece.bytes), reg, "x29", home + piece.offset, piece.bytes);
     }
 
     // The register that holds the piece: x<n> or w<n> for an integer piece; s<n>
@@ -244,9 +284,6 @@ private:
         if (piece.where == Piece::Where::FloatReg) return std::string(wide ? "d" : "s") + std::to_string(piece.index);
         return std::string(wide ? "x" : "w") + std::to_string(piece.where == Piece::Where::IntReg ? piece.index : 9);
     }
-
-    static const char* PieceLoadOp(int bytes) { return bytes == 1 ? "ldrb" : bytes == 2 ? "ldrh" : "ldr"; }
-    static const char* PieceStoreOp(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
 
     void WriteEpilogue() {
         os_ << "\tmov sp, x29\n\tldp x29, x30, [sp]\n";
@@ -470,14 +507,21 @@ private:
         if (in.size <= 64) {
             for (long off = 0; off < in.size;) {
                 int width = ZeroWidth(in.align, in.size - off, off);
-                EmitMem(os_, StoreOpForBytes(width), width == 8 ? "xzr" : "wzr", "x9", off, width);
+                EmitMem(os_, StoreBytesOp(width), width == 8 ? "xzr" : "wzr", "x9", off, width);
                 off += width;
             }
             return;
         }
         EmitAddrOffset(os_, "x10", "x9", in.size);
-        os_ << "1:\n\t" << StoreOpForBytes(step) << " " << (step == 8 ? "xzr" : "wzr") << ", [x9], #" << step
+        os_ << "1:\n\t" << StoreBytesOp(step) << " " << (step == 8 ? "xzr" : "wzr") << ", [x9], #" << step
             << "\n\tcmp x9, x10\n\tb.ne 1b\n";
+    }
+
+    // dst in x9, src in x10; EmitCopyMem uses x11 to x14 (and x16) as its own.
+    void WriteMemCopy(const Instruction& in) {
+        Load(9, in.args[0]);
+        Load(10, in.args[1]);
+        EmitCopyMem(os_, "x9", "x10", static_cast<int>(in.size), static_cast<int>(in.align));
     }
 
     // The widest of 8, 4, 2, 1 that the base alignment, the offset and the bytes left allow.
@@ -487,8 +531,6 @@ private:
         }
         return 1;
     }
-
-    static const char* StoreOpForBytes(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
 
     void WriteInstruction(size_t index, const Instruction& in) {
         if (ir::IsBinaryArith(in.op)) return WriteBinary(in);
@@ -525,6 +567,7 @@ private:
                 Load(10, in.args[1]);
                 return EmitMem(os_, StoreOp(in.type), Reg(Scratch(in.type, 0), in.type), "x10", 0, ir::SizeOf(in.type));
             case Op::MemZero: return WriteMemZero(in);
+            case Op::MemCpy: return WriteMemCopy(in);
             case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
             case Op::Jump: os_ << "\tb " << LocalLabel(in.label) << "\n"; return;
             case Op::Branch: return WriteBranch(in);
