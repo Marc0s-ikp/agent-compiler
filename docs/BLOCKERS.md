@@ -361,3 +361,14 @@ From the review of `feat/aarch64-a4` (2026-11-19, approved in round 1). None of 
    header before A5 or A6 changes either copy.
 5. `tests/custom/a4_size_t_folding_driver.c:33-34`: the `&& E_DIV != …` and `E_SHR_TOP == E_DIV ? 1 : 3` guards can never
    matter (the values are distinct; equal case labels would not compile). Simplify them.
+
+## Nice to have from the pre-A5 review
+
+From the review of `cleanup/pre-a5` (2026-11-19, approved in round 1). None of these blocked the merge.
+
+1. `tests/custom/a5pre_long_literals_driver.c`, check 18: the `(int)sizeof(1L) == 5 ? 1 : 2` guard can never matter (sizeof is 4
+   or 8). Simplify it together with item 5 of the A4 review above.
+2. `src/ast_literal.cpp`: `has_l_` is set by any `l`/`L`, so `1LL` (not C90, but the lexer accepts `[uUlL]*`) is quietly a
+   `long`. Rejecting more than one `L` (or a mixed-case `lL`) would be stricter.
+3. `long` and `unsigned long` are not keywords (D27 27.8.3: out of D27), so `long g(void)` is a parse error. Realistic LP64
+   programs need them; the custom tests use `sizeof(1L)` instead of `sizeof(long)`. A decision for Marcus after D27.
