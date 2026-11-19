@@ -3,9 +3,9 @@
 
 GCC to GCC passing cannot show that the model is right (two compilers can agree and both be wrong), so this
 tool asks GCC's -O2 caller where it puts each argument: a hand-written assembly callee `probe` stores x0-x8,
-d0-d7 and 96 words from sp into globals, and returns known patterns in x0, x1, d0-d3 (and through [x8] when the
-model says the result is in memory). The generated caller calls it through a cast to the signature under test,
-with arguments whose bytes are known, and prints the globals, the bytes behind any by-reference pointer and
+d0-d7 and 96 words from sp into globals, and returns known patterns in x0, x1, d0-d3 (and, when the model says
+the result is in memory, exactly the result's size of pattern bytes through [x8]). The generated caller calls it
+through a cast to the signature under test, with arguments whose bytes are known, and prints the globals, the bytes behind any by-reference pointer and
 the bytes of the result. This script compares all of that with the placement the model predicts.
 
 Usage (needs aarch64-linux-gnu-gcc and qemu-aarch64, so inside the Docker image):
@@ -52,18 +52,31 @@ probe:
     adrp x9, probe_mem
     ldr  w9, [x9, :lo12:probe_mem]
     cbz  w9, 2f
-%MEM%
+    adrp x10, probe_image
+    add  x10, x10, :lo12:probe_image
+    mov  x13, #0
+3:  ldrb w14, [x10, x13]
+    strb w14, [x8, x13]
+    add  x13, x13, #1
+    cmp  x13, x9
+    b.ne 3b
 2:
 %REGS%
     ret
+
+    .section .rodata
+probe_image:
+%IMAGE%
 """
 
 
 def stub():
-    mem = "\n".join("    ldr x14, =0x%s\n    str x14, [x8, #%d]" % (w[::-1].hex(), 8 * k) for k, w in enumerate(WORDS))
+    """The probe callee. For a result in memory it copies probe_mem bytes (the result's size, set by the caller) of
+    WORDS through x8, never more: the caller's result object is only that big."""
+    image = "\n".join("    .byte " + ", ".join(str(b) for b in w) for w in WORDS)
     regs = "    ldr x0, =0x%s\n    ldr x1, =0x%s\n" % (WORDS[0][::-1].hex(), WORDS[1][::-1].hex())
     regs += "".join("    ldr x14, =0x%s\n    fmov d%d, x14\n" % (WORDS[2 + k][::-1].hex(), k) for k in range(4))
-    return STUB.replace("%STACK%", str(STACK_WORDS)).replace("%MEM%", mem).replace("%REGS%", regs)
+    return STUB.replace("%STACK%", str(STACK_WORDS)).replace("%IMAGE%", image).replace("%REGS%", regs)
 
 
 def pattern(k, size):
@@ -83,7 +96,7 @@ def sig_code(i, params, ret):
     """The C function that calls the probe with signature i and prints what it recorded."""
     st = g.Aapcs64State()
     places = [g.aapcs64_place(st, t) for t in params]
-    mem = ret != "void" and g.aapcs64_result(ret)[0] == "mem"
+    mem = g.layout(ret)[0] if ret != "void" and g.aapcs64_result(ret)[0] == "mem" else 0  # bytes the stub writes
     out = ["static void run%d(void)\n{" % i]
     out += ["    static const unsigned char pat%d[] = %s;\n    %s a%d;" % (k, c_bytes(pattern(k, g.layout(t)[0])), t, k)
             for k, t in enumerate(params)]

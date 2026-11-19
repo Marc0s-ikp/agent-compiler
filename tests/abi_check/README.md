@@ -114,7 +114,7 @@ byte-wise check of a split double is ilp32d only.
 
 `probe_aapcs64.py SEED COUNT DIR` checks the model itself against GCC, because GCC to GCC passing cannot show that the model is
 right. A hand-written assembly callee `probe` records x0-x8, d0-d7 and 96 words from sp, and returns known patterns in x0, x1,
-d0-d3 (and through [x8] when the model says memory). The caller GCC compiles at -O2 calls it through a cast to each generated
+d0-d3 (and, when the model says memory, exactly the result's size of pattern bytes through [x8]). The caller GCC compiles at -O2 calls it through a cast to each generated
 signature with arguments of known bytes; the script compares the registers, the stack words, the bytes behind a by-reference
 pointer and the result with the placement the model predicts. Seeds 101 to 505 x 300 agree on every signature (a model with
 C.3 removed disagrees on 15 of 300, one with C.13 removed crashes on a wrong pointer), and the first signature for each case is
