@@ -319,10 +319,10 @@ From the review of `feat/aarch64-a1` (2026-11-19, approved in round 1). None of 
 From the review of `feat/aarch64-a2` (2026-11-19, approved in round 1). None of these blocked the merge.
 
 1. DONE (merge commit). The PROGRESS history row for A2 sat after the "Step 6 baseline" paragraph and left out the riscv32 count.
-2. `src/backend_aarch64.cpp`, `WriteBranch`: the `cbz x9` path (an `I64`/`Ptr` condition) has no test. Only a pointer
+2. DONE (A4: `a4_pointer_cond`). `src/backend_aarch64.cpp`, `WriteBranch`: the `cbz x9` path (an `I64`/`Ptr` condition) has no test. Only a pointer
    condition through `PtrToInt` in `Condition()` reaches it, which needs A4. A4's custom tests should include `if (p)`,
    `while (p)` and `p ? a : b` on aarch64.
-3. `custom/sizeof_types` fails on aarch64: the driver hard-codes ILP32 sizes (`sizeof(char *) == 4`). Per 27.6 its
+3. DONE (A4: the drivers use GCC's `sizeof`). `custom/sizeof_types` fails on aarch64: the driver hard-codes ILP32 sizes (`sizeof(char *) == 4`). Per 27.6 its
    expected values should come from GCC's `sizeof` for the same target; due in A4 with `sizeof`/`size_t`.
 
 ## Nice to have from the AArch64 A3 review
@@ -337,6 +337,11 @@ From the review of `feat/aarch64-a3` (2026-11-19, approved in round 1). None of 
 3. The model comment and README say "check the rule numbers against your copy". They were checked against the current
    ARM-software/abi-aa `aapcs64.rst` (2026-11-19, by the director and the reviewer): A.1, A.4, B, C.9, C.14, C.16, C.17
    and Result return match. The wording can say so.
-4. The A3 note on `ptrtoint`/`inttoptr` in DECISIONS.md names only the implicit `return 0`; the same casts also serve
+4. DONE (A4: the A3 note now names all four uses). The A3 note on `ptrtoint`/`inttoptr` in DECISIONS.md names only the implicit `return 0`; the same casts also serve
    null pointer constants, pointer conditions and pointer subtraction (all I64 to/from Ptr; the checker rejects I32).
    If `long` ever becomes a keyword, `aapcs64_kind` would count it as `x_int` ("4-byte integer"); it would need its own case.
+
+## From A4 (implementer, 2026-11-19)
+
+1. Frontend, not fixed (beyond 27.5): a shift with an 8-byte left operand and an `int` count (`sizeof(x) >> 1`) at run time fails the IR checker on aarch64 ("right operand has type i32, expected i64"). `BinaryArith::EmitValue` converts the count to `Promote(rhs type)`; it should be converted to the result type. Folding is not affected. riscv32 never shows it. See the A4 notes.
+2. Drivers compiled by GCC use its default C17 literal rules, the compiler uses C90 (decimal above INT_MAX that does not fit `long`: `long long` versus `unsigned long`). `a4_literal_types` takes those two cases from the C90 rule. `-std=c90` for drivers in `run_tests.sh` would let it use the same expression (Marcus only).
