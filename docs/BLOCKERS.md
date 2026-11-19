@@ -406,3 +406,14 @@ From the review of `feat/aarch64-a6` (2026-11-19, approved in round 1). None of 
 7. The AAPCS64 text does not say how a union's members are counted for an HFA. Both the model and the classifier take the
    largest member, from GCC's assembly (A6 notes); `probe_aapcs64.py` agrees on random unions. **Decided** as D28 (Marcus,
    2026-11-19): where AAPCS64 is silent, GCC's behaviour defines the ABI, confirmed by the probe.
+
+## Nice to have from the release review
+
+From the review of `release/two-backends` (2026-11-19, approved in round 1). Items 1, 3 and 6 of the review were fixed
+before the merge (a `./` prefix on a test path, the D28 status line, the README IR excerpt label). None of these blocked it.
+
+1. `scripts/run_tests.sh`: `2>/dev/null` on `find` hides errors for every directory, not only the optional
+   `tests/custom_$TARGET`; a missing `tests/compiler_tests` would silently drop those tests. Check the optional one with `[ -d ]` instead.
+2. Commit `0664fc8` (PROGRESS) says "aarch64 335→336"; it changes only docs, so it should read 336→336 (`2f375f6` added the test).
+3. `tests/abi_check/probe_aapcs64.py:6-8` and two edited lines of `tests/abi_check/README.md` are longer than their neighbours (cosmetic).
+4. An absolute test path still does not match `custom_*/*` in `run_tests.sh`, so it is not skipped under the other TARGET.

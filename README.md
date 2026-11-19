@@ -86,7 +86,8 @@ evaluation order are all decided here. Every expression reports its type without
 **The IR (D21)** is a linear list of typed instructions on temporaries and frame objects, plus module data
 (globals, strings, the float pool). Types are machine-level (`i8` to `i64`, `f32`, `f64`, `ptr`) and
 signedness belongs to the operation (`div`/`divu`, `shr`/`sar`). Every temporary has exactly one defining
-instruction. `build/c_compiler --emit-ir` prints it. The same function on the two targets:
+instruction. `build/c_compiler --emit-ir` prints it. An excerpt of the same function on the two targets (the loads of
+`p` and `i` and the `ret` are left out):
 
 ```
 int scale(int *p, int i) { return p[i] * 3; }
