@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <ostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -17,7 +19,7 @@
 // x16 and x17 hold addresses and large constants. All four are caller-saved,
 // so the prologue saves only the frame record (x29 and x30).
 //
-// This is step A3: integer operators, assignment, locals, control flow and calls
+// This is step A4: integer operators, assignment, locals, control flow and calls
 // with integer and pointer arguments and results. An instruction
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
@@ -34,6 +36,22 @@ using ir::Operand;
 int RoundUp(int value, int multiple) { return (value + multiple - 1) / multiple * multiple; }
 
 std::string LocalLabel(const std::string& name) { return ".L" + name; }
+
+// Compiler-made data (strings, float constants, static locals) has a neutral name
+// with a '.', which no C name has; it is spelled as a local ".L" label, as on
+// RISC-V. A C-named global or function keeps its name.
+class SymbolNames {
+public:
+    explicit SymbolNames(const ir::Module& module) {
+        for (const ir::DataEntry& d : module.data) if (d.compiler_made) local_.insert(d.label);
+    }
+    std::string Spell(const std::string& name) const {
+        return local_.count(name) ? LocalLabel(name) : name;
+    }
+
+private:
+    std::set<std::string> local_;
+};
 
 // ---- registers and constants ----
 
@@ -161,7 +179,8 @@ class FunctionWriter {
 public:
     // One Classify call for the function's own entry and one for each call (D5,
     // 21.5); the frame layout needs the calls' stack sizes first.
-    FunctionWriter(const ir::Function& fn, std::ostream& os) : fn_(fn), os_(os) {
+    FunctionWriter(const ir::Function& fn, const SymbolNames& names, std::ostream& os)
+        : fn_(fn), names_(names), os_(os) {
         entry_ = Target().Abi().Classify(ParamTypes(), fn.c_return);
         int outgoing = 0;
         for (size_t i = 0; i < fn.body.size(); ++i) {
@@ -248,11 +267,17 @@ private:
                 return EmitConst(os_, Reg(n, o.type), ImmediateBits(o.int_value, o.type), IsWide(o.type) ? 64 : 32);
             case Operand::Kind::Object:
                 return EmitAddrOffset(os_, "x" + std::to_string(n), "x29", frame_.objects.at(o.name));
-            case Operand::Kind::Symbol: NotYet("symbol address");
+            case Operand::Kind::Symbol: return EmitSymbolAddress(n, names_.Spell(o.name));
             case Operand::Kind::Float: NotYet("floating constant");
             case Operand::Kind::None: break;
         }
         NotYet("operand");
+    }
+
+    // x<n> = &sym, for any distance within +-4 GB (static linking, no GOT).
+    void EmitSymbolAddress(int n, const std::string& sym) {
+        std::string reg = "x" + std::to_string(n);
+        os_ << "\tadrp " << reg << ", " << sym << "\n\tadd " << reg << ", " << reg << ", :lo12:" << sym << "\n";
     }
 
     void StoreResult(int n, const Operand& dst) {
@@ -432,6 +457,7 @@ private:
     }
 
     const ir::Function& fn_;
+    const SymbolNames& names_;
     std::ostream& os_;
     CallLayout entry_;
     std::map<size_t, CallLayout> calls_;  // by instruction index
@@ -439,15 +465,46 @@ private:
 };
 
 // ---- data (21.2a): the only place that writes data directives ----
-// A1 has no data entries.
 
-void WriteData(const ir::Module& module, std::ostream&) {
-    if (!module.data.empty()) NotYet("data entries");
+void WriteItem(const ir::DataItem& item, const SymbolNames& names, std::ostream& os) {
+    using Kind = ir::DataItem::Kind;
+    switch (item.kind) {
+        case Kind::Bytes:
+            for (unsigned char c : item.bytes) os << "\t.byte " << static_cast<int>(c) << "\n";
+            break;
+        case Kind::Int: {
+            const char* directive = item.size == 1 ? ".byte" : item.size == 2 ? ".hword" : item.size == 4 ? ".word" : ".xword";
+            if (item.size != 1 && item.size != 2 && item.size != 4 && item.size != 8) NotYet("integer data item size");
+            os << "\t" << directive << " " << item.value << "\n";
+            break;
+        }
+        case Kind::Float:  // the IEEE bits, as an integer of the same size
+            os << (item.size == 8 ? "\t.xword " : "\t.word ") << (item.size == 8 ? item.value : (item.value & 0xFFFFFFFFLL)) << "\n";
+            break;
+        case Kind::Address:  // a pointer is 8 bytes
+            os << "\t.xword " << names.Spell(item.bytes);
+            if (item.offset) os << (item.offset < 0 ? "-" : "+") << std::labs(item.offset);
+            os << "\n";
+            break;
+        case Kind::Zero: os << "\t.zero " << item.size << "\n"; break;
+    }
+}
+
+void WriteData(const ir::Module& module, const SymbolNames& names, std::ostream& os) {
+    for (const ir::DataEntry& d : module.data) {
+        os << (d.read_only ? "\t.section .rodata\n" : "\t.data\n");
+        os << "\t.balign " << d.align << "\n";
+        if (!d.internal) os << "\t.globl " << d.label << "\n";
+        os << names.Spell(d.label) << ":\n";
+        if (d.items.empty()) os << "\t.zero " << d.size << "\n";
+        for (const ir::DataItem& item : d.items) WriteItem(item, names, os);
+    }
 }
 
 }  // namespace
 
 void EmitAArch64(const ir::Module& module, std::ostream& os) {
-    for (const ir::Function& fn : module.functions) FunctionWriter(fn, os).Write();
-    WriteData(module, os);
+    SymbolNames names(module);
+    for (const ir::Function& fn : module.functions) FunctionWriter(fn, names, os).Write();
+    WriteData(module, names, os);
 }
