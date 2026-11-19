@@ -31,7 +31,7 @@ FLOAT_TYPES = ["float", "double"]
 # or (name, type, count) for an array; a field type is a scalar or an earlier
 # record. Declarations, the checked leaves, the size, the alignment and the
 # ilp32d class all come from this one table (see layout, flatten, classify).
-RECORDS = {
+COMMON_RECORDS = {
     "struct Sc1": ("struct", [("a", "char")]),
     "struct Sc3": ("struct", [("a", "char"), ("b", "char"), ("c", "char")]),
     "struct Sc5": ("struct", [("c", "char", 5)]),
@@ -63,6 +63,31 @@ RECORDS = {
     "union Uud": ("union", [("d", "double"), ("i", "int")]),
     "struct Snu": ("struct", [("u", "union Uff"), ("g", "float")]),  # a union inside: integer convention
 }
+# Records only aarch64 draws (they are not in the riscv32 files): the shapes AAPCS64's record rules
+# distinguish. HFAs of 1 to 4 members built as an array, a nested record, a union; HFAs over 16 bytes;
+# things that are not HFAs (five floats, float with double, a union of float and double); odd sizes; records
+# over 16 bytes (by reference); records holding pointers (8 bytes each on LP64).
+AARCH64_RECORDS = {
+    "struct Sf4": ("struct", [("a", "float", 4)]),                       # HFA of 4 floats, an array
+    "struct Sd3": ("struct", [("a", "double"), ("b", "double"), ("c", "double")]),   # HFA of 3, 24 bytes
+    "struct Sd4a": ("struct", [("a", "double", 4)]),                     # HFA of 4 doubles, 32 bytes
+    "struct Sd4n": ("struct", [("x", "struct Sdd"), ("y", "struct Sdd")]),  # HFA of 4 doubles, nested
+    "struct Sf4m": ("struct", [("a", "float", 2), ("n", "struct Sff")]),  # HFA of 4 floats, array and nested
+    "union Udd": ("union", [("a", "double"), ("b", "double", 2)]),       # HFA of 2 doubles, a union
+    "union Uf3": ("union", [("a", "float", 3), ("b", "float", 2)]),      # HFA of 3 floats, a union
+    "struct Sf5": ("struct", [("a", "float", 5)]),                       # 5 floats: not an HFA, 20 bytes
+    "union Ufd": ("union", [("f", "float"), ("d", "double")]),           # float and double: not homogeneous
+    "struct Sc7": ("struct", [("c", "char", 7)]),
+    "struct Sc11": ("struct", [("c", "char", 11)]),
+    "struct Sc13": ("struct", [("c", "char", 13)]),
+    "struct Si5": ("struct", [("a", "int", 5)]),                         # 20 bytes: by reference
+    "struct Sddi": ("struct", [("a", "double"), ("b", "double"), ("c", "int")]),     # 24 bytes, not an HFA
+    "union Ubig": ("union", [("a", "int", 5), ("d", "double")]),         # 24 bytes
+    "struct Sp1": ("struct", [("p", "int *")]),                          # 8 bytes
+    "struct Sp2": ("struct", [("p", "int *"), ("q", "char *")]),         # 16 bytes
+    "struct Spi": ("struct", [("p", "char *"), ("i", "int")]),           # 16 bytes with 4 bytes of padding
+}
+RECORDS = dict(COMMON_RECORDS)  # the records of the current target (setup_target)
 SCALAR_LAYOUT = {  # name: (size, align, class) with class i(nteger), p(ointer), f(loating)
     "int": (4, 4, "i"), "unsigned": (4, 4, "i"), "char": (1, 1, "i"), "signed char": (1, 1, "i"),
     "unsigned char": (1, 1, "i"), "short": (2, 2, "i"), "unsigned short": (2, 2, "i"),
@@ -88,10 +113,15 @@ def fields_of(t):
     return [(f[0], f[1], f[2] if len(f) > 2 else None) for f in RECORDS[t][1]]
 
 
+def scalar_layout():
+    """The scalar sizes of the current target: ILP32 for riscv32, LP64 (AAPCS64) for aarch64."""
+    return AAPCS64_LAYOUT if TARGET == "aarch64" else SCALAR_LAYOUT
+
+
 def layout(t):
-    """(size, align) of a scalar or record type, by the C layout rules."""
-    if t in SCALAR_LAYOUT:
-        return SCALAR_LAYOUT[t][:2]
+    """(size, align) of a scalar or record type, by the C layout rules of the current target."""
+    if t in scalar_layout():
+        return scalar_layout()[t][:2]
     kind = RECORDS[t][0]
     off, align, size = 0, 1, 0
     for _, ft, n in fields_of(t):
@@ -120,10 +150,8 @@ def decl(t):
     return "%s { %s };" % (t, " ".join(parts))
 
 
-STRUCTS = {t: (decl(t), leaves(t)) for t in RECORDS}
-STRUCT_NAMES = list(STRUCTS)
 SCALAR_TYPES = list(INT_TYPES) + PTR_TYPES + FLOAT_TYPES
-PARAM_TYPES = SCALAR_TYPES + STRUCT_NAMES
+STRUCTS = STRUCT_NAMES = PARAM_TYPES = HEADER = None  # set by setup_target
 # Values for float and double parameters; the integral ones can also be passed
 # through an int local. Decimal text is rounded the same way by every compiler.
 FEDGE = [0.0, 0.5, -1.25, 1.5, 100.0, 3.0, -7.0, 1024.5, 65536.0, 0.1, 3.141592653589793,
@@ -349,13 +377,11 @@ def classify(params, ret):
     return hits, split
 
 
-# ---- A model of AAPCS64 (Procedure Call Standard for the Arm 64-bit Architecture,
-# section 6.8.2 "Parameter passing", and 6.9 "Result return"), written from the standard's
-# text and independent of the compiler's classifier. Integers and pointers (step A3) and
-# float and double (step A5, rules C.1, C.5 and C.6, written from the standard before the
-# compiler's floating rows existed) are modelled; A6 adds the composite rules (B.2 to B.4,
-# C.2 to C.4, C.12 and on) to the same state machine. Rule numbers are those of the current
-# ARM-software/abi-aa aapcs64.rst (checked 2026-11-19), where C.7 and C.8 are the SVE rules.
+# ---- A model of AAPCS64 (Procedure Call Standard for the Arm 64-bit Architecture),
+# section 6.8.2 "Parameter passing" (stages A, B, C), 6.8.3 "Homogeneous Aggregates" and
+# 6.9 "Result return", written from the standard's text and independent of the compiler's
+# classifier. Rule numbers are those of the current ARM-software/abi-aa aapcs64.rst (checked
+# 2026-11-19). Each rule below carries its number and a paraphrase of the standard's wording.
 
 AAPCS64_CASES = [
     ("x_int", "4-byte integer in an x register (C.9)"),
@@ -377,12 +403,51 @@ AAPCS64_CASES = [
     ("s_fp_xfree", "float or double on the stack while x registers are free (NSRN 8, NGRN < 8)"),
     ("s_mixed", "a stack argument of the other class than the one before it (one NSAA for both)"),
     ("s_next", "a stack argument at NSAA > 0 (slots advance by 8)"),
-    ("s_odd", "odd number of stack arguments: area padded to 16 (SP alignment)"),
+    ("s_odd", "stack area not a multiple of 16 before padding (SP alignment)"),
     ("r_int", "4-byte integer result in w0"),
     ("r_ptr", "pointer result in x0"),
     ("r_narrow", "char/short result in w0 (upper bits unspecified)"),
     ("r_float", "float result in s0 (6.9: where void f(T) gets its argument)"),
     ("r_double", "double result in d0 (6.9)"),
+    # HFAs in v registers (C.2)
+    ("h_v1", "HFA of 1 member in v registers (C.2)"),
+    ("h_v2", "HFA of 2 members in v registers (C.2)"),
+    ("h_v3", "HFA of 3 members in v registers (C.2)"),
+    ("h_v4", "HFA of 4 members in v registers (C.2)"),
+    ("h_float", "HFA of floats in v registers"),
+    ("h_double", "HFA of doubles in v registers"),
+    ("h_nested", "HFA built with a nested record, in v registers"),
+    ("h_array", "HFA built with an array, in v registers"),
+    ("h_union", "HFA that is or holds a union, in v registers"),
+    ("h_big_v", "HFA over 16 bytes by value in v registers (B.3 before B.4)"),
+    ("h_last", "HFA ending in v7 (NSRN + members = 8)"),
+    # HFAs on the stack (C.3, C.4, C.6)
+    ("h_stack", "HFA on the stack, v registers used up before it (NSRN 8)"),
+    ("h_stack_part", "HFA on the stack while NSRN < 8 but too few v registers left (C.3 sets NSRN 8)"),
+    ("h_stack_fp", "float or double on the stack after C.3 set NSRN 8, though v[NSRN] was free before"),
+    ("h_big_stack", "HFA over 16 bytes on the stack by value"),
+    # records in x registers (C.12)
+    ("c_x1", "non-HFA record of up to 8 bytes in one x register (C.12)"),
+    ("c_x2", "non-HFA record of 9 to 16 bytes in two x registers (C.12)"),
+    ("c_x_odd", "record of a size that is not 1, 2, 4, 8 or 16, in x registers"),
+    ("c_x_float", "non-HFA record holding a float or double, in x registers"),
+    ("c_x_union", "union in x registers"),
+    ("c_x_last", "record ending in x7"),
+    # records on the stack (C.13, C.15)
+    ("c_stack_one", "9-16 byte record on the stack with one x register left (NGRN 7: C.13, no split)"),
+    ("c_stack_int", "integer or pointer on the stack after C.13 left x7 unused"),
+    ("c_stack_full", "record on the stack once x0-x7 are used up (NGRN 8)"),
+    ("c_stack_odd", "odd-sized record on the stack followed by another stack argument (B.5 rounding)"),
+    # by reference (B.4)
+    ("ref_x", "record over 16 bytes (not an HFA) by reference, pointer in an x register"),
+    ("ref_stack", "record over 16 bytes (not an HFA) by reference, pointer on the stack"),
+    # results (6.9, derived from stage C)
+    ("r_rec_x1", "record result of up to 8 bytes in x0"),
+    ("r_rec_x2", "record result of 9 to 16 bytes in x0/x1"),
+    ("r_hfa", "HFA result in v registers"),
+    ("r_hfa4", "4-member HFA result in v0-v3"),
+    ("r_mem", "record result in memory, address in x8"),
+    ("r_mem_xfull", "x8 result while x0-x7 are all used by arguments"),
 ]
 
 
@@ -394,33 +459,226 @@ def aapcs64_kind(t):
     return "ptr" if cls == "p" else ("narrow" if size < 4 else "int")
 
 
+def fdt_members(t):
+    """(set of Fundamental Data Types, number of uniquely addressable members) of type t after layout.
+    The members of a struct are all there is in it, so they add up; the members of a union overlap, so
+    only the largest member counts (the standard's size of an HFA is the base type's size times the
+    number of members, and a union's size is that of its largest member). An array of n elements has
+    n times the members of its element type."""
+    if t not in RECORDS:
+        return {t}, 1
+    parts = [(fdt_members(ft), n or 1) for _, ft, n in fields_of(t)]
+    kinds = set().union(*(k for (k, _), _ in parts))
+    counts = [c * n for (_, c), n in parts]
+    return kinds, (max(counts) if RECORDS[t][0] == "union" else sum(counts))
+
+
+def hfa_of(t):
+    """(base type, members) if composite type t is a Homogeneous Floating-point Aggregate: every Fundamental
+    Data Type in it is the same floating-point type, there are 1 to 4 uniquely addressable members (and no
+    padding: the size is the members times the base size, which the union rule above makes true). Else None."""
+    if t not in RECORDS:
+        return None
+    kinds, count = fdt_members(t)
+    if len(kinds) != 1 or not kinds <= set(FLOAT_TYPES) or not 1 <= count <= 4:
+        return None
+    base = next(iter(kinds))
+    return (base, count) if layout(t)[0] == count * layout(base)[0] else None
+
+
 class Aapcs64State:
-    """Stage A: NGRN and NSRN (the next general-purpose and SIMD&FP register numbers) are 0,
-    and NSAA (the next stacked argument address) is SP, kept here as a byte offset from SP."""
+    """Stage A: A.1 NGRN = 0, A.2 NSRN = 0, A.4 NSAA = SP (kept as a byte offset from SP). A.3 (NPRN, scalable
+    predicates) does not exist for our types. The two holes record what C.3 and C.13 skipped, for the hit table."""
 
     def __init__(self):
         self.ngrn = self.nsrn = self.nsaa = 0
+        self.v_hole = self.x_hole = None  # NSRN / NGRN before C.3 / C.13 set it to 8
+
+
+class Aapcs64Arg:
+    """The argument as stage B and the C rules see it: size, natural alignment and what it is."""
+
+    def __init__(self, t):
+        self.size, self.align = layout(t)
+        self.composite = t in RECORDS
+        self.hfa = hfa_of(t)
+        self.floating = not self.composite and AAPCS64_LAYOUT[t][2] == "f"
+        self.by_ref = False
+
+
+Place = collections.namedtuple("Place", "where regs offset by_ref size")  # where: 'x', 'v' or 'stack'
+
+
+def aapcs64_stage_b(a):
+    """Stage B, the first matching rule. B.1 (Pure Scalable Types), B.2 (a composite whose size the
+    callee cannot know) and B.6 (alignment adjusted types) cannot apply to the types of this model."""
+    if a.hfa:                      # B.3: an HFA is used unmodified
+        return
+    if a.composite and a.size > 16:  # B.4: copied to memory, the argument becomes a pointer to the copy
+        a.size, a.align, a.composite, a.by_ref = 8, 8, False, True
+    elif a.composite:              # B.5: the size is rounded up to a multiple of 8
+        a.size = round_up(a.size, 8)
+
+
+def stack_place(st, a):
+    off = st.nsaa
+    st.nsaa += a.size
+    return Place("stack", [], off, a.by_ref, a.size)
+
+
+# Stage C: each rule takes (state, argument), changes them as the standard says, and returns the Place
+# if "the argument has now been allocated", else None (the next rule applies).
+
+def c1(st, a):  # a floating-point argument goes in v[NSRN] if NSRN < 8; NSRN += 1
+    if a.floating and st.nsrn < 8:
+        st.nsrn += 1
+        return Place("v", [st.nsrn - 1], 0, False, a.size)
+
+
+def c2(st, a):  # an HFA goes in one v register per member if NSRN + members <= 8; NSRN += members
+    if a.hfa and st.nsrn + a.hfa[1] <= 8:
+        regs = list(range(st.nsrn, st.nsrn + a.hfa[1]))
+        st.nsrn += a.hfa[1]
+        return Place("v", regs, 0, False, a.size)
+
+
+def c3(st, a):  # an HFA that did not fit: NSRN = 8 and its size is rounded up to a multiple of 8
+    if a.hfa:
+        st.v_hole = st.nsrn if st.nsrn < 8 else st.v_hole
+        st.nsrn = 8
+        a.size = round_up(a.size, 8)
+
+
+def c4(st, a):  # an HFA: NSAA is rounded up to the next multiple of 8 (natural alignment <= 8)
+    if a.hfa:
+        st.nsaa = round_up(st.nsaa, 8)
+
+
+def c5(st, a):  # a single-precision argument's size is set to 8 bytes
+    if a.floating and a.size == 4:
+        a.size = 8
+
+
+def c6(st, a):  # an HFA or a floating-point argument is copied to memory at NSAA; NSAA += size
+    if a.hfa or a.floating:
+        return stack_place(st, a)
+
+
+def c7(st, a):  # Pure Scalable Types: none among our types
+    assert not hasattr(a, "scalable")
+
+
+def c8(st, a):  # a Pure Scalable Type not allocated by C.7: none
+    assert not hasattr(a, "scalable")
+
+
+def c9(st, a):  # an integral or pointer argument of at most 8 bytes goes in x[NGRN] if NGRN < 8; NGRN += 1
+    if not a.composite and not a.floating and a.size <= 8 and st.ngrn < 8:
+        st.ngrn += 1
+        return Place("x", [st.ngrn - 1], 0, a.by_ref, a.size)
+
+
+def c10(st, a):  # an argument of alignment 16 rounds NGRN up to even: no 16-byte aligned type here
+    assert a.align != 16
+
+
+def c11(st, a):  # a 16-byte integral argument goes in two x registers: no __int128 here
+    assert a.composite or a.floating or a.size <= 8
+
+
+def c12(st, a):  # a composite of at most 8 - NGRN double-words goes in consecutive x registers
+    if a.composite and a.size // 8 <= 8 - st.ngrn:
+        regs = list(range(st.ngrn, st.ngrn + a.size // 8))
+        st.ngrn += len(regs)
+        return Place("x", regs, 0, False, a.size)
+
+
+def c13(st, a):  # NGRN = 8: what does not fit is never split between registers and the stack
+    st.x_hole = st.ngrn if st.ngrn < 8 else st.x_hole
+    st.ngrn = 8
+
+
+def c14(st, a):  # NSAA is rounded up to a multiple of max(8, natural alignment)
+    st.nsaa = round_up(st.nsaa, max(8, a.align))
+
+
+def c15(st, a):  # a composite is copied to memory at NSAA; NSAA += size
+    if a.composite:
+        return stack_place(st, a)
+
+
+def c16(st, a):  # a size under 8 bytes is set to 8
+    a.size = max(a.size, 8)
+
+
+def c17(st, a):  # the argument is copied to memory at NSAA; NSAA += size
+    return stack_place(st, a)
+
+
+AAPCS64_STAGE_C = [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16, c17]
 
 
 def aapcs64_place(st, t):
-    """Stage C for one argument of scalar type t (stage B leaves scalars unmodified).
-    Returns ('x', n), ('v', n) or ('stack', byte offset) and advances st."""
-    size, align, cls = AAPCS64_LAYOUT[t]
-    if cls == "f":
-        if st.nsrn < 8:  # C.1: the least significant bits of v[NSRN]; NSRN += 1
-            st.nsrn += 1
-            return ("v", st.nsrn - 1)
-        size = max(size, 8)  # C.5: a single-precision argument's size is set to 8
-        off = st.nsaa        # C.6: copied to memory at NSAA, which advances by the size
-        st.nsaa += size
-        return ("stack", off)
-    if size <= 8 and st.ngrn < 8:  # C.9: the least significant bits of x[NGRN]; NGRN += 1
-        st.ngrn += 1
-        return ("x", st.ngrn - 1)
-    st.nsaa = round_up(st.nsaa, max(8, align))  # C.14: NSAA rounded up to max(8, alignment)
-    off = st.nsaa
-    st.nsaa += max(size, 8)  # C.16: a size under 8 is set to 8; C.17: copied at NSAA, NSAA += size
-    return ("stack", off)
+    """Stages B and C for one argument of scalar or record type t, in the standard's order. Returns the
+    Place (the v or x registers, or the byte offset from SP, and whether it was replaced by a pointer
+    to a copy by B.4) and advances st."""
+    a = Aapcs64Arg(t)
+    aapcs64_stage_b(a)
+    for rule in AAPCS64_STAGE_C:
+        place = rule(st, a)
+        if place:
+            return place
+    raise AssertionError("C.17 allocates every argument")
+
+
+def aapcs64_result(t):
+    """6.9: the result of type T is where the argument of void f(T) would be passed as a value in registers
+    (stage A, B, C on a fresh state); otherwise (it would be on the stack, or replaced by a pointer: B.4) it is
+    in caller-reserved memory whose address is passed in x8. Returns ('x', regs), ('v', regs) or ('mem', [8])."""
+    place = aapcs64_place(Aapcs64State(), t)
+    if place.where == "stack" or place.by_ref:
+        return ("mem", [8])
+    return (place.where, place.regs)
+
+
+def has_member(t, test):
+    """True if record t has, at any depth, a field for which test(type, array count) holds."""
+    return any(test(ft, n) or (ft in RECORDS and has_member(ft, test)) for _, ft, n in fields_of(t))
+
+
+def has_union(t):
+    return RECORDS[t][0] == "union" or has_member(t, lambda ft, n: ft in RECORDS and RECORDS[ft][0] == "union")
+
+
+def record_hits(t, place, before, st):
+    """The cases of a record argument. before is (NGRN, NSRN) when the argument came, st the state after it
+    (st.x_hole and st.v_hole are the holes C.13 and C.3 left, for the later arguments)."""
+    ngrn, nsrn = before
+    size = layout(t)[0]
+    if place.by_ref:
+        return ["ref_x" if place.where == "x" else "ref_stack"]
+    hits = []
+    if place.where == "v":
+        base, n = hfa_of(t)
+        hits += ["h_v%d" % n, "h_" + base]
+        hits += ["h_nested"] if has_member(t, lambda ft, c: ft in RECORDS) else []
+        hits += ["h_array"] if has_member(t, lambda ft, c: c is not None) else []
+        hits += ["h_union"] if has_union(t) else []
+        hits += ["h_big_v"] if size > 16 else []
+        hits += ["h_last"] if place.regs[-1] == 7 else []
+    elif place.where == "x":
+        hits.append("c_x1" if len(place.regs) == 1 else "c_x2")
+        hits += ["c_x_odd"] if size not in (1, 2, 4, 8, 16) else []
+        hits += ["c_x_float"] if has_float_member(t) else []
+        hits += ["c_x_union"] if RECORDS[t][0] == "union" else []
+        hits += ["c_x_last"] if place.regs[-1] == 7 else []
+    elif hfa_of(t):
+        hits += ["h_stack" if nsrn == 8 else "h_stack_part"]
+        hits += ["h_big_stack"] if size > 16 else []
+    else:
+        hits += ["c_stack_one"] if ngrn == 7 and size > 8 else []
+        hits += ["c_stack_full"] if ngrn == 8 else []
+    return hits
 
 
 def classify_aapcs64(params, ret):
@@ -429,31 +687,42 @@ def classify_aapcs64(params, ret):
     aarch64, so 'split' is always empty. A type the model does not know raises KeyError."""
     hits = []
     st = Aapcs64State()
-    stacked = []  # for each stack argument: is it floating
+    stacked = []        # for each stack argument: its class, 'f' (floating), 'i' (integer, pointer) or 'r' (record)
+    odd_pending = False  # an odd-sized record is on the stack and no stack argument followed yet
     for t in params:
-        kind, floating = aapcs64_kind(t), AAPCS64_LAYOUT[t][2] == "f"
-        ngrn, nsrn = st.ngrn, st.nsrn
-        where, n = aapcs64_place(st, t)
-        if where == "x":
-            hits += ["x_" + kind] + (["x_last"] if n == 7 else []) + (["x_after_v"] if nsrn == 8 else [])
-        elif where == "v":
-            hits += ["v_" + kind] + (["v_last"] if n == 7 else []) + (["v_after_x"] if ngrn == 8 else [])
-        else:
-            hits += ["s_" + kind, "s_first" if n == 0 else "s_next"]
-            if floating and ngrn < 8:
-                hits.append("s_fp_xfree")
-            if not floating and nsrn < 8:
-                hits.append("s_int_vfree")
-            if stacked and stacked[-1] != floating:
-                hits.append("s_mixed")
-            stacked.append(floating)
-    if len(stacked) % 2:
-        hits.append("s_odd")
+        is_rec = t in RECORDS
+        cls = "r" if is_rec else ("f" if AAPCS64_LAYOUT[t][2] == "f" else "i")
+        before = (st.ngrn, st.nsrn)
+        place = aapcs64_place(st, t)
+        if is_rec:
+            hits += record_hits(t, place, before, st)
+        elif place.where == "x":
+            hits += ["x_" + aapcs64_kind(t)] + (["x_last"] if place.regs[0] == 7 else []) + (["x_after_v"] if before[1] == 8 else [])
+        elif place.where == "v":
+            hits += ["v_" + aapcs64_kind(t)] + (["v_last"] if place.regs[0] == 7 else []) + (["v_after_x"] if before[0] == 8 else [])
+        if place.where == "stack":
+            hits.append("s_first" if place.offset == 0 else "s_next")
+            if not is_rec:
+                hits.append("s_" + aapcs64_kind(t))
+                hits += ["s_fp_xfree"] if cls == "f" and before[0] < 8 else []
+                hits += ["s_int_vfree"] if cls == "i" and before[1] < 8 else []
+                hits += ["h_stack_fp"] if cls == "f" and st.v_hole is not None else []
+                hits += ["c_stack_int"] if cls == "i" and st.x_hole is not None else []
+            hits += ["s_mixed"] if stacked and stacked[-1] != cls else []
+            hits += ["c_stack_odd"] if odd_pending else []
+            odd_pending = is_rec and layout(t)[0] % 8 != 0 and not place.by_ref and not hfa_of(t)
+            stacked.append(cls)
+    hits += ["s_odd"] if st.nsaa % 16 else []
     if ret != "void":
-        # 6.9: a result goes in the registers that void f(T) would use for its argument
-        where, n = aapcs64_place(Aapcs64State(), ret)
-        assert where in ("x", "v") and n == 0, (ret, where, n)
-        hits.append("r_" + aapcs64_kind(ret))
+        where, regs = aapcs64_result(ret)
+        if ret in RECORDS:
+            n = hfa_of(ret)
+            hits.append("r_mem" if where == "mem" else ("r_hfa" if where == "v" else
+                        ("r_rec_x1" if len(regs) == 1 else "r_rec_x2")))
+            hits += ["r_hfa4"] if n and n[1] == 4 else []
+            hits += ["r_mem_xfull"] if where == "mem" and st.ngrn == 8 else []
+        else:
+            hits.append("r_" + aapcs64_kind(ret))
     return hits, set()
 
 
@@ -518,21 +787,40 @@ def gen_params(rng, ret):
     return params + ["double"] + [rng.choice(SCALAR_TYPES) for _ in range(rng.randint(0, 3))]
 
 
-def gen_params_aarch64(rng):
-    """Integer, pointer, float and double parameter lists that reach x0-x7, v0-v7 and the
-    stack: uniform draws (0 to 14 parameters) and shapes that always use the stack:
-    'stack' (9 to 20 parameters), 'x_full' (8 integers or pointers, then 1 to 4 of any type,
-    so floats go in v registers after x0-x7), 'narrow_tail' (8 integers or pointers, then
-    1 to 8 char/short types, so narrow values sit in stack slots), 'ptr_tail' (8 integers,
-    then pointers), 'fp_heavy' (9 to 14 floats and doubles among 0 to 6 integers: floating
-    values on the stack while x registers are free), 'v_full' (8 floats and doubles, then
-    1 to 4 of any type: integers in x registers after v0-v7) and 'both_full' (8 of each
-    class in any order, then 1 to 6 of any type: both classes interleaved on the stack)."""
+AARCH64_SHAPES = ["random", "random", "stack", "stack", "x_full", "narrow_tail", "ptr_tail",
+                  "fp_heavy", "v_full", "both_full",
+                  "records", "records", "records", "hfa_tail", "hfa_tail", "x7_left", "x7_left",
+                  "x_full_rec", "x_full_rec", "x8_full"]
+
+
+def hfa_records(min_members=1):
+    return [t for t in STRUCT_NAMES if hfa_of(t) and hfa_of(t)[1] >= min_members]
+
+
+def x_records(lo, hi):
+    """Records that go in x registers: not an HFA, from lo to hi bytes."""
+    return [t for t in STRUCT_NAMES if not hfa_of(t) and lo <= layout(t)[0] <= hi]
+
+
+def gen_params_aarch64(rng, shape):
+    """Parameter lists that reach x0-x7, v0-v7 and the stack, by shape. Scalar shapes: uniform draws
+    (0 to 14 parameters) and shapes that always use the stack: 'stack' (9 to 20 parameters), 'x_full' (8
+    integers or pointers, then 1 to 4 of any type, so floats go in v registers after x0-x7), 'narrow_tail'
+    (8 integers or pointers, then 1 to 8 char/short types, so narrow values sit in stack slots), 'ptr_tail'
+    (8 integers, then pointers), 'fp_heavy' (9 to 14 floats and doubles among 0 to 6 integers: floating
+    values on the stack while x registers are free), 'v_full' (8 floats and doubles, then 1 to 4 of any
+    type: integers in x registers after v0-v7) and 'both_full' (8 of each class in any order, then 1 to 6
+    of any type: both classes interleaved on the stack). Record shapes: 'records' (1 to 6 records among 0 to
+    9 scalars), 'hfa_tail' (4 to 8 floats and doubles, then HFAs of more members than v registers are left,
+    then floats and doubles that would have fitted without C.3, then records), 'x7_left' (7 integers or
+    pointers, then a 9 to 16 byte record that is not an HFA: NGRN 7, C.13; then integers, pointers and
+    records), 'x_full_rec' (8 integers or pointers, then 1 to 4 records and maybe floats: records on the
+    stack, by reference with the pointer on the stack, HFAs in v registers) and 'x8_full' (8 integers or
+    pointers and 0 to 2 records; the result, drawn by gen_sig_aarch64, is in memory through x8)."""
     ints, narrow = list(INT_TYPES), ["char", "signed char", "unsigned char", "short", "unsigned short"]
     anyt = ints + PTR_TYPES
     allt = anyt + FLOAT_TYPES
-    shape = rng.choice(["random", "random", "stack", "stack", "x_full", "narrow_tail", "ptr_tail",
-                        "fp_heavy", "v_full", "both_full"])
+    recs = STRUCT_NAMES
     if shape == "random":
         return [rng.choice(allt) for _ in range(rng.randint(0, 14))]
     if shape == "stack":
@@ -550,16 +838,57 @@ def gen_params_aarch64(rng):
         return params
     if shape == "v_full":
         return [rng.choice(FLOAT_TYPES) for _ in range(8)] + [rng.choice(allt) for _ in range(rng.randint(1, 4))]
+    if shape == "records":
+        params = [rng.choice(recs) for _ in range(rng.randint(1, 6))]
+        params += [rng.choice(allt) for _ in range(rng.randint(0, 9))]
+        rng.shuffle(params)
+        return params
+    if shape == "hfa_tail":
+        k = rng.randint(4, 8)
+        head = [rng.choice(FLOAT_TYPES) for _ in range(k)]
+        too_big = [t for t in hfa_records(2) if hfa_of(t)[1] > 8 - k] or hfa_records()
+        mid = [rng.choice(too_big) for _ in range(rng.randint(1, 2))]
+        tail = [rng.choice(FLOAT_TYPES) for _ in range(rng.randint(1, 3))]
+        tail += [rng.choice(recs) for _ in range(rng.randint(0, 2))]
+        rng.shuffle(tail)
+        return head + mid + tail
+    if shape == "x7_left":
+        head = [rng.choice(anyt) for _ in range(7)]
+        mid = [rng.choice(x_records(9, 16))]
+        tail = [rng.choice(anyt) for _ in range(rng.randint(1, 3))]
+        tail += [rng.choice(recs) for _ in range(rng.randint(0, 2))] + [rng.choice(FLOAT_TYPES) for _ in range(rng.randint(0, 2))]
+        rng.shuffle(tail)
+        return head + mid + tail
+    if shape == "x_full_rec":
+        tail = [rng.choice(recs) for _ in range(rng.randint(1, 4))] + [rng.choice(FLOAT_TYPES) for _ in range(rng.randint(0, 2))]
+        rng.shuffle(tail)
+        return [rng.choice(anyt) for _ in range(8)] + tail
+    if shape == "x8_full":
+        tail = [rng.choice(recs) for _ in range(rng.randint(0, 2))]
+        return [rng.choice(anyt) for _ in range(8)] + tail
     params = [rng.choice(anyt) for _ in range(8)] + [rng.choice(FLOAT_TYPES) for _ in range(8)]
     rng.shuffle(params)
     return params + [rng.choice(allt) for _ in range(rng.randint(1, 6))]
 
 
+def memory_records():
+    """Records whose result is in memory (through x8): not an HFA, over 16 bytes."""
+    return [t for t in STRUCT_NAMES if not hfa_of(t) and layout(t)[0] > 16]
+
+
 def gen_sig_aarch64(rng):
-    ret = rng.choice(list(INT_TYPES) + PTR_TYPES + FLOAT_TYPES + ["void"])
-    params = gen_params_aarch64(rng)
+    shape = rng.choice(AARCH64_SHAPES)
+    if shape == "x8_full":
+        ret = rng.choice(memory_records())
+    elif rng.random() < 0.5:
+        ret = rng.choice(STRUCT_NAMES)
+    else:
+        ret = rng.choice(list(INT_TYPES) + PTR_TYPES + FLOAT_TYPES + ["void"])
+    params = gen_params_aarch64(rng, shape)
     raws = [leaf_values(rng, t) for t in params]
     modes = [rng.choice(["lit", "same", "int", "call"]) for _ in params]
+    if ret in STRUCTS:  # the values of the record the callee builds and returns
+        raws.append(leaf_values(rng, ret))
     return params, ret, raws, modes
 
 
@@ -704,7 +1033,24 @@ def caller(i, params, ret, raws, modes):
 
 
 HEADER_FUNCS = "void abi_fail(int sig, int param);\nchar *abi_ptr_c(void);\nint *abi_ptr_i(void);\nint abi_int(int x);\n"
-HEADER = HEADER_FUNCS + "\n".join(decl for decl, _ in STRUCTS.values()) + "\n"
+
+
+def setup_target(target):
+    """Selects the target: its scalar layout and its record table (aarch64 also draws AARCH64_RECORDS),
+    and derives everything that comes from the table (declarations, leaves, type lists, C header)."""
+    global TARGET, STRUCTS, STRUCT_NAMES, PARAM_TYPES, HEADER
+    TARGET = target
+    RECORDS.clear()
+    RECORDS.update(COMMON_RECORDS)
+    if target == "aarch64":
+        RECORDS.update(AARCH64_RECORDS)
+    STRUCTS = {t: (decl(t), leaves(t)) for t in RECORDS}
+    STRUCT_NAMES = list(STRUCTS)
+    PARAM_TYPES = SCALAR_TYPES + STRUCT_NAMES
+    HEADER = HEADER_FUNCS + "\n".join(d for d, _ in STRUCTS.values()) + "\n"
+
+
+setup_target("riscv32")
 
 DRIVER = r"""#include <stdio.h>
 static int failures;
@@ -745,13 +1091,11 @@ def hit_table(seed, sigs):
 
 
 def main():
-    global HEADER, TARGET
     seed, count, out = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
-    TARGET = sys.argv[4] if len(sys.argv) > 4 else "riscv32"
-    if TARGET not in ("riscv32", "aarch64"):
-        sys.exit("unknown target " + TARGET)
-    if TARGET == "aarch64":  # no records yet (A6): their declarations stay out of the C files
-        HEADER = HEADER_FUNCS
+    target = sys.argv[4] if len(sys.argv) > 4 else "riscv32"
+    if target not in ("riscv32", "aarch64"):
+        sys.exit("unknown target " + target)
+    setup_target(target)
     rng = random.Random(seed)
     sigs = [gen_sig(rng) for _ in range(count)]
     table = hit_table(seed, sigs)

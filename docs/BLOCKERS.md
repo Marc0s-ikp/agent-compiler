@@ -329,10 +329,10 @@ From the review of `feat/aarch64-a2` (2026-11-19, approved in round 1). None of 
 
 From the review of `feat/aarch64-a3` (2026-11-19, approved in round 1). None of these blocked the merge.
 
-1. `tests/abi_check/gen_abi.py`, `classify_aapcs64`: C.13 (NGRN = 8 once a record fails C.12) is not written out. It
+1. DONE (A6 model commit). `tests/abi_check/gen_abi.py`, `classify_aapcs64`: C.13 (NGRN = 8 once a record fails C.12) is not written out. It
    changes nothing for A3 (an integer only fails C.9 when NGRN is already 8), but A6 needs it, with C.3 (NSRN = 8 for an
    HFA that does not fit), for the 27.6 case "NGRN = 8, no split". Required before A6's abi_check cases count.
-2. Before A6, derive the model's result cases from the stage C rules (as for `void f(T)`, per "Result return") rather
+2. DONE (A6 model commit: `aapcs64_result` runs stage C on `void f(T)`). Before A6, derive the model's result cases from the stage C rules (as for `void f(T)`, per "Result return") rather
    than restating x0 by hand, so HFA results in v0-v3 and x0/x1 record results come from the same rules.
 3. The model comment and README say "check the rule numbers against your copy". They were checked against the current
    ARM-software/abi-aa `aapcs64.rst` (2026-11-19, by the director and the reviewer): A.1, A.4, B, C.9, C.14, C.16, C.17
