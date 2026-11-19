@@ -16,9 +16,6 @@ OPTS=("$@")
 [ "$#" -eq 0 ] && OPTS=(-O0)
 case " ${OPTS[*]} " in *" -O2 "*) ;; *) OPTS+=(-O2) ;; esac
 TARGET="${TARGET:-riscv32}"
-# D27 27.6: the ilp32d case model would report "every case hit" for cases AArch64
-# does not have. Step A3 adds the AAPCS64 model and removes this refusal.
-if [ "$TARGET" = aarch64 ]; then echo "no AAPCS64 case model yet"; exit 2; fi
 case "$TARGET" in
   riscv32) GCC="riscv64-unknown-elf-gcc -march=rv32imfd -mabi=ilp32d"; LINK_FLAGS=""; SIM="spike pk" ;;
   aarch64) GCC="aarch64-linux-gnu-gcc"; LINK_FLAGS="-static"; SIM="qemu-aarch64" ;;
@@ -29,7 +26,7 @@ OUT="tests/abi_check/out/seed$SEED"
 mkdir -p "$OUT"
 # ELFs of an earlier run of this seed are stale (the loop below skips an existing ELF).
 rm -f "$OUT"/*.elf
-python3 tests/abi_check/gen_abi.py "$SEED" "$COUNT" "$OUT"
+python3 tests/abi_check/gen_abi.py "$SEED" "$COUNT" "$OUT" "$TARGET"
 $OURS -S "$OUT/caller.c" -o "$OUT/caller_ours.s" || { echo "ours failed on caller.c"; exit 2; }
 $OURS -S "$OUT/callee.c" -o "$OUT/callee_ours.s" || { echo "ours failed on callee.c"; exit 2; }
 status=0

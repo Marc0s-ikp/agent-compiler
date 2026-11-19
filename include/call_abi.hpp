@@ -10,7 +10,7 @@ struct Piece {
     Where where;
     int index;   // register number, or the stack offset for StackWord
     int offset;  // byte offset inside the struct
-    int bytes;   // 1 to 4 for an integer piece, 4 or 8 for a floating one
+    int bytes;   // 1 to 8 for an integer piece (8 for a pointer or word on LP64), 4 or 8 for a floating one
     bool is_signed;
 };
 
@@ -22,14 +22,20 @@ struct Piece {
 // Everything is described with Pieces: a part of a value that
 // travels by itself, with its byte offset inside the value, its byte count,
 // its C signedness and where it goes:
-//   Where::IntReg     integer argument register number 'index'
-//   Where::FloatReg   floating argument register number 'index'
+//   Where::IntReg     the target's integer register number 'index'
+//   Where::FloatReg   the target's floating register number 'index'
 //   Where::StackWord  'bytes' bytes at byte 'index' of the outgoing argument
-//                     area (the caller's sp; the callee's s0 on RISC-V)
-// A narrow integer is one piece of 1 or 2 bytes; the backend extends it to a
-// full word by 'is_signed' (the psABI says so for registers and stack slots).
-// A register NUMBER is an index into the target's argument registers; only the
-// backend turns it into a name.
+//                     area (the caller's sp; the callee finds it at a fixed
+//                     offset from its frame, which only the backend knows)
+// A narrow integer is one piece of 1 or 2 bytes with 'is_signed' from its C
+// type. Whether the backend extends it, and who does, is the target's rule
+// (ilp32d: the caller extends to a full word; AAPCS64: the upper bits are
+// unspecified, so each side uses only the piece's bytes).
+// 'index' of an IntReg or FloatReg piece is the target's n-th integer (or
+// floating) argument register, not an architectural register number (on
+// RISC-V, index 0 is a0, which is x10). A target may define indices beyond its
+// argument registers (AArch64: IntReg 8 is x8, the result pointer). Only the
+// backend turns an index into a name.
 //
 // A float or double is one FloatReg piece, or one IntReg piece (float) / two
 // IntReg pieces (double), or IntReg plus StackWord (the a7 split), or one

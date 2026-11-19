@@ -1027,3 +1027,28 @@ Choices that D27 left open, made in step A2 (`src/backend_aarch64.cpp`):
 - **No frontend change.** `&&`, `||`, `?:` and `switch` lower to compare/branch/label in the frontend; none needed a change.
 - **Test.** `a2_control_flow` has no parameters or calls (A3), no preprocessor use (the compiler has none), and runs on both targets.
 - **compare_asm.sh.** The 321 original files are identical; `a2_control_flow` shows up as a new file.
+
+## A3 notes (implementer, 2026-11-19)
+
+Choices that D27 left open, made in step A3 (`src/call_abi_aarch64.cpp`, `src/backend_aarch64.cpp`, `tests/abi_check`):
+
+- **Classifier.** `ArgAssigner` holds NGRN and the stack offset (NSAA). An integer or pointer is one piece of its own size
+  (`IntReg` n while n < 8, else `StackWord` at the next 8-byte slot); `stack_bytes` is the offset rounded to 16. A float,
+  a record, or any other parameter or result type still throws "not in AArch64 yet". Only the piece's bytes are named for a
+  narrow integer; `is_signed` is filled in but the backend does not read it.
+- **Callee.** Parameter homes are stored in the prologue after `sub sp, outgoing`: an `IntReg` piece with `strb`/`strh`/`str`
+  of the w or x register, a `StackWord` piece loaded from `x29 + upper + index` through w9/x9 with the matching `ldrb`/`ldrh`/`ldr`.
+  The upper bits of a narrow argument are never read (27.2).
+- **Caller.** `Load(n, operand)` into x<n>/w<n> by the operand's IR type (so a narrow temp is an `ldrb`/`ldrh`, a pointer is an x
+  register), or a store of the operand's own size to `[sp, #index]`. The outgoing area is the maximum `stack_bytes` over the
+  function's calls, rounded to a multiple of 16 in `LayoutFrame`. The result is stored from w0/x0 with the destination's own width.
+- **`ptrtoint` and `inttoptr` landed in A3, not A4.** Every function that returns a pointer ends in the frontend's implicit
+  `return 0`, which is `inttoptr i64 0 to ptr`; a pointer result in x0 (an A3 case) cannot be generated without it. Both casts are a
+  copy of an x register (an `I64` and a `Ptr` are both 64 bits). `ptradd`, symbols and data are still A4.
+- **abi_check aarch64 generation.** It draws integer and pointer parameters and results only (up to 20 parameters), emits no
+  record declarations, and uses nothing that A3 lacks: the generated C only calls functions, compares and returns. The
+  ilp32d generator and its output for a given seed are unchanged. The model is `classify_aapcs64`, written from the AAPCS64
+  text (stage A/B/C rules C.9, C.14, C.16, C.17), without reading the compiler's classifier.
+- **Custom test.** `a3_stack_mixed` (narrow and pointer stack arguments, odd stack count, pointer results, ours to ours and GCC to ours).
+  It avoids pointer arithmetic (A4).
+- **compare_asm.sh.** The 321 original files are identical; `a1_*`, `a2_*` and `a3_stack_mixed` show up as new files.

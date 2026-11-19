@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Random ABI cross-check generator (integer, pointer, float, double, struct and union signatures).
 
-Prints, per run, how many signatures hit each ilp32d case (see classify).
+Prints, per run, how many signatures hit each ABI case: the ilp32d cases (classify) for riscv32, the
+AAPCS64 cases (classify_aapcs64) for aarch64.
 
 Writes three C files into OUT_DIR:
   callee.c  N functions f<i>(params) -> ret. Each checks every parameter
@@ -11,7 +12,7 @@ Writes three C files into OUT_DIR:
             (as literals, as same-type locals, or as int locals converted at the
             call) and check the return value.
   driver.c  main, abi_fail, abi_ptr_c, abi_ptr_i, abi_int (always built by GCC).
-Usage: gen_abi.py SEED COUNT OUT_DIR
+Usage: gen_abi.py SEED COUNT OUT_DIR [riscv32|aarch64]   (default riscv32)
 """
 import collections
 import random
@@ -67,6 +68,15 @@ SCALAR_LAYOUT = {  # name: (size, align, class) with class i(nteger), p(ointer),
     "unsigned char": (1, 1, "i"), "short": (2, 2, "i"), "unsigned short": (2, 2, "i"),
     "int *": (4, 4, "p"), "char *": (4, 4, "p"), "float": (4, 4, "f"), "double": (8, 8, "f"),
 }
+
+# LP64 scalars of aarch64 (D27 27.1): pointers are 8 bytes. Plain char is unsigned on both targets.
+# Only what the compiler supports so far (A3: integers and pointers); A5 and A6 add float and records.
+AAPCS64_LAYOUT = {
+    "int": (4, 4, "i"), "unsigned": (4, 4, "i"), "char": (1, 1, "i"), "signed char": (1, 1, "i"),
+    "unsigned char": (1, 1, "i"), "short": (2, 2, "i"), "unsigned short": (2, 2, "i"),
+    "int *": (8, 8, "p"), "char *": (8, 8, "p"),
+}
+TARGET = "riscv32"  # set by main; the generator draws and models by target
 
 
 def round_up(v, m):
@@ -339,6 +349,70 @@ def classify(params, ret):
     return hits, split
 
 
+# ---- A model of AAPCS64 (Procedure Call Standard for the Arm 64-bit Architecture,
+# section 6.8.2 "Parameter passing", and 6.9 "Result return"), written from the standard's
+# text and independent of the compiler's classifier. Only integers and pointers are
+# modelled (step A3); A5 adds the floating rules (C.1 to C.5) and A6 the composite ones
+# (B.2 to B.4, C.12 and on) to the same state machine. Rule numbers are those of the
+# AAPCS64 release I worked from (2023); check them against your copy.
+
+AAPCS64_CASES = [
+    ("x_int", "4-byte integer in an x register (C.9)"),
+    ("x_ptr", "pointer in an x register (C.9)"),
+    ("x_narrow", "char/short in an x register (C.9; upper bits unspecified)"),
+    ("x_last", "the eighth integer or pointer argument, in x7"),
+    ("s_first", "the first stack argument (NSAA 0), x0-x7 used up (C.14, C.17)"),
+    ("s_int", "4-byte integer on the stack (C.14, C.17)"),
+    ("s_ptr", "pointer on the stack (C.14, C.17)"),
+    ("s_narrow", "char/short on the stack, 8-byte slot (C.16)"),
+    ("s_next", "a stack argument at NSAA > 0 (slots advance by 8)"),
+    ("s_odd", "odd number of stack arguments: area padded to 16 (SP alignment)"),
+    ("r_int", "4-byte integer result in w0"),
+    ("r_ptr", "pointer result in x0"),
+    ("r_narrow", "char/short result in w0 (upper bits unspecified)"),
+]
+
+
+def aapcs64_kind(t):
+    """'int', 'ptr' or 'narrow' for a type of the A3 model."""
+    size, _, cls = AAPCS64_LAYOUT[t]
+    return "ptr" if cls == "p" else ("narrow" if size < 4 else "int")
+
+
+def classify_aapcs64(params, ret):
+    """(hits, split) like classify: the AAPCS64 cases each argument and the result hit
+    (one entry per occurrence). Nothing is split between registers and the stack on
+    aarch64, so 'split' is always empty. A type the model does not know raises KeyError."""
+    hits = []
+    ngrn = nsrn = 0   # stage A: the next general-purpose and SIMD&FP register numbers
+    nsaa = 0          # stage A: the next stacked argument address, as a byte offset from SP
+    stacked = 0
+    for t in params:
+        size, align, cls = AAPCS64_LAYOUT[t]  # stage B: integers and pointers are unmodified
+        kind = aapcs64_kind(t)
+        if cls in "ip" and size <= 8 and ngrn < 8:  # C.9: the least significant bits of x[NGRN]
+            hits.append("x_" + kind)
+            if ngrn == 7:
+                hits.append("x_last")
+            ngrn += 1
+            continue
+        # C.14: NSAA is rounded up to the larger of 8 and the natural alignment
+        nsaa = round_up(nsaa, max(8, align))
+        hits.append("s_" + kind)
+        if nsaa == 0:
+            hits.append("s_first")
+        else:
+            hits.append("s_next")
+        # C.16: a size under 8 bytes is set to 8; C.17: copied at NSAA, which advances by the size
+        nsaa += max(size, 8)
+        stacked += 1
+    if stacked % 2:
+        hits.append("s_odd")
+    if ret in AAPCS64_LAYOUT:  # 6.9: an integral or pointer result of up to 8 bytes is in x0
+        hits.append("r_" + aapcs64_kind(ret))
+    return hits, set()
+
+
 def a_users(rng, n):
     """n parameters that each take one a register (integers and pointers)."""
     return [rng.choice(list(INT_TYPES) + PTR_TYPES) for _ in range(n)]
@@ -400,13 +474,46 @@ def gen_params(rng, ret):
     return params + ["double"] + [rng.choice(SCALAR_TYPES) for _ in range(rng.randint(0, 3))]
 
 
+def gen_params_aarch64(rng):
+    """Integer and pointer parameter lists that reach x0-x7 and the stack: uniform draws
+    (0 to 14 parameters) and shapes that always use the stack: 'stack' (9 to 20 parameters),
+    'x_full' (exactly 8, then 1 to 4 more), 'narrow_tail' (8 any, then 1 to 8 char/short
+    types, so narrow values sit in stack slots) and 'ptr_tail' (8 integers, then pointers)."""
+    ints, narrow = list(INT_TYPES), ["char", "signed char", "unsigned char", "short", "unsigned short"]
+    anyt = ints + PTR_TYPES
+    shape = rng.choice(["random", "random", "stack", "stack", "x_full", "narrow_tail", "ptr_tail"])
+    if shape == "random":
+        return [rng.choice(anyt) for _ in range(rng.randint(0, 14))]
+    if shape == "stack":
+        return [rng.choice(anyt) for _ in range(rng.randint(9, 20))]
+    if shape == "x_full":
+        return [rng.choice(anyt) for _ in range(8 + rng.randint(1, 4))]
+    if shape == "narrow_tail":
+        return [rng.choice(anyt) for _ in range(8)] + [rng.choice(narrow) for _ in range(rng.randint(1, 8))]
+    return [rng.choice(ints) for _ in range(8)] + [rng.choice(PTR_TYPES) for _ in range(rng.randint(1, 4))]
+
+
+def gen_sig_aarch64(rng):
+    ret = rng.choice(list(INT_TYPES) + PTR_TYPES + ["void"])
+    params = gen_params_aarch64(rng)
+    raws = [leaf_values(rng, t) for t in params]
+    modes = [rng.choice(["lit", "same", "int", "call"]) for _ in params]
+    return params, ret, raws, modes
+
+
 def split_params(params, ret="void"):
     """Indexes of the parameters (doubles, structs and unions) that ilp32d splits
     between a7 and the stack (see classify)."""
-    return classify(params, ret)[1]
+    return classify_for_target(params, ret)[1]
+
+
+def classify_for_target(params, ret):
+    return classify_aapcs64(params, ret) if TARGET == "aarch64" else classify(params, ret)
 
 
 def gen_sig(rng):
+    if TARGET == "aarch64":
+        return gen_sig_aarch64(rng)
     ret = rng.choice(PARAM_TYPES + ["void"])
     params = gen_params(rng, ret)
     raws = [leaf_values(rng, t) for t in params]
@@ -534,8 +641,8 @@ def caller(i, params, ret, raws, modes):
     return "\n".join(out)
 
 
-HEADER = ("void abi_fail(int sig, int param);\nchar *abi_ptr_c(void);\nint *abi_ptr_i(void);\nint abi_int(int x);\n"
-          + "\n".join(decl for decl, _ in STRUCTS.values()) + "\n")
+HEADER_FUNCS = "void abi_fail(int sig, int param);\nchar *abi_ptr_c(void);\nint *abi_ptr_i(void);\nint abi_int(int x);\n"
+HEADER = HEADER_FUNCS + "\n".join(decl for decl, _ in STRUCTS.values()) + "\n"
 
 DRIVER = r"""#include <stdio.h>
 static int failures;
@@ -562,19 +669,26 @@ def hit_table(seed, sigs):
     """How many signatures (and arguments or results) hit each ABI case, by the
     model in classify. A case with no hits is not tested by this run."""
     occurrences, signatures = collections.Counter(), collections.Counter()
+    cases = AAPCS64_CASES if TARGET == "aarch64" else CASES
     for params, ret, _, _ in sigs:
-        hits = classify(params, ret)[0]
+        hits = classify_for_target(params, ret)[0]
         occurrences.update(hits)
         signatures.update(set(hits))
     lines = ["hits seed %d (signatures / occurrences):" % seed]
-    lines += ["  %-8s %4d / %4d  %s" % (key, signatures[key], occurrences[key], text) for key, text in CASES]
-    missing = [key for key, _ in CASES if not occurrences[key]]
+    lines += ["  %-8s %4d / %4d  %s" % (key, signatures[key], occurrences[key], text) for key, text in cases]
+    missing = [key for key, _ in cases if not occurrences[key]]
     lines.append("  NOT HIT: " + " ".join(missing) if missing else "  every case hit")
     return "\n".join(lines)
 
 
 def main():
+    global HEADER, TARGET
     seed, count, out = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+    TARGET = sys.argv[4] if len(sys.argv) > 4 else "riscv32"
+    if TARGET not in ("riscv32", "aarch64"):
+        sys.exit("unknown target " + TARGET)
+    if TARGET == "aarch64":  # no records yet (A6): their declarations stay out of the C files
+        HEADER = HEADER_FUNCS
     rng = random.Random(seed)
     sigs = [gen_sig(rng) for _ in range(count)]
     table = hit_table(seed, sigs)
