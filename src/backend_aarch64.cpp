@@ -412,6 +412,35 @@ private:
             << "\n1:\n\tb " << LocalLabel(in.label2) << "\n";
     }
 
+    // Zeroes in the widest stores the alignment and size allow. Up to 64 bytes
+    // it is unrolled (the widest store that fits at each offset); beyond that a
+    // loop runs x9 up to x10 = the end, one store of 'step' bytes at a time.
+    void WriteMemZero(const Instruction& in) {
+        Load(9, in.args[0]);
+        int step = in.align >= 8 && in.size % 8 == 0 ? 8 : in.align >= 4 && in.size % 4 == 0 ? 4 : 1;
+        if (in.size <= 64) {
+            for (long off = 0; off < in.size;) {
+                int width = ZeroWidth(in.align, in.size - off, off);
+                EmitMem(os_, StoreOpForBytes(width), width == 8 ? "xzr" : "wzr", "x9", off, width);
+                off += width;
+            }
+            return;
+        }
+        EmitAddrOffset(os_, "x10", "x9", in.size);
+        os_ << "1:\n\t" << StoreOpForBytes(step) << " " << (step == 8 ? "xzr" : "wzr") << ", [x9], #" << step
+            << "\n\tcmp x9, x10\n\tb.ne 1b\n";
+    }
+
+    // The widest of 8, 4, 2, 1 that the base alignment, the offset and the bytes left allow.
+    static int ZeroWidth(long align, long left, long off) {
+        for (int width : {8, 4, 2}) {
+            if (align >= width && off % width == 0 && left >= width) return width;
+        }
+        return 1;
+    }
+
+    static const char* StoreOpForBytes(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
+
     void WriteInstruction(size_t index, const Instruction& in) {
         if (ir::IsBinaryArith(in.op)) return WriteBinary(in);
         if (ir::IsCompare(in.op)) return WriteCompare(in);
@@ -444,6 +473,7 @@ private:
                 Load(9, in.args[0]);
                 Load(10, in.args[1]);
                 return EmitMem(os_, StoreOp(in.type), Reg(9, in.type), "x10", 0, ir::SizeOf(in.type));
+            case Op::MemZero: return WriteMemZero(in);
             case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
             case Op::Jump: os_ << "\tb " << LocalLabel(in.label) << "\n"; return;
             case Op::Branch: return WriteBranch(in);
