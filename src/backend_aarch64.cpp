@@ -17,7 +17,7 @@
 // x16 and x17 hold addresses and large constants. All four are caller-saved,
 // so the prologue saves only the frame record (x29 and x30).
 //
-// This is step A1: integer operators, assignment and locals. An instruction
+// This is step A2: integer operators, assignment, locals and control flow. An instruction
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
 
@@ -307,6 +307,14 @@ private:
         StoreResult(9, in.dst);
     }
 
+    // 'cbz' reaches only +-1 MB, so it skips one 'b' and every jump to a label
+    // is a 'b' (+-128 MB). The condition is in w9, or x9 for an I64 or Ptr.
+    void WriteBranch(const Instruction& in) {
+        Load(9, in.args[0]);
+        os_ << "\tcbz " << Reg(9, in.args[0].type) << ", 1f\n\tb " << LocalLabel(in.label)
+            << "\n1:\n\tb " << LocalLabel(in.label2) << "\n";
+    }
+
     void WriteInstruction(const Instruction& in) {
         if (ir::IsBinaryArith(in.op)) return WriteBinary(in);
         if (ir::IsCompare(in.op)) return WriteCompare(in);
@@ -334,6 +342,9 @@ private:
                 Load(9, in.args[0]);
                 Load(10, in.args[1]);
                 return EmitMem(os_, StoreOp(in.type), Reg(9, in.type), "x10", 0, ir::SizeOf(in.type));
+            case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
+            case Op::Jump: os_ << "\tb " << LocalLabel(in.label) << "\n"; return;
+            case Op::Branch: return WriteBranch(in);
             case Op::Ret:
                 if (!in.args.empty()) LoadReturnValue(in.args[0]);
                 os_ << "\tb " << ReturnLabel() << "\n";
