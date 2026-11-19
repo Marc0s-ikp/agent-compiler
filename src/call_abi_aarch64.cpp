@@ -203,7 +203,7 @@ private:
 RetPlace ClassifyReturn(const Type& ret) {
     RetPlace place;
     if (ret.IsVoid()) return place;
-    if (!IsScalar(ret)) NotYet("return type other than a scalar or void");
+    if (!IsScalar(ret) && !ret.IsRecord()) NotYet("return type other than a scalar, a record or void");
     ArgPlace as_argument = ArgAssigner().Place(ret);
     if (as_argument.by_reference || as_argument.pieces.at(0).where == Piece::Where::StackWord) {
         place.in_memory = true;

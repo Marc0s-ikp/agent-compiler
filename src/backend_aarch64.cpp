@@ -21,7 +21,7 @@
 // so the prologue saves only the frame record (x29 and x30).
 //
 // This is step A6: integer and floating operators, assignment, locals, control flow, calls
-// with scalar and record arguments, and memcpy. An instruction
+// with scalar and record arguments and results, and memcpy. An instruction
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
 
@@ -209,6 +209,7 @@ void EmitStoreChunks(std::ostream& os, int n, int bytes, int align, const std::s
 struct Frame {
     std::map<std::string, int> objects;  // name -> offset from x29
     std::vector<int> temps;              // temp id -> offset from x29
+    int return_pointer = 0;              // the saved x8 (the caller's result object), if any
     int upper = 0;                       // size of the upper part
     int outgoing = 0;                    // size of the area at sp
 
@@ -221,8 +222,9 @@ struct Frame {
     }
 };
 
-Frame LayoutFrame(const ir::Function& fn, int outgoing_bytes) {
+Frame LayoutFrame(const ir::Function& fn, int outgoing_bytes, bool result_in_memory) {
     Frame frame;
+    if (result_in_memory) frame.return_pointer = frame.Reserve(8, 8);
     for (const ir::FrameObject& o : fn.objects) frame.objects[o.name] = frame.Reserve(o.size, o.align);
     for (IrType t : fn.temps) frame.temps.push_back(frame.Reserve(ir::SizeOf(t), ir::SizeOf(t)));
     frame.upper = RoundUp(frame.used, 16);
@@ -244,7 +246,7 @@ public:
             calls_[i] = Target().Abi().Classify(in.arg_types, in.ret_type);
             outgoing = std::max(outgoing, calls_[i].stack_bytes);
         }
-        frame_ = LayoutFrame(fn, outgoing);
+        frame_ = LayoutFrame(fn, outgoing, entry_.ret.in_memory);
     }
 
     void Write() {
@@ -272,6 +274,7 @@ private:
         EmitAdjustSp(os_, "sub", frame_.upper);
         os_ << "\tstp x29, x30, [sp]\n\tmov x29, sp\n";
         if (frame_.outgoing) EmitAdjustSp(os_, "sub", frame_.outgoing);
+        if (entry_.ret.in_memory) EmitMem(os_, "str", "x8", "x29", frame_.return_pointer, 8);  // for 'ret'
         StoreParameters();
     }
 
@@ -390,7 +393,20 @@ private:
     // The value comes back in x0 or w0 (27.2); the upper bits of a narrow
     // value are unspecified, so nothing is extended.
     void LoadReturnValue(const Operand& value) {
+        if (fn_.c_return->IsRecord()) return LoadReturnRecord(value);
         Load(entry_.ret.pieces.at(0).index, value);  // x0, w0, s0 or d0, by the value's type
+    }
+
+    // 'ret' of a record: the operand is the address of the value. Through the saved x8 it is copied to
+    // the caller's result object; otherwise its pieces are loaded into x0, x1 or v0 to v3.
+    void LoadReturnRecord(const Operand& value) {
+        const Type& type = *fn_.c_return;
+        Load(17, value);
+        if (entry_.ret.in_memory) {
+            EmitMem(os_, "ldr", "x16", "x29", frame_.return_pointer, 8);
+            return EmitCopyMem(os_, "x16", "x17", type.Size(), type.Align());
+        }
+        for (const Piece& piece : entry_.ret.pieces) PlaceOutgoingRecordPiece(piece, type);
     }
 
     // ---- calls (caller side) ----
@@ -401,6 +417,7 @@ private:
     // is in x0 (w0), and its slot keeps the bytes of the result's type.
     void WriteCall(size_t index, const Instruction& in) {
         const CallLayout& layout = calls_.at(index);
+        if (layout.ret.in_memory) Load(layout.ret.pointer.index, in.result_object);  // x8
         for (size_t i = 0; i < in.args.size(); ++i) {
             if (in.arg_types[i]->IsRecord()) {
                 PlaceOutgoingRecord(in.args[i], layout.args[i], *in.arg_types[i]);
@@ -409,7 +426,11 @@ private:
             for (const Piece& piece : layout.args[i].pieces) PlaceOutgoingPiece(in.args[i], piece);
         }
         os_ << "\tbl " << in.callee << "\n";
-        if (in.dst.kind == Operand::Kind::Temp) StoreResult(0, in.dst);
+        if (in.dst.kind == Operand::Kind::Temp) {
+            StoreResult(0, in.dst);
+        } else if (in.ret_type->IsRecord()) {
+            SaveReturnedRecord(layout.ret, in);
+        }
     }
 
     // The caller of a record argument: the operand is the address of the argument's copy. By reference
@@ -426,7 +447,8 @@ private:
         EmitMem(os_, "str", "x9", "sp", piece.index, 8);
     }
 
-    // One piece of the record whose address is in x17, to its register or its place in the outgoing area.
+    // One piece of the record whose address is in x17, to its register or its place in the outgoing
+    // area. Also the pieces of a returned record, which go to x0, x1 or v0 to v3.
     void PlaceOutgoingRecordPiece(const Piece& piece, const Type& type) {
         switch (piece.where) {
             case Piece::Where::FloatReg:
@@ -437,6 +459,21 @@ private:
                 if (!IsWholeStackRecord(piece, type)) NotYet("a record split between registers and the stack");
                 EmitAddrOffset(os_, "x16", "sp", piece.index);
                 return EmitCopyMem(os_, "x16", "x17", piece.bytes, type.Align());
+        }
+    }
+
+    // After the call: the returned pieces (x0, x1, v0 to v3) are stored into the call's result object. A
+    // result in memory was written by the callee through x8, so there is nothing to do.
+    void SaveReturnedRecord(const RetPlace& ret, const Instruction& in) {
+        if (ret.in_memory) return;
+        const Type& type = *in.ret_type;
+        Load(17, in.result_object);
+        for (const Piece& piece : ret.pieces) {
+            if (piece.where == Piece::Where::FloatReg) {
+                EmitMem(os_, "str", Reg(piece.index, FloatPieceType(piece)), "x17", piece.offset, piece.bytes);
+            } else {
+                EmitStoreChunks(os_, piece.index, piece.bytes, type.Align(), "x17", piece.offset);
+            }
         }
     }
 
