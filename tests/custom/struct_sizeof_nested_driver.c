@@ -14,7 +14,8 @@ int main()
     if (s_array_member() != 204) return 8;
     if (s_element() != 3) return 9;
     if (s_local_array() != 80) return 10;
-    if (s_ptr() != 436) return 11;
+    /* sizeof(p) * 100 + 36: the pointer size is the target's, so GCC computes it. */
+    if (s_ptr() != (int)sizeof(void *) * 100 + 36) return 11;
     if (offsets() != 424) return 12;
     return 0;
 }
