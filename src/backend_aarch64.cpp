@@ -21,7 +21,7 @@
 // so the prologue saves only the frame record (x29 and x30).
 //
 // This is step A6: integer and floating operators, assignment, locals, control flow, calls
-// with scalar arguments and results, and memcpy. An instruction
+// with scalar and record arguments, and memcpy. An instruction
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
 
@@ -180,6 +180,26 @@ void EmitCopyMem(std::ostream& os, const std::string& dst, const std::string& sr
     os << "\t" << StoreBytesOp(unit) << " " << tmp << ", [x12], #" << unit << "\n\tcmp x12, x14\n\tb.ne 1b\n";
 }
 
+// x<n> = 'bytes' bytes of a record at off(base), zero-extended, a unit at a time (clobbers x11).
+void EmitLoadChunks(std::ostream& os, int n, int bytes, int align, const std::string& base, int off) {
+    int unit = AccessUnit(align, bytes);
+    EmitMem(os, LoadBytesOp(unit), UnitReg(n, unit), base, off, unit);
+    for (int done = unit; done < bytes; done += unit) {
+        EmitMem(os, LoadBytesOp(unit), UnitReg(11, unit), base, off + done, unit);
+        os << "\torr x" << n << ", x" << n << ", x11, lsl #" << 8 * done << "\n";
+    }
+}
+
+// The low 'bytes' bytes of x<n> to off(base), a unit at a time (clobbers x11).
+void EmitStoreChunks(std::ostream& os, int n, int bytes, int align, const std::string& base, int off) {
+    int unit = AccessUnit(align, bytes);
+    EmitMem(os, StoreBytesOp(unit), UnitReg(n, unit), base, off, unit);
+    for (int done = unit; done < bytes; done += unit) {
+        os << "\tlsr x11, x" << n << ", #" << 8 * done << "\n";
+        EmitMem(os, StoreBytesOp(unit), UnitReg(11, unit), base, off + done, unit);
+    }
+}
+
 // ---- frame layout (27.3) ----
 // Two parts, each a multiple of 16, so sp is always 16-aligned. The upper part
 // holds, from x29 upwards: the frame record (saved x29 and x30), the frame
@@ -262,7 +282,54 @@ private:
     void StoreParameters() {
         for (size_t i = 0; i < fn_.params.size(); ++i) {
             int home = frame_.objects.at(fn_.params[i].object);
+            if (fn_.params[i].type->IsRecord()) {
+                StoreRecordParameter(entry_.args[i], *fn_.params[i].type, home);
+                continue;
+            }
             for (const Piece& piece : entry_.args[i].pieces) StoreIncomingPiece(piece, home);
+        }
+    }
+
+    // A record parameter. By reference: copy from the caller's copy into the home. Otherwise each piece
+    // is stored at its offset in the home; a whole record on the stack is copied from the caller's
+    // outgoing area at x29 + upper + index.
+    void StoreRecordParameter(const ArgPlace& place, const Type& type, int home) {
+        if (place.by_reference) {
+            LoadIncomingPointer(17, place.pieces.at(0));
+            EmitAddrOffset(os_, "x16", "x29", home);
+            return EmitCopyMem(os_, "x16", "x17", type.Size(), type.Align());
+        }
+        for (const Piece& piece : place.pieces) StoreIncomingRecordPiece(piece, type, home);
+    }
+
+    // The pointer of a by-reference argument, as it arrives, into x<n>.
+    void LoadIncomingPointer(int n, const Piece& piece) {
+        if (piece.where == Piece::Where::IntReg) {
+            os_ << "\tmov x" << n << ", x" << piece.index << "\n";
+        } else {
+            EmitMem(os_, "ldr", "x" + std::to_string(n), "x29", frame_.upper + piece.index, 8);
+        }
+    }
+
+    // A piece that is a whole record on the stack, not a part of one.
+    static bool IsWholeStackRecord(const Piece& piece, const Type& record) {
+        return piece.where == Piece::Where::StackWord && piece.offset == 0 && piece.bytes == record.Size();
+    }
+
+    static IrType FloatPieceType(const Piece& piece) { return piece.bytes == 8 ? IrType::F64 : IrType::F32; }
+
+    void StoreIncomingRecordPiece(const Piece& piece, const Type& type, int home) {
+        int dst = home + piece.offset;
+        switch (piece.where) {
+            case Piece::Where::FloatReg:
+                return EmitMem(os_, "str", Reg(piece.index, FloatPieceType(piece)), "x29", dst, piece.bytes);
+            case Piece::Where::IntReg:
+                return EmitStoreChunks(os_, piece.index, piece.bytes, type.Align(), "x29", dst);
+            case Piece::Where::StackWord:
+                if (!IsWholeStackRecord(piece, type)) NotYet("a record split between registers and the stack");
+                EmitAddrOffset(os_, "x17", "x29", frame_.upper + piece.index);
+                EmitAddrOffset(os_, "x16", "x29", home);
+                return EmitCopyMem(os_, "x16", "x17", piece.bytes, type.Align());
         }
     }
 
@@ -335,10 +402,42 @@ private:
     void WriteCall(size_t index, const Instruction& in) {
         const CallLayout& layout = calls_.at(index);
         for (size_t i = 0; i < in.args.size(); ++i) {
+            if (in.arg_types[i]->IsRecord()) {
+                PlaceOutgoingRecord(in.args[i], layout.args[i], *in.arg_types[i]);
+                continue;
+            }
             for (const Piece& piece : layout.args[i].pieces) PlaceOutgoingPiece(in.args[i], piece);
         }
         os_ << "\tbl " << in.callee << "\n";
         if (in.dst.kind == Operand::Kind::Temp) StoreResult(0, in.dst);
+    }
+
+    // The caller of a record argument: the operand is the address of the argument's copy. By reference
+    // it is passed as it is; otherwise the pieces are loaded from it (its address is in x17).
+    void PlaceOutgoingRecord(const Operand& o, const ArgPlace& place, const Type& type) {
+        if (place.by_reference) return PlaceOutgoingPointer(o, place.pieces.at(0));
+        Load(17, o);
+        for (const Piece& piece : place.pieces) PlaceOutgoingRecordPiece(piece, type);
+    }
+
+    void PlaceOutgoingPointer(const Operand& o, const Piece& piece) {
+        if (piece.where == Piece::Where::IntReg) return Load(piece.index, o);
+        Load(9, o);
+        EmitMem(os_, "str", "x9", "sp", piece.index, 8);
+    }
+
+    // One piece of the record whose address is in x17, to its register or its place in the outgoing area.
+    void PlaceOutgoingRecordPiece(const Piece& piece, const Type& type) {
+        switch (piece.where) {
+            case Piece::Where::FloatReg:
+                return EmitMem(os_, "ldr", Reg(piece.index, FloatPieceType(piece)), "x17", piece.offset, piece.bytes);
+            case Piece::Where::IntReg:
+                return EmitLoadChunks(os_, piece.index, piece.bytes, type.Align(), "x17", piece.offset);
+            case Piece::Where::StackWord:
+                if (!IsWholeStackRecord(piece, type)) NotYet("a record split between registers and the stack");
+                EmitAddrOffset(os_, "x16", "sp", piece.index);
+                return EmitCopyMem(os_, "x16", "x17", piece.bytes, type.Align());
+        }
     }
 
     void PlaceOutgoingPiece(const Operand& o, const Piece& piece) {

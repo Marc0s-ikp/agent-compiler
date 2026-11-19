@@ -37,15 +37,23 @@ struct Piece {
 // argument registers (AArch64: IntReg 8 is x8, the result pointer). Only the
 // backend turns an index into a name.
 //
-// A float or double is one FloatReg piece, or one IntReg piece (float) / two
+// A float or double is one FloatReg piece, or (ilp32d only) one IntReg piece (float) / two
 // IntReg pieces (double), or IntReg plus StackWord (the a7 split), or one
-// StackWord piece of its size. A struct or union (step 6) is: one piece per
+// StackWord piece of its size. A struct or union (step 6) is, on ilp32d: one piece per
 // scalar field in the floating convention (FloatReg or IntReg, each with the
 // field's offset); up to two integer words (IntReg, IntReg+IntReg, or IntReg
 // plus a StackWord of the rest, offset 4); a single StackWord piece as big as
 // the whole struct (offset 0) when the a registers are used up; or, over 8
 // bytes, by_reference set and one pointer-sized piece (IntReg or StackWord).
-// A struct return is the pieces of 'ret' (a0, a1, fa0, fa1) or in_memory.
+// On AAPCS64 (D27, A6) it is: one FloatReg piece per member of a homogeneous
+// floating-point aggregate (4 or 8 bytes each, at offset 0, 4 or 8, ...); one
+// or two 8-byte IntReg pieces (the last one shorter if the size is not a
+// multiple of 8, so a 3, 5, 6 or 7 byte piece exists), at offsets 0 and 8; a
+// single StackWord piece as big as the whole record (offset 0) when it does
+// not fit in the registers left; or, over 16 bytes, by_reference set and one
+// 8-byte pointer piece (IntReg or StackWord).
+// A struct return is the pieces of 'ret' (a0, a1, fa0, fa1 on ilp32d; x0, x1,
+// v0 to v3 on AAPCS64) or in_memory.
 struct ArgPlace {
     bool by_reference = false;   // pieces hold a pointer to the caller's copy
     std::vector<Piece> pieces;
