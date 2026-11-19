@@ -1,8 +1,7 @@
 /* A4 (27.5.5): constant folding of 8-byte unsigned values (size_t, from sizeof arithmetic) must agree with
    run time for comparison, division, remainder and right shift. M = sizeof(int) - 5 is the largest value
    of the type (0xFFFF...FFFF of pointer width). Each expression is folded (an enum value, a case label,
-   an array size) and also computed at run time from int parameters, so the compiler cannot fold it. A shift count at run time is itself a size_t
-   (sizeof(void *) * 8 - k): the compiler does not yet convert an int count to an 8-byte left operand's type.
+   an array size) and also computed at run time from int parameters, so the compiler cannot fold it.
    The driver computes every expected value with GCC from the same expressions. */
 enum {
     C_div = (sizeof(int) - 5) / 3 % 1000,
@@ -45,11 +44,11 @@ int case_div(int x)
 int arr_div(void) { char a[(sizeof(int) - 5) / 3 % 100 + 1]; return sizeof(a); }
 int arr_shr(void) { char a[((sizeof(int) - 5) >> (sizeof(void *) * 8 - 2)) + 1]; return sizeof(a); }
 
-/* the same expressions at run time: five, three, ten, k, two, q are variables */
+/* the same expressions at run time: five, three, ten, k, two, q are variables (a shift count is a plain int) */
 int r_div(int five, int three) { return (sizeof(int) - five) / three % 1000; }
 int r_mod(int five, int ten) { return (sizeof(int) - five) % ten; }
-int r_shr_top(int five, int k) { return (sizeof(int) - five) >> (sizeof(void *) * 8 - k); }
-int r_shr_mid(int five, int two) { return ((sizeof(int) - five) >> (sizeof(char) + two)) % 1000; }
+int r_shr_top(int five, int k) { return (sizeof(int) - five) >> k; }
+int r_shr_mid(int five, int two) { return ((sizeof(int) - five) >> two) % 1000; }
 int r_gt_zero(int five, int zero) { return (sizeof(int) - five) > zero; }
 int r_lt_zero(int five, int zero) { return (sizeof(int) - five) < zero; }
 int r_ge_one(int five, int one) { return (sizeof(int) - five) >= one; }
@@ -57,3 +56,17 @@ int r_le_zero(int five, int zero) { return (sizeof(int) - five) <= zero; }
 int r_div_self(int five) { return (sizeof(int) - five) / (sizeof(int) - five); }
 int r_mod_big(int five, int q) { return (sizeof(int) - five) % q; }
 int r_div_big(int five, int six) { return (sizeof(int) - six) / (sizeof(int) - five); }
+
+/* shifts of a size_t value by an int variable (a size_t variable cannot be declared without
+   long or a typedef, so the compound forms are on narrower variables) */
+int r_shl(int five, int n) { return (sizeof(int) - five) << n >> n == sizeof(int) - five; }
+int r_shl_val(int one, int n) { return (sizeof(int) - 4 + one) << n; }
+int r_shr_cmp(int five, int n) { return (sizeof(int) - five) >> n > 0; }
+int r_compound_shr(int five, int n)
+{
+    unsigned char c = 200;
+    int i = 1000;
+    c >>= n;
+    i <<= n;
+    return (int)((sizeof(int) - five) >> n) % 1000 + c + i;
+}

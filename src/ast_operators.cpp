@@ -409,10 +409,10 @@ Operand BinaryArith::EmitValue(IRGen& gen) const {
         throw std::runtime_error("invalid operands to binary operator");
     }
     TypePtr result = GetType(ctx);
-    bool shift = op_ == BinOp::Shl || op_ == BinOp::Shr;
-    TypePtr rhs_type = shift ? Promote(rhs_->ValueType(ctx)) : result;
+    // A shift's result type is the promoted left operand; the count is converted
+    // to it too, because the IR needs both operands in one type.
     Operand a = ValueAs(gen, *lhs_, *result);
-    Operand b = ValueAs(gen, *rhs_, *rhs_type);
+    Operand b = ValueAs(gen, *rhs_, *result);
     return Arith(gen, op_, *result, a, b);
 }
 

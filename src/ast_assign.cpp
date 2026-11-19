@@ -80,11 +80,11 @@ Operand CompoundAssign::EmitValue(IRGen& gen) const {
     }
     bool shift = op_ == BinOp::Shl || op_ == BinOp::Shr;
     TypePtr common = shift ? Promote(type) : UsualArithmetic(type, rhs_type);
-    TypePtr rhs_to = shift ? Promote(rhs_type) : common;
 
     Operand address = lhs_->EmitIRAddress(gen);
     Operand old = ConvertScalar(gen, gen.Load(ir_type, address), *type, *common);
-    Operand rhs = ValueAs(gen, *rhs_, *rhs_to);
+    // A shift count is converted to the same type too: the IR needs both operands in one type.
+    Operand rhs = ValueAs(gen, *rhs_, *common);
     Operand result = ConvertScalar(gen, Arith(gen, op_, *common, old, rhs), *common, *type);
     gen.Store(ir_type, result, address);
     return result;

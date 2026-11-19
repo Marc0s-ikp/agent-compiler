@@ -13,7 +13,7 @@
 ## Latest session
 Pass count: riscv32 325/325 before, 331/331 after (new: `a4_pointer_cond`, `a4_literal_types`, `a4_global_ptr_init`, `a4_sizeof_size_t`, `a4_memzero`, `a4_size_t_folding`). aarch64 160/325 before, 252/331 after. riscv32 assembly of the 321 original tests byte-identical after every commit (`build/baseline/compare_asm.sh`).
 Fixed: AArch64 step A4 (D27): `ptradd`, `adrp`/`add` symbols, `WriteData`, `memzero` (pulled forward from A6), `Type::SizeT` (27.5.1), C90 literal types (27.5.2), `CompareType` at pointer width (27.5.3), 8-byte unsigned folding through `uint64_t` (27.5.5); six custom drivers compute their expectations with GCC for the target.
-Blocked: nothing. One frontend gap found and not fixed (BLOCKERS "From A4"): an `int` shift count with an 8-byte left operand fails the IR checker on aarch64.
+Blocked: nothing. A shift count is now converted to the result type (found on aarch64: an `int` count with an 8-byte left operand failed the IR checker).
 Next: A5, floats. The 79 aarch64 failures left are floats, records and `struct_sizeof_nested`.
 
 ## AArch64 (D27)

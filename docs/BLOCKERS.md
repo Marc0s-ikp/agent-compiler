@@ -343,5 +343,5 @@ From the review of `feat/aarch64-a3` (2026-11-19, approved in round 1). None of 
 
 ## From A4 (implementer, 2026-11-19)
 
-1. Frontend, not fixed (beyond 27.5): a shift with an 8-byte left operand and an `int` count (`sizeof(x) >> 1`) at run time fails the IR checker on aarch64 ("right operand has type i32, expected i64"). `BinaryArith::EmitValue` converts the count to `Promote(rhs type)`; it should be converted to the result type. Folding is not affected. riscv32 never shows it. See the A4 notes.
+1. DONE (commit `frontend: shift count converted to the result type`). A shift with an 8-byte left operand and an `int` count (`sizeof(x) >> 1`) at run time fails the IR checker on aarch64 ("right operand has type i32, expected i64"). `BinaryArith::EmitValue` converts the count to `Promote(rhs type)`; it should be converted to the result type. Folding is not affected. riscv32 never shows it. See the A4 notes.
 2. Drivers compiled by GCC use its default C17 literal rules, the compiler uses C90 (decimal above INT_MAX that does not fit `long`: `long long` versus `unsigned long`). `a4_literal_types` takes those two cases from the C90 rule. `-std=c90` for drivers in `run_tests.sh` would let it use the same expression (Marcus only).
