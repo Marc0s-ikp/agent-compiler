@@ -2,9 +2,11 @@
 #include "ir_gen.hpp"
 
 #include <climits>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 #include "const_value.hpp"
 #include "target.hpp"
@@ -17,19 +19,45 @@ IntLiteral::IntLiteral(const std::string& text) {
     text_ = text;
 }
 
-void IntLiteral::CheckRange() const {
-    if (value_ > 0xFFFFFFFFULL) {
-        throw std::runtime_error("integer too large: " + text_);
-    }
+namespace {
+
+// The largest value of a signed or unsigned integer of this many bytes.
+uint64_t MaxValue(int bytes, bool is_signed) {
+    int bits = 8 * bytes - (is_signed ? 1 : 0);
+    return bits >= 64 ? ~uint64_t{0} : (uint64_t{1} << bits) - 1;
 }
 
+struct Candidate {
+    int bytes;
+    bool is_signed;
+};
+
+}  // namespace
+
+// C90 gives a literal the first type in its list that holds the value (27.5.2):
+// decimal: int, long, unsigned long; octal and hex: int, unsigned int, long,
+// unsigned long; with a u suffix: unsigned int, unsigned long. The sizes
+// are the target's.
 TypePtr IntLiteral::GetType(const Context&) const {
-    CheckRange();
-    return (has_u_ || value_ > INT_MAX) ? Type::UInt() : Type::Int();
+    int i = Target().int_size, l = Target().long_size;
+    std::vector<Candidate> list;
+    if (has_u_) {
+        list = {{i, false}, {l, false}};
+    } else if (IsDecimal()) {
+        list = {{i, true}, {l, true}, {l, false}};
+    } else {
+        list = {{i, true}, {i, false}, {l, true}, {l, false}};
+    }
+    for (const Candidate& c : list) {
+        if (value_ <= MaxValue(c.bytes, c.is_signed)) return Type::Integer(c.bytes, c.is_signed);
+    }
+    throw std::runtime_error("integer too large: " + text_);
 }
 
-std::optional<long> IntLiteral::EvalConst(const Context&) const {
-    CheckRange();
+bool IntLiteral::IsDecimal() const { return text_[0] != '0'; }
+
+std::optional<long> IntLiteral::EvalConst(const Context& ctx) const {
+    GetType(ctx);  // rejects a literal that no type holds
     return static_cast<long>(value_);
 }
 
@@ -76,7 +104,6 @@ std::optional<ConstValue> StringLiteral::EvalConstValue(Context& ctx) const {
 using ir::Operand;
 
 Operand IntLiteral::EmitValue(IRGen& gen) const {
-    CheckRange();
     return Operand::Int(*EvalConst(gen.Ctx()), IRGen::ToIr(*GetType(gen.Ctx())));
 }
 
