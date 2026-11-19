@@ -22,6 +22,8 @@ private:
 
     unsigned long long value_;
     bool has_u_;
+    bool has_l_;
+    bool too_large_;  // above ULLONG_MAX
     std::string text_;
 };
 

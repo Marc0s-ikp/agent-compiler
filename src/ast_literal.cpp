@@ -1,6 +1,7 @@
 #include "ast_literal.hpp"
 #include "ir_gen.hpp"
 
+#include <cerrno>
 #include <climits>
 #include <cstdint>
 #include <cstdlib>
@@ -14,8 +15,11 @@
 namespace ast {
 
 IntLiteral::IntLiteral(const std::string& text) {
+    errno = 0;
     value_ = std::strtoull(text.c_str(), nullptr, 0);
+    too_large_ = errno == ERANGE;  // strtoull saturates; GetType rejects it
     has_u_ = text.find_first_of("uU") != std::string::npos;
+    has_l_ = text.find_first_of("lL") != std::string::npos;
     text_ = text;
 }
 
@@ -36,12 +40,18 @@ struct Candidate {
 
 // C90 gives a literal the first type in its list that holds the value (27.5.2):
 // decimal: int, long, unsigned long; octal and hex: int, unsigned int, long,
-// unsigned long; with a u suffix: unsigned int, unsigned long. The sizes
-// are the target's.
+// unsigned long; with a u suffix: unsigned int, unsigned long; with an l
+// suffix (decimal, octal or hex): long, unsigned long; with u and l: unsigned
+// long. The sizes are the target's.
 TypePtr IntLiteral::GetType(const Context&) const {
     int i = Target().int_size, l = Target().long_size;
     std::vector<Candidate> list;
-    if (has_u_) {
+    if (too_large_) throw std::runtime_error("integer too large: " + text_);
+    if (has_u_ && has_l_) {
+        list = {{l, false}};
+    } else if (has_l_) {
+        list = {{l, true}, {l, false}};
+    } else if (has_u_) {
         list = {{i, false}, {l, false}};
     } else if (IsDecimal()) {
         list = {{i, true}, {l, true}, {l, false}};

@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 #include "call_abi.hpp"
+#include "symbol_names.hpp"
 #include "target.hpp"
 
 // Immediates (21.10): any IR integer is legal. Every constant operand is
@@ -22,6 +23,8 @@
 // destination's slot, so no register holds a value between instructions.
 namespace {
 
+using backend::LocalLabel;
+using backend::SymbolNames;
 using ir::Instruction;
 using ir::IrType;
 using ir::Op;
@@ -30,26 +33,6 @@ using ir::Operand;
 [[noreturn]] void NotYet(const std::string& what) {
     throw std::runtime_error("not in the RISC-V backend yet: " + what);
 }
-
-// ---- names (the only place that spells IR names as assembler) ----
-// An IR code label ("else3") and a compiler-made data symbol ("str.0") become
-// local assembler labels with the ".L" prefix, which stay out of the symbol
-// table. A C-named global or function keeps its name.
-
-std::string LocalLabel(const std::string& name) { return ".L" + name; }
-
-class SymbolNames {
-public:
-    explicit SymbolNames(const ir::Module& module) {
-        for (const ir::DataEntry& d : module.data) if (d.compiler_made) local_.insert(d.label);
-    }
-    std::string Spell(const std::string& name) const {
-        return local_.count(name) ? LocalLabel(name) : name;
-    }
-
-private:
-    std::set<std::string> local_;
-};
 
 int RoundUp(int value, int multiple) { return (value + multiple - 1) / multiple * multiple; }
 

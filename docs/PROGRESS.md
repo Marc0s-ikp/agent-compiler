@@ -24,6 +24,7 @@ Next: A5, floats. The 78 aarch64 failures left are all floats (A5) and records (
 | A2 control flow | 324/324 | 52/324 |
 | A3 calls: integer and pointer rows of `AArch64Abi`, outgoing area, stack arguments, AAPCS64 case model in `abi_check` | 325/325 | 160/325 |
 | A4 arrays, pointers, globals: `ptradd`, symbols, data entries, `memzero`, frontend 27.5.1 to 27.5.3 and 27.5.5, six new custom tests | 331/331 | 253/331 |
+| pre-A5: `+`/`-` folding through `uint64_t`, `L`/`UL` literal suffixes (custom test `a5pre_long_literals`), shared `SymbolNames` header | 332/332 | 254/332 |
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -71,7 +72,7 @@ Next: A5, floats. The 78 aarch64 failures left are all floats (A5) and records (
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 237 | 237 |
+| custom (written by tester, D13) | 246 | 246 |
 
 ## History
 | Date | Passing | Change |
@@ -98,6 +99,7 @@ Next: A5, floats. The 78 aarch64 failures left are all floats (A5) and records (
 | 2026-11-19 | 324/324 | AArch64 A2: labels, jump, branch; Isa has no default (riscv32 323→324, aarch64 36→52) |
 | 2026-11-19 | 325/325 | AArch64 A3: calls, integer and pointer rows of AArch64Abi, stack arguments, AAPCS64 case model in abi_check (riscv32 324→325, aarch64 52→160) |
 | 2026-11-19 | 331/331 | AArch64 A4: ptradd, symbols, data entries, memzero, SizeT, C90 literal types, pointer-width compare, uint64_t folding, six custom tests (riscv32 325→331, aarch64 160→253) |
+| 2026-11-19 | 332/332 | pre-A5: uint64_t add/sub folding, L/UL literal suffixes, shared SymbolNames (riscv32 331→332, aarch64 253→254) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.
