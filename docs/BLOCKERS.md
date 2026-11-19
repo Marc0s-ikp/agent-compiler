@@ -350,12 +350,12 @@ From the review of `feat/aarch64-a3` (2026-11-19, approved in round 1). None of 
 
 From the review of `feat/aarch64-a4` (2026-11-19, approved in round 1). None of these blocked the merge.
 
-1. `src/ast_literal.cpp:18` records only the `u`/`U` suffix, but the lexer accepts `[uUlL]*` (`src/lexer.flex:27`). `5L`
+1. DONE (cleanup/pre-a5, literal suffixes). `src/ast_literal.cpp:18` records only the `u`/`U` suffix, but the lexer accepts `[uUlL]*` (`src/lexer.flex:27`). `5L`
    is `int` on aarch64, so `sizeof(1L)` and `1L << 40` are wrong there. No test uses `L`; the fix is a `has_l_` that starts
    the C90 list at `long`.
 2. DONE (cleanup/pre-a5, constant folding). `src/ast_operators.cpp:95-96` folds `Add`/`Sub` as signed `long`. With 8-byte unsigned values reachable on aarch64, a
    sum crossing `LONG_MAX` is signed overflow (UB) in the host. `Mul` already goes through `uint64_t`; these two could too.
-3. `src/ast_literal.cpp:17`: `strtoull` saturates a literal above `ULLONG_MAX`, so on aarch64 it is accepted as
+3. DONE (cleanup/pre-a5, literal suffixes). `src/ast_literal.cpp:17`: `strtoull` saturates a literal above `ULLONG_MAX`, so on aarch64 it is accepted as
    `unsigned long` instead of rejected. Check `errno == ERANGE`.
 4. `SymbolNames` is copied verbatim in `src/backend_aarch64.cpp:43` and `src/backend_riscv.cpp:41`. Move it to a shared
    header before A5 or A6 changes either copy.
