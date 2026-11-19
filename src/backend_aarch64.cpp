@@ -396,6 +396,11 @@ private:
             case Op::Const:
                 Load(9, in.args[0]);
                 return StoreResult(9, in.dst);
+            case Op::PtrAdd:  // pointer + byte offset, both 64-bit (the frontend scaled it)
+                Load(9, in.args[0]);
+                Load(10, in.args[1]);
+                os_ << "\tadd x9, x9, x10\n";
+                return StoreResult(9, in.dst);
             case Op::Neg:
             case Op::Not:
                 if (ir::IsFloatType(in.type)) NotYet("floating neg");
