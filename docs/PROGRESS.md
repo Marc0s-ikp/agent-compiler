@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: riscv32 331/331 before, 332/332 after (new: `a5pre_long_literals`). aarch64 253/331 before, 293/332 after (pre-A5 254, A5 293). riscv32 assembly of the original tests byte-identical (`build/baseline/compare_asm.sh`). abi_check seeds 101 to 505 x 300 pass on both targets, every aarch64 case hit at least 13 times per seed, all four combinations at GCC -O0 and -O2 (`results/a5_abi_aarch64.txt`, `results/a5_abi_riscv32.txt`).
-Fixed: pre-A5 (`+`/`-` folding through `uint64_t`, `L`/`UL` suffixes, shared `SymbolNames`, `.rv_wt/` ignored), then AArch64 step A5 (D27): the floating AAPCS64 rules and cases in the abi_check model (written first, from the standard), s and d registers with scratch d16/d17, float load, store, arithmetic, neg, compares (`mi`/`ls` so NaN is false), `scvtf`/`ucvtf`/`fcvtzs`/`fcvtzu`/`fcvt`, the floating rows of `AArch64Abi`, float arguments, parameters and results. `float_return_sizeof`'s driver takes the pointer size from GCC. Eight struct and union custom tests passed as a bonus.
+Pass count: riscv32 332/332 before, 335/335 after (new: `a6_c13_int_stack`, `a6_hfa4_double`, `a6_x8_result_full`). aarch64 293/332 before, 335/335 after: `TARGET=aarch64` passes everything riscv32 passes. riscv32 assembly of the original tests byte-identical (`build/baseline/compare_asm.sh`; the `a6_*` tests are new files). abi_check seeds 101 to 505 x 300 pass on both targets, all four combinations at GCC -O0 and -O2, every aarch64 case hit (`results/a6_abi_aarch64.txt`, `results/a6_abi_riscv32.txt`).
+Fixed: AArch64 step A6 (D27): the AAPCS64 record rules in the abi_check model (stage B and C as the standard's rule list, HFA test, results derived from stage C; written first and checked against GCC's `-O2` caller by `probe_aapcs64.py`), then `memcpy`, record parameters (HFAs in v registers, records up to 16 bytes in x registers, by reference, odd-sized pieces), record results (x0/x1, v0 to v3, x8). `struct_typedef`'s driver takes the pointer size from GCC.
 Blocked: nothing.
-Next: A6, structs and unions. The 39 aarch64 failures left are all records (36 stop at a record parameter or result, 3 at `memcpy`).
+Next: D27 is done (the AArch64 backend passes everything riscv32 passes, abi_check passes on both targets with every case hit). Reviewed and merged (round 1); the review nice-to-haves are in BLOCKERS.md. Next feature is a decision for Marcus.
 
 ## AArch64 (D27)
 | Step | riscv32 | aarch64 |
@@ -26,6 +26,10 @@ Next: A6, structs and unions. The 39 aarch64 failures left are all records (36 s
 | A4 arrays, pointers, globals: `ptradd`, symbols, data entries, `memzero`, frontend 27.5.1 to 27.5.3 and 27.5.5, six new custom tests | 331/331 | 253/331 |
 | pre-A5: `+`/`-` folding through `uint64_t`, `L`/`UL` literal suffixes (custom test `a5pre_long_literals`), shared `SymbolNames` header | 332/332 | 254/332 |
 | A5 floats: s/d registers, arithmetic, compares, conversions, floating rows of `AArch64Abi`, floating abi_check cases | 332/332 | 293/332 |
+| A6 model: AAPCS64 record rules (B.3 to B.5, C.2 to C.4, C.12 to C.15), 31 record cases, results derived from stage C, `probe_aapcs64.py` | 332/332 | 293/332 |
+| A6 `memcpy` (EmitCopyMem by access unit) | 332/332 | 296/332 |
+| A6 record parameters: HFAs in v registers, records up to 16 bytes in x registers, by reference, odd-sized pieces; custom test `a6_c13_int_stack` | 333/333 | 313/333 |
+| A6 record results: x0/x1, v0 to v3, x8; custom tests `a6_hfa4_double`, `a6_x8_result_full`; `struct_typedef` driver | 335/335 | 335/335 |
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -73,7 +77,7 @@ Next: A6, structs and unions. The 39 aarch64 failures left are all records (36 s
 | struct | 5 | 5 |
 | types | 5 | 5 |
 | **Reference total** | **86** | **86** |
-| custom (written by tester, D13) | 246 | 246 |
+| custom (written by tester, D13) | 249 | 249 |
 
 ## History
 | Date | Passing | Change |
@@ -102,6 +106,7 @@ Next: A6, structs and unions. The 39 aarch64 failures left are all records (36 s
 | 2026-11-19 | 331/331 | AArch64 A4: ptradd, symbols, data entries, memzero, SizeT, C90 literal types, pointer-width compare, uint64_t folding, six custom tests (riscv32 325→331, aarch64 160→253) |
 | 2026-11-19 | 332/332 | pre-A5: uint64_t add/sub folding, L/UL literal suffixes, shared SymbolNames (riscv32 331→332, aarch64 253→254) |
 | 2026-11-19 | 332/332 | AArch64 A5: floats in s/d registers, compares, conversions, floating ABI rows (riscv32 332→332, aarch64 254→293) |
+| 2026-11-19 | 335/335 | AArch64 A6: record rules in the abi_check model, memcpy, record parameters and results, three custom tests (riscv32 332→335, aarch64 293→335) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.

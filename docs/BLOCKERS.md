@@ -329,10 +329,10 @@ From the review of `feat/aarch64-a2` (2026-11-19, approved in round 1). None of 
 
 From the review of `feat/aarch64-a3` (2026-11-19, approved in round 1). None of these blocked the merge.
 
-1. `tests/abi_check/gen_abi.py`, `classify_aapcs64`: C.13 (NGRN = 8 once a record fails C.12) is not written out. It
+1. DONE (A6 model commit). `tests/abi_check/gen_abi.py`, `classify_aapcs64`: C.13 (NGRN = 8 once a record fails C.12) is not written out. It
    changes nothing for A3 (an integer only fails C.9 when NGRN is already 8), but A6 needs it, with C.3 (NSRN = 8 for an
    HFA that does not fit), for the 27.6 case "NGRN = 8, no split". Required before A6's abi_check cases count.
-2. Before A6, derive the model's result cases from the stage C rules (as for `void f(T)`, per "Result return") rather
+2. DONE (A6 model commit: `aapcs64_result` runs stage C on `void f(T)`). Before A6, derive the model's result cases from the stage C rules (as for `void f(T)`, per "Result return") rather
    than restating x0 by hand, so HFA results in v0-v3 and x0/x1 record results come from the same rules.
 3. The model comment and README say "check the rule numbers against your copy". They were checked against the current
    ARM-software/abi-aa `aapcs64.rst` (2026-11-19, by the director and the reviewer): A.1, A.4, B, C.9, C.14, C.16, C.17
@@ -385,3 +385,22 @@ From the review of `feat/aarch64-a5` (2026-11-19, approved in round 1). None of 
 3. `WriteFloatCompare` treats every op other than `FEq` and `FLt` as `ls`. A `switch` that throws on anything else is safer.
 4. `WriteFloatBinary`, `WriteFloatNeg`, `WriteFloatCompare` and `WriteFloatConversion` hard-code registers 16/17, while
    Copy, Load, Store and stack arguments use `Scratch(type, k)`. Use one form.
+
+## Nice to have from the AArch64 A6 review
+
+From the review of `feat/aarch64-a6` (2026-11-19, approved in round 1). None of these blocked the merge.
+
+1. `tests/abi_check/probe_aapcs64.py:63`: for a result in memory the stub stores 64 bytes through x8, but such results are
+   20 to 24 bytes, so it writes up to 44 bytes past `r` in the GCC caller's frame (undefined, harmless so far). Store only the
+   result's size.
+2. The probe imports `gen_abi`, which leaves `tests/abi_check/__pycache__/`. Set `sys.dont_write_bytecode = True` or ignore it.
+3. `src/backend_aarch64.cpp:165`: the comment says `src`/`dst` "both stay unchanged", but the loop path with `dst` = x16 and
+   more than 4095 bytes overwrites x16 in `EmitAddrOffset`. No caller uses it afterwards; only the comment is wrong.
+4. `SaveReturnedRecord` and `StoreIncomingRecordPiece` repeat the "store a FloatReg or IntReg piece at base + offset" switch;
+   one helper could serve both.
+5. `tests/abi_check/gen_abi.py:552` (`c4`): assert the "natural alignment <= 8" it relies on. The `c7`/`c8` asserts
+   (`not hasattr(a, "scalable")`) cannot fail, and B.1, B.2, B.6 are only a docstring; assert something real (a known type).
+6. `tests/abi_check/README.md`: the result bullet says memory is used when "B.4 made it a pointer"; add "or it would be on
+   the stack", which is what the code does.
+7. The AAPCS64 text does not say how a union's members are counted for an HFA. Both the model and the classifier take the
+   largest member, from GCC's assembly (A6 notes); `probe_aapcs64.py` agrees on random unions.

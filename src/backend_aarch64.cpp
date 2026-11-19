@@ -20,8 +20,8 @@
 // x16 and x17 hold addresses and large constants. All four are caller-saved,
 // so the prologue saves only the frame record (x29 and x30).
 //
-// This is step A5: integer and floating operators, assignment, locals, control flow and calls
-// with integer and pointer arguments and results. An instruction
+// This is step A6: integer and floating operators, assignment, locals, control flow, calls
+// with scalar and record arguments and results, and memcpy. An instruction
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
 
@@ -140,6 +140,66 @@ const char* StoreOp(IrType type) {
     NotYet("store type");
 }
 
+// The load and store of an access of 1, 2, 4 or 8 bytes (an integer piece, or a unit of a record).
+const char* LoadBytesOp(int bytes) { return bytes == 1 ? "ldrb" : bytes == 2 ? "ldrh" : "ldr"; }
+const char* StoreBytesOp(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
+
+// ---- records (27.3) ----
+// A record is memory in the IR: its value is the address of an object. Only at a call, an entry and a
+// return is it split into pieces (call_abi.hpp), each with its byte offset inside the record. The unit
+// of every access to a record is its alignment (at most 8 bytes), so a piece of a char-aligned record
+// is read and written a byte at a time and never touches a byte outside the record. A size that is a
+// multiple of the alignment is a multiple of the unit; the loops below shrink the unit if it is not.
+
+int AccessUnit(int align, int bytes) {
+    int unit = std::min(align, 8);
+    while (bytes % unit != 0) unit /= 2;
+    return unit;
+}
+
+// The w or x register number n for an access of 'unit' bytes.
+std::string UnitReg(int n, int unit) { return std::string(unit == 8 ? "x" : "w") + std::to_string(n); }
+
+// Copies 'bytes' bytes of alignment 'align' from the address in 'src' to the one in 'dst'. Up to 16
+// units it is straight-line code; beyond that a loop runs x12 (dst) up to x14 (the end) with x13 (src).
+// Clobbers x11 to x14 (and x16), so 'dst' and 'src' must be other registers; both stay unchanged.
+void EmitCopyMem(std::ostream& os, const std::string& dst, const std::string& src, int bytes, int align) {
+    const int kUnrolledMax = 16;
+    int unit = AccessUnit(align, bytes);
+    std::string tmp = UnitReg(11, unit);
+    if (bytes / unit <= kUnrolledMax) {
+        for (int off = 0; off < bytes; off += unit) {
+            EmitMem(os, LoadBytesOp(unit), tmp, src, off, unit);
+            EmitMem(os, StoreBytesOp(unit), tmp, dst, off, unit);
+        }
+        return;
+    }
+    os << "\tmov x12, " << dst << "\n\tmov x13, " << src << "\n";
+    EmitAddrOffset(os, "x14", "x12", bytes);
+    os << "1:\n\t" << LoadBytesOp(unit) << " " << tmp << ", [x13], #" << unit << "\n";
+    os << "\t" << StoreBytesOp(unit) << " " << tmp << ", [x12], #" << unit << "\n\tcmp x12, x14\n\tb.ne 1b\n";
+}
+
+// x<n> = 'bytes' bytes of a record at off(base), zero-extended, a unit at a time (clobbers x11).
+void EmitLoadChunks(std::ostream& os, int n, int bytes, int align, const std::string& base, int off) {
+    int unit = AccessUnit(align, bytes);
+    EmitMem(os, LoadBytesOp(unit), UnitReg(n, unit), base, off, unit);
+    for (int done = unit; done < bytes; done += unit) {
+        EmitMem(os, LoadBytesOp(unit), UnitReg(11, unit), base, off + done, unit);
+        os << "\torr x" << n << ", x" << n << ", x11, lsl #" << 8 * done << "\n";
+    }
+}
+
+// The low 'bytes' bytes of x<n> to off(base), a unit at a time (clobbers x11).
+void EmitStoreChunks(std::ostream& os, int n, int bytes, int align, const std::string& base, int off) {
+    int unit = AccessUnit(align, bytes);
+    EmitMem(os, StoreBytesOp(unit), UnitReg(n, unit), base, off, unit);
+    for (int done = unit; done < bytes; done += unit) {
+        os << "\tlsr x11, x" << n << ", #" << 8 * done << "\n";
+        EmitMem(os, StoreBytesOp(unit), UnitReg(11, unit), base, off + done, unit);
+    }
+}
+
 // ---- frame layout (27.3) ----
 // Two parts, each a multiple of 16, so sp is always 16-aligned. The upper part
 // holds, from x29 upwards: the frame record (saved x29 and x30), the frame
@@ -149,6 +209,7 @@ const char* StoreOp(IrType type) {
 struct Frame {
     std::map<std::string, int> objects;  // name -> offset from x29
     std::vector<int> temps;              // temp id -> offset from x29
+    int return_pointer = 0;              // the saved x8 (the caller's result object), if any
     int upper = 0;                       // size of the upper part
     int outgoing = 0;                    // size of the area at sp
 
@@ -161,8 +222,9 @@ struct Frame {
     }
 };
 
-Frame LayoutFrame(const ir::Function& fn, int outgoing_bytes) {
+Frame LayoutFrame(const ir::Function& fn, int outgoing_bytes, bool result_in_memory) {
     Frame frame;
+    if (result_in_memory) frame.return_pointer = frame.Reserve(8, 8);
     for (const ir::FrameObject& o : fn.objects) frame.objects[o.name] = frame.Reserve(o.size, o.align);
     for (IrType t : fn.temps) frame.temps.push_back(frame.Reserve(ir::SizeOf(t), ir::SizeOf(t)));
     frame.upper = RoundUp(frame.used, 16);
@@ -184,7 +246,7 @@ public:
             calls_[i] = Target().Abi().Classify(in.arg_types, in.ret_type);
             outgoing = std::max(outgoing, calls_[i].stack_bytes);
         }
-        frame_ = LayoutFrame(fn, outgoing);
+        frame_ = LayoutFrame(fn, outgoing, entry_.ret.in_memory);
     }
 
     void Write() {
@@ -212,6 +274,7 @@ private:
         EmitAdjustSp(os_, "sub", frame_.upper);
         os_ << "\tstp x29, x30, [sp]\n\tmov x29, sp\n";
         if (frame_.outgoing) EmitAdjustSp(os_, "sub", frame_.outgoing);
+        if (entry_.ret.in_memory) EmitMem(os_, "str", "x8", "x29", frame_.return_pointer, 8);  // for 'ret'
         StoreParameters();
     }
 
@@ -222,7 +285,54 @@ private:
     void StoreParameters() {
         for (size_t i = 0; i < fn_.params.size(); ++i) {
             int home = frame_.objects.at(fn_.params[i].object);
+            if (fn_.params[i].type->IsRecord()) {
+                StoreRecordParameter(entry_.args[i], *fn_.params[i].type, home);
+                continue;
+            }
             for (const Piece& piece : entry_.args[i].pieces) StoreIncomingPiece(piece, home);
+        }
+    }
+
+    // A record parameter. By reference: copy from the caller's copy into the home. Otherwise each piece
+    // is stored at its offset in the home; a whole record on the stack is copied from the caller's
+    // outgoing area at x29 + upper + index.
+    void StoreRecordParameter(const ArgPlace& place, const Type& type, int home) {
+        if (place.by_reference) {
+            LoadIncomingPointer(17, place.pieces.at(0));
+            EmitAddrOffset(os_, "x16", "x29", home);
+            return EmitCopyMem(os_, "x16", "x17", type.Size(), type.Align());
+        }
+        for (const Piece& piece : place.pieces) StoreIncomingRecordPiece(piece, type, home);
+    }
+
+    // The pointer of a by-reference argument, as it arrives, into x<n>.
+    void LoadIncomingPointer(int n, const Piece& piece) {
+        if (piece.where == Piece::Where::IntReg) {
+            os_ << "\tmov x" << n << ", x" << piece.index << "\n";
+        } else {
+            EmitMem(os_, "ldr", "x" + std::to_string(n), "x29", frame_.upper + piece.index, 8);
+        }
+    }
+
+    // A piece that is a whole record on the stack, not a part of one.
+    static bool IsWholeStackRecord(const Piece& piece, const Type& record) {
+        return piece.where == Piece::Where::StackWord && piece.offset == 0 && piece.bytes == record.Size();
+    }
+
+    static IrType FloatPieceType(const Piece& piece) { return piece.bytes == 8 ? IrType::F64 : IrType::F32; }
+
+    void StoreIncomingRecordPiece(const Piece& piece, const Type& type, int home) {
+        int dst = home + piece.offset;
+        switch (piece.where) {
+            case Piece::Where::FloatReg:
+                return EmitMem(os_, "str", Reg(piece.index, FloatPieceType(piece)), "x29", dst, piece.bytes);
+            case Piece::Where::IntReg:
+                return EmitStoreChunks(os_, piece.index, piece.bytes, type.Align(), "x29", dst);
+            case Piece::Where::StackWord:
+                if (!IsWholeStackRecord(piece, type)) NotYet("a record split between registers and the stack");
+                EmitAddrOffset(os_, "x17", "x29", frame_.upper + piece.index);
+                EmitAddrOffset(os_, "x16", "x29", home);
+                return EmitCopyMem(os_, "x16", "x17", piece.bytes, type.Align());
         }
     }
 
@@ -231,9 +341,9 @@ private:
     void StoreIncomingPiece(const Piece& piece, int home) {
         std::string reg = PieceReg(piece);
         if (piece.where == Piece::Where::StackWord) {
-            EmitMem(os_, PieceLoadOp(piece.bytes), reg, "x29", frame_.upper + piece.index, piece.bytes);
+            EmitMem(os_, LoadBytesOp(piece.bytes), reg, "x29", frame_.upper + piece.index, piece.bytes);
         }
-        EmitMem(os_, PieceStoreOp(piece.bytes), reg, "x29", home + piece.offset, piece.bytes);
+        EmitMem(os_, StoreBytesOp(piece.bytes), reg, "x29", home + piece.offset, piece.bytes);
     }
 
     // The register that holds the piece: x<n> or w<n> for an integer piece; s<n>
@@ -244,9 +354,6 @@ private:
         if (piece.where == Piece::Where::FloatReg) return std::string(wide ? "d" : "s") + std::to_string(piece.index);
         return std::string(wide ? "x" : "w") + std::to_string(piece.where == Piece::Where::IntReg ? piece.index : 9);
     }
-
-    static const char* PieceLoadOp(int bytes) { return bytes == 1 ? "ldrb" : bytes == 2 ? "ldrh" : "ldr"; }
-    static const char* PieceStoreOp(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
 
     void WriteEpilogue() {
         os_ << "\tmov sp, x29\n\tldp x29, x30, [sp]\n";
@@ -286,7 +393,20 @@ private:
     // The value comes back in x0 or w0 (27.2); the upper bits of a narrow
     // value are unspecified, so nothing is extended.
     void LoadReturnValue(const Operand& value) {
+        if (fn_.c_return->IsRecord()) return LoadReturnRecord(value);
         Load(entry_.ret.pieces.at(0).index, value);  // x0, w0, s0 or d0, by the value's type
+    }
+
+    // 'ret' of a record: the operand is the address of the value. Through the saved x8 it is copied to
+    // the caller's result object; otherwise its pieces are loaded into x0, x1 or v0 to v3.
+    void LoadReturnRecord(const Operand& value) {
+        const Type& type = *fn_.c_return;
+        Load(17, value);
+        if (entry_.ret.in_memory) {
+            EmitMem(os_, "ldr", "x16", "x29", frame_.return_pointer, 8);
+            return EmitCopyMem(os_, "x16", "x17", type.Size(), type.Align());
+        }
+        for (const Piece& piece : entry_.ret.pieces) PlaceOutgoingRecordPiece(piece, type);
     }
 
     // ---- calls (caller side) ----
@@ -297,11 +417,64 @@ private:
     // is in x0 (w0), and its slot keeps the bytes of the result's type.
     void WriteCall(size_t index, const Instruction& in) {
         const CallLayout& layout = calls_.at(index);
+        if (layout.ret.in_memory) Load(layout.ret.pointer.index, in.result_object);  // x8
         for (size_t i = 0; i < in.args.size(); ++i) {
+            if (in.arg_types[i]->IsRecord()) {
+                PlaceOutgoingRecord(in.args[i], layout.args[i], *in.arg_types[i]);
+                continue;
+            }
             for (const Piece& piece : layout.args[i].pieces) PlaceOutgoingPiece(in.args[i], piece);
         }
         os_ << "\tbl " << in.callee << "\n";
-        if (in.dst.kind == Operand::Kind::Temp) StoreResult(0, in.dst);
+        if (in.dst.kind == Operand::Kind::Temp) {
+            StoreResult(0, in.dst);
+        } else if (in.ret_type->IsRecord()) {
+            SaveReturnedRecord(layout.ret, in);
+        }
+    }
+
+    // The caller of a record argument: the operand is the address of the argument's copy. By reference
+    // it is passed as it is; otherwise the pieces are loaded from it (its address is in x17).
+    void PlaceOutgoingRecord(const Operand& o, const ArgPlace& place, const Type& type) {
+        if (place.by_reference) return PlaceOutgoingPointer(o, place.pieces.at(0));
+        Load(17, o);
+        for (const Piece& piece : place.pieces) PlaceOutgoingRecordPiece(piece, type);
+    }
+
+    void PlaceOutgoingPointer(const Operand& o, const Piece& piece) {
+        if (piece.where == Piece::Where::IntReg) return Load(piece.index, o);
+        Load(9, o);
+        EmitMem(os_, "str", "x9", "sp", piece.index, 8);
+    }
+
+    // One piece of the record whose address is in x17, to its register or its place in the outgoing
+    // area. Also the pieces of a returned record, which go to x0, x1 or v0 to v3.
+    void PlaceOutgoingRecordPiece(const Piece& piece, const Type& type) {
+        switch (piece.where) {
+            case Piece::Where::FloatReg:
+                return EmitMem(os_, "ldr", Reg(piece.index, FloatPieceType(piece)), "x17", piece.offset, piece.bytes);
+            case Piece::Where::IntReg:
+                return EmitLoadChunks(os_, piece.index, piece.bytes, type.Align(), "x17", piece.offset);
+            case Piece::Where::StackWord:
+                if (!IsWholeStackRecord(piece, type)) NotYet("a record split between registers and the stack");
+                EmitAddrOffset(os_, "x16", "sp", piece.index);
+                return EmitCopyMem(os_, "x16", "x17", piece.bytes, type.Align());
+        }
+    }
+
+    // After the call: the returned pieces (x0, x1, v0 to v3) are stored into the call's result object. A
+    // result in memory was written by the callee through x8, so there is nothing to do.
+    void SaveReturnedRecord(const RetPlace& ret, const Instruction& in) {
+        if (ret.in_memory) return;
+        const Type& type = *in.ret_type;
+        Load(17, in.result_object);
+        for (const Piece& piece : ret.pieces) {
+            if (piece.where == Piece::Where::FloatReg) {
+                EmitMem(os_, "str", Reg(piece.index, FloatPieceType(piece)), "x17", piece.offset, piece.bytes);
+            } else {
+                EmitStoreChunks(os_, piece.index, piece.bytes, type.Align(), "x17", piece.offset);
+            }
+        }
     }
 
     void PlaceOutgoingPiece(const Operand& o, const Piece& piece) {
@@ -470,14 +643,21 @@ private:
         if (in.size <= 64) {
             for (long off = 0; off < in.size;) {
                 int width = ZeroWidth(in.align, in.size - off, off);
-                EmitMem(os_, StoreOpForBytes(width), width == 8 ? "xzr" : "wzr", "x9", off, width);
+                EmitMem(os_, StoreBytesOp(width), width == 8 ? "xzr" : "wzr", "x9", off, width);
                 off += width;
             }
             return;
         }
         EmitAddrOffset(os_, "x10", "x9", in.size);
-        os_ << "1:\n\t" << StoreOpForBytes(step) << " " << (step == 8 ? "xzr" : "wzr") << ", [x9], #" << step
+        os_ << "1:\n\t" << StoreBytesOp(step) << " " << (step == 8 ? "xzr" : "wzr") << ", [x9], #" << step
             << "\n\tcmp x9, x10\n\tb.ne 1b\n";
+    }
+
+    // dst in x9, src in x10; EmitCopyMem uses x11 to x14 (and x16) as its own.
+    void WriteMemCopy(const Instruction& in) {
+        Load(9, in.args[0]);
+        Load(10, in.args[1]);
+        EmitCopyMem(os_, "x9", "x10", static_cast<int>(in.size), static_cast<int>(in.align));
     }
 
     // The widest of 8, 4, 2, 1 that the base alignment, the offset and the bytes left allow.
@@ -487,8 +667,6 @@ private:
         }
         return 1;
     }
-
-    static const char* StoreOpForBytes(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
 
     void WriteInstruction(size_t index, const Instruction& in) {
         if (ir::IsBinaryArith(in.op)) return WriteBinary(in);
@@ -525,6 +703,7 @@ private:
                 Load(10, in.args[1]);
                 return EmitMem(os_, StoreOp(in.type), Reg(Scratch(in.type, 0), in.type), "x10", 0, ir::SizeOf(in.type));
             case Op::MemZero: return WriteMemZero(in);
+            case Op::MemCpy: return WriteMemCopy(in);
             case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
             case Op::Jump: os_ << "\tb " << LocalLabel(in.label) << "\n"; return;
             case Op::Branch: return WriteBranch(in);

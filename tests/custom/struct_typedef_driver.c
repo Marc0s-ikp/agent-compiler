@@ -10,6 +10,6 @@ int main()
     if (ptr_typedef() != 89) return 5;
     if (array_typedef() != 24321) return 6;
     if (by_value() != 67) return 7;
-    if (sizes() != 964) return 8;
+    if (sizes() != 960 + (int)sizeof(char *)) return 8;   /* sizeof(PointPtr): the target's pointer size, from GCC */
     return 0;
 }
