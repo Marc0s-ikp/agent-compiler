@@ -12,8 +12,8 @@
 
 ## Latest session
 Pass count: riscv32 324/324 before, 325/325 after (new: `a3_stack_mixed`). aarch64 52/324 before, 160/325 after. riscv32 assembly of the 321 original tests byte-identical (`build/baseline/compare_asm.sh`).
-Fixed: AArch64 step A3 (D27): integer and pointer rows of `AArch64Abi`, callee parameter homes, `bl`, the outgoing area, stack arguments, recursion, `ptrtoint`/`inttoptr` as copies (needed for pointer results). `call_abi.hpp` comments name no ISA. `abi_check` has the AAPCS64 case model; `run_abi.sh` accepts aarch64 (seeds 101-505 x 300 pass in all four combinations, GCC -O0 and -O2, every case hit, on both targets).
-Blocked: nothing.
+Fixed: AArch64 step A3 (D27): integer and pointer rows of `AArch64Abi`, callee parameter homes, `bl`, the outgoing area, stack arguments, recursion, `ptrtoint`/`inttoptr` as copies (pulled forward from A4: every pointer-returning function ends in `inttoptr i64 0`). `call_abi.hpp` comments name no ISA. `abi_check` has the AAPCS64 case model; `run_abi.sh` accepts aarch64 (seeds 101-505 x 300 pass in all four combinations, GCC -O0 and -O2, every case hit, on both targets).
+Blocked: nothing. 4 review nice-to-haves are in BLOCKERS.md (C.13 and C.3 must be in the model before A6).
 Next: A4, arrays, pointers, globals (`ptradd`, symbols, data entries, the frontend LP64 items 27.5.1 to 27.5.3 and 27.5.5).
 
 ## AArch64 (D27)
