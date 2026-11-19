@@ -412,6 +412,7 @@ private:
     void WriteConversion(const Instruction& in) {
         IrType from = in.args[0].type;
         if (in.op == Op::PtrToInt || in.op == Op::IntToPtr) return WritePointerCast(in);
+        if (in.op >= Op::IToF && in.op <= Op::FTrunc) return WriteFloatConversion(in);
         if (in.op != Op::SExt && in.op != Op::ZExt && in.op != Op::Trunc) NotYet(ir::OpName(in.op));
         Load(9, in.args[0]);
         std::string src = Reg(9, from), dst = Reg(9, in.type);
@@ -421,6 +422,26 @@ private:
         } else if (in.op == Op::ZExt) {  // a w-register write clears bits 32 to 63
             os_ << "\t" << (bytes == 1 ? "uxtb " : bytes == 2 ? "uxth " : "mov ") << "w9, w9\n";
         }
+        StoreResult(9, in.dst);
+    }
+
+    // scvtf/ucvtf from a w or x register, fcvtzs/fcvtzu (round toward zero, as C
+    // needs) to one, fcvt between s and d. Integer sources and results are I32
+    // or I64 (the frontend widens narrow ones).
+    void WriteFloatConversion(const Instruction& in) {
+        IrType from = in.args[0].type;
+        if (in.op == Op::FExt || in.op == Op::FTrunc) {
+            Load(16, in.args[0]);
+            os_ << "\tfcvt " << Reg(16, in.type) << ", " << Reg(16, from) << "\n";
+            return StoreResult(16, in.dst);
+        }
+        if (in.op == Op::IToF || in.op == Op::UToF) {
+            Load(9, in.args[0]);
+            os_ << "\t" << (in.op == Op::IToF ? "scvtf " : "ucvtf ") << Reg(16, in.type) << ", " << Reg(9, from) << "\n";
+            return StoreResult(16, in.dst);
+        }
+        Load(16, in.args[0]);
+        os_ << "\t" << (in.op == Op::FToI ? "fcvtzs " : "fcvtzu ") << Reg(9, in.type) << ", " << Reg(16, from) << "\n";
         StoreResult(9, in.dst);
     }
 
