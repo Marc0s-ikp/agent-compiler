@@ -10,3 +10,4 @@ src/*.yy.*
 *Zone.Identifier
 *Zone.Identifier
 tests/abi_check/out/
+.rv_wt/
