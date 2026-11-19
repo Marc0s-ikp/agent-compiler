@@ -17,7 +17,8 @@
 // x16 and x17 hold addresses and large constants. All four are caller-saved,
 // so the prologue saves only the frame record (x29 and x30).
 //
-// This is step A2: integer operators, assignment, locals and control flow. An instruction
+// This is step A3: integer operators, assignment, locals, control flow and calls
+// with integer and pointer arguments and results. An instruction
 // that belongs to a later step throws "not in AArch64 yet".
 namespace {
 
@@ -189,7 +190,37 @@ private:
         EmitAdjustSp(os_, "sub", frame_.upper);
         os_ << "\tstp x29, x30, [sp]\n\tmov x29, sp\n";
         if (frame_.outgoing) EmitAdjustSp(os_, "sub", frame_.outgoing);
+        StoreParameters();
     }
+
+    // ---- parameters (callee side) ----
+
+    // Each incoming piece goes to its parameter's home. A stack piece is in the
+    // caller's outgoing area, which starts at x29 + upper.
+    void StoreParameters() {
+        for (size_t i = 0; i < fn_.params.size(); ++i) {
+            int home = frame_.objects.at(fn_.params[i].object);
+            for (const Piece& piece : entry_.args[i].pieces) StoreIncomingPiece(piece, home);
+        }
+    }
+
+    // Only the piece's bytes are stored: the upper bits of a narrow argument are
+    // unspecified (27.2), and the IR extends the loaded home again.
+    void StoreIncomingPiece(const Piece& piece, int home) {
+        std::string reg = PieceReg(piece.where == Piece::Where::IntReg ? piece.index : 9, piece.bytes);
+        if (piece.where == Piece::Where::StackWord) {
+            EmitMem(os_, PieceLoadOp(piece.bytes), reg, "x29", frame_.upper + piece.index, piece.bytes);
+        } else if (piece.where != Piece::Where::IntReg) {
+            NotYet("floating parameter");
+        }
+        EmitMem(os_, PieceStoreOp(piece.bytes), reg, "x29", home + piece.offset, piece.bytes);
+    }
+
+    // x<n> for an 8-byte piece, else w<n>.
+    static std::string PieceReg(int n, int bytes) { return std::string(bytes == 8 ? "x" : "w") + std::to_string(n); }
+
+    static const char* PieceLoadOp(int bytes) { return bytes == 1 ? "ldrb" : bytes == 2 ? "ldrh" : "ldr"; }
+    static const char* PieceStoreOp(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
 
     void WriteEpilogue() {
         os_ << "\tmov sp, x29\n\tldp x29, x30, [sp]\n";
