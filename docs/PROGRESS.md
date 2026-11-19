@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: riscv32 325/325 before, 331/331 after (new: `a4_pointer_cond`, `a4_literal_types`, `a4_global_ptr_init`, `a4_sizeof_size_t`, `a4_memzero`, `a4_size_t_folding`). aarch64 160/325 before, 253/331 after. riscv32 assembly of the 321 original tests byte-identical after every commit (`build/baseline/compare_asm.sh`).
-Fixed: AArch64 step A4 (D27): `ptradd`, `adrp`/`add` symbols, `WriteData`, `memzero` (pulled forward from A6), `Type::SizeT` (27.5.1), C90 literal types (27.5.2), `CompareType` at pointer width (27.5.3), 8-byte unsigned folding through `uint64_t` (27.5.5); seven custom drivers compute their expectations with GCC for the target.
-Blocked: nothing. A shift count is now converted to the result type (found on aarch64: an `int` count with an 8-byte left operand failed the IR checker).
-Next: A5, floats. The 78 aarch64 failures left are all floats (A5) and records (A6).
+Pass count: riscv32 332/332 before and after. aarch64 254/332 before, 293/332 after. riscv32 assembly of the original tests byte-identical (`build/baseline/compare_asm.sh`). abi_check seeds 101 to 505 x 300 pass on both targets, every aarch64 case hit (`results/a5_abi_aarch64.txt`, `results/a5_abi_riscv32.txt`).
+Fixed: AArch64 step A5 (D27): s and d registers with scratch d16/d17, float load, store, arithmetic, neg, compares (`mi`/`ls` so NaN is false), `scvtf`/`ucvtf`/`fcvtzs`/`fcvtzu`/`fcvt`, the floating rows of `AArch64Abi`, float arguments, parameters and results. `float_return_sizeof`'s driver takes the pointer size from GCC. Eight struct and union custom tests passed as a bonus.
+Blocked: nothing.
+Next: A6, structs and unions. The 39 aarch64 failures left are all records (36 stop at a record parameter or result, 3 at `memcpy`).
 
 ## AArch64 (D27)
 | Step | riscv32 | aarch64 |
@@ -25,6 +25,7 @@ Next: A5, floats. The 78 aarch64 failures left are all floats (A5) and records (
 | A3 calls: integer and pointer rows of `AArch64Abi`, outgoing area, stack arguments, AAPCS64 case model in `abi_check` | 325/325 | 160/325 |
 | A4 arrays, pointers, globals: `ptradd`, symbols, data entries, `memzero`, frontend 27.5.1 to 27.5.3 and 27.5.5, six new custom tests | 331/331 | 253/331 |
 | pre-A5: `+`/`-` folding through `uint64_t`, `L`/`UL` literal suffixes (custom test `a5pre_long_literals`), shared `SymbolNames` header | 332/332 | 254/332 |
+| A5 floats: s/d registers, arithmetic, compares, conversions, floating rows of `AArch64Abi`, floating abi_check cases | 332/332 | 293/332 |
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
@@ -100,6 +101,7 @@ Next: A5, floats. The 78 aarch64 failures left are all floats (A5) and records (
 | 2026-11-19 | 325/325 | AArch64 A3: calls, integer and pointer rows of AArch64Abi, stack arguments, AAPCS64 case model in abi_check (riscv32 324→325, aarch64 52→160) |
 | 2026-11-19 | 331/331 | AArch64 A4: ptradd, symbols, data entries, memzero, SizeT, C90 literal types, pointer-width compare, uint64_t folding, six custom tests (riscv32 325→331, aarch64 160→253) |
 | 2026-11-19 | 332/332 | pre-A5: uint64_t add/sub folding, L/UL literal suffixes, shared SymbolNames (riscv32 331→332, aarch64 253→254) |
+| 2026-11-19 | 332/332 | AArch64 A5: floats in s/d registers, compares, conversions, floating ABI rows (riscv32 332→332, aarch64 254→293) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.
