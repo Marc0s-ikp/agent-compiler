@@ -91,4 +91,5 @@ aarch64, and the byte-wise check of a split double is ilp32d only.
     docker run --rm --entrypoint "" --user "$(id -u):$(id -g)" -v "$PWD":/w -w /w agent-compiler:latest bash -c \
       'make build/c_compiler && for s in 101 202 303 404 505; do TARGET=aarch64 tests/abi_check/run_abi.sh $s 300; done'
 
-Seeds 101, 202, 303, 404, 505 x 300 hit every aarch64 case at least 13 times per seed (`s_mixed` is the rarest).
+Seeds 101, 202, 303, 404, 505 x 300 hit every aarch64 case at least 13 times per seed (`s_mixed` is the rarest) and pass in
+all four combinations at GCC -O0 and -O2 under `qemu-aarch64` (step A5).

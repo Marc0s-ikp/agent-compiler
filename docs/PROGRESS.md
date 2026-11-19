@@ -11,8 +11,8 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: riscv32 332/332 before and after. aarch64 254/332 before, 293/332 after. riscv32 assembly of the original tests byte-identical (`build/baseline/compare_asm.sh`). abi_check seeds 101 to 505 x 300 pass on both targets, every aarch64 case hit (`results/a5_abi_aarch64.txt`, `results/a5_abi_riscv32.txt`).
-Fixed: AArch64 step A5 (D27): s and d registers with scratch d16/d17, float load, store, arithmetic, neg, compares (`mi`/`ls` so NaN is false), `scvtf`/`ucvtf`/`fcvtzs`/`fcvtzu`/`fcvt`, the floating rows of `AArch64Abi`, float arguments, parameters and results. `float_return_sizeof`'s driver takes the pointer size from GCC. Eight struct and union custom tests passed as a bonus.
+Pass count: riscv32 331/331 before, 332/332 after (new: `a5pre_long_literals`). aarch64 253/331 before, 293/332 after (pre-A5 254, A5 293). riscv32 assembly of the original tests byte-identical (`build/baseline/compare_asm.sh`). abi_check seeds 101 to 505 x 300 pass on both targets, every aarch64 case hit at least 13 times per seed, all four combinations at GCC -O0 and -O2 (`results/a5_abi_aarch64.txt`, `results/a5_abi_riscv32.txt`).
+Fixed: pre-A5 (`+`/`-` folding through `uint64_t`, `L`/`UL` suffixes, shared `SymbolNames`, `.rv_wt/` ignored), then AArch64 step A5 (D27): the floating AAPCS64 rules and cases in the abi_check model (written first, from the standard), s and d registers with scratch d16/d17, float load, store, arithmetic, neg, compares (`mi`/`ls` so NaN is false), `scvtf`/`ucvtf`/`fcvtzs`/`fcvtzu`/`fcvt`, the floating rows of `AArch64Abi`, float arguments, parameters and results. `float_return_sizeof`'s driver takes the pointer size from GCC. Eight struct and union custom tests passed as a bonus.
 Blocked: nothing.
 Next: A6, structs and unions. The 39 aarch64 failures left are all records (36 stop at a record parameter or result, 3 at `memcpy`).
 
