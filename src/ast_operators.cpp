@@ -92,9 +92,11 @@ std::optional<long> FoldBinary(BinOp op, long a, long b, bool wide_unsigned, int
         return FoldWideUnsigned(op, static_cast<uint64_t>(a), static_cast<uint64_t>(b));
     }
     switch (op) {
-        case BinOp::Add: return a + b;
-        case BinOp::Sub: return a - b;
-        case BinOp::Mul:  // unsigned operands reach 2^32: multiply without signed overflow
+        // 8-byte unsigned operands reach 2^64: add, subtract and multiply in
+        // uint64_t, so the host never sees signed overflow.
+        case BinOp::Add: return static_cast<long>(static_cast<uint64_t>(a) + static_cast<uint64_t>(b));
+        case BinOp::Sub: return static_cast<long>(static_cast<uint64_t>(a) - static_cast<uint64_t>(b));
+        case BinOp::Mul:
             return static_cast<long>(static_cast<uint64_t>(a) * static_cast<uint64_t>(b));
         case BinOp::Div: return b == 0 ? std::nullopt : std::optional<long>(a / b);
         case BinOp::Mod: return b == 0 ? std::nullopt : std::optional<long>(a % b);
