@@ -57,28 +57,39 @@ too) and `a_full` (a0-a7 and sometimes the first stack word used, then records).
 x 300 hit every case 4 to 130 times per seed and pass in all four combinations with GCC -O0 and -O2.
 `run_abi.sh` deletes the ELFs of an earlier run of the same seed (it skips an ELF that exists).
 
-## AAPCS64 model (aarch64, step A3)
+## AAPCS64 model (aarch64, steps A3 and A5)
 
-`gen_abi.py ... aarch64` draws only what the compiler supports at A3: integer and pointer parameters and results
-(`int`, `unsigned`, the char and short types, `int *`, `char *`; void result), no floats and no records (A5, A6 extend
+`gen_abi.py ... aarch64` draws only what the compiler supports: integer, pointer, float and double parameters and results
+(`int`, `unsigned`, the char and short types, `int *`, `char *`, `float`, `double`; void result), no records (A6 extends
 the model, so the C files carry no struct declarations). Pointers are 8 bytes, plain `char` is unsigned. Shapes:
-`random` (0 to 14 parameters), `stack` (9 to 20), `x_full` (8 plus 1 to 4), `narrow_tail` (8 then 1 to 8 char/short
-parameters, so narrow values sit in stack slots) and `ptr_tail` (8 integers, then pointers).
+`random` (0 to 14 parameters), `stack` (9 to 20), `x_full` (8 integers or pointers plus 1 to 4 of any type),
+`narrow_tail` (8 then 1 to 8 char/short parameters, so narrow values sit in stack slots), `ptr_tail` (8 integers, then
+pointers), `fp_heavy` (9 to 14 floats and doubles among 0 to 6 integers), `v_full` (8 floats and doubles plus 1 to 4 of
+any type) and `both_full` (8 of each class in any order, then 1 to 6 of any type).
 
 `classify_aapcs64` is written from the AAPCS64 text (section 6.8.2 parameter passing, 6.9 result return), independent
-of `src/call_abi_aarch64.cpp`. It is the stage-C state machine with NGRN, NSRN and NSAA (stage A: 0, 0, SP), general so
-that A5 and A6 add rules to it; at A3 it implements stage B (integers and pointers unmodified), C.9 (an integral or
-pointer argument of up to 8 bytes goes in x[NGRN] if NGRN < 8), and C.14, C.16, C.17 (otherwise NSAA is rounded up to
-max(8, alignment), a size under 8 is set to 8, the argument is copied at NSAA and NSAA advances by the size), plus the
-rule that SP is 16-byte aligned at a call, and the x0 result (6.9). The rule numbers are those of the release I worked
-from; check them against your copy. Its cases, with the same hit table and `every case hit` / `NOT HIT:` last line as ilp32d:
-`x_int`, `x_ptr`, `x_narrow` (in an x register), `x_last` (the eighth, in x7), `s_first` (the first stack argument),
-`s_int`, `s_ptr`, `s_narrow` (on the stack), `s_next` (a stack argument at NSAA > 0), `s_odd` (an odd number of stack
-arguments: the area is padded to 16), `r_int`, `r_ptr`, `r_narrow` (results). Nothing is split between registers and
-the stack on aarch64, and the byte-wise check of a split double is ilp32d only.
+of `src/call_abi_aarch64.cpp`. It is the stage-C state machine with NGRN, NSRN and NSAA (stage A: 0, 0, SP), in
+`aapcs64_place`, one argument at a time, so that A6 adds rules to it. It implements stage B (scalars are unmodified),
+C.1 (a float or double goes in v[NSRN] if NSRN < 8), C.5 and C.6 (otherwise a float's size is set to 8, and the value is
+copied at NSAA, which advances by the size), C.9 (an integral or pointer argument of up to 8 bytes goes in x[NGRN] if
+NGRN < 8), and C.14, C.16, C.17 (otherwise NSAA is rounded up to max(8, alignment), a size under 8 is set to 8, the
+argument is copied at NSAA and NSAA advances by the size), plus the rule that SP is 16-byte aligned at a call. A result
+(6.9) is placed by the same machine as the argument of `void f(T)`: x0/w0 or v0 (s0, d0). The floating rules (A5) were
+written from the standard before the compiler's floating classifier rows existed. The rule numbers are those of the
+current ARM-software/abi-aa `aapcs64.rst` (checked 2026-11-19), where C.7 and C.8 are the SVE rules.
+
+Its cases, with the same hit table and `every case hit` / `NOT HIT:` last line as ilp32d:
+`x_int`, `x_ptr`, `x_narrow` (in an x register), `x_last` (the eighth, in x7), `x_after_v` (in an x register once
+v0-v7 are used up), `v_float`, `v_double` (in a v register), `v_last` (the eighth, in v7), `v_after_x` (in a v register
+once x0-x7 are used up), `s_first` (the first stack argument), `s_int`, `s_ptr`, `s_narrow`, `s_float`, `s_double` (on
+the stack), `s_int_vfree` and `s_fp_xfree` (a stack argument of one class while the other class still has free
+registers: the counts are independent), `s_mixed` (a stack argument of the other class than the one before it: one NSAA
+serves both), `s_next` (a stack argument at NSAA > 0), `s_odd` (an odd number of stack arguments: the area is padded to
+16), `r_int`, `r_ptr`, `r_narrow`, `r_float`, `r_double` (results). Nothing is split between registers and the stack on
+aarch64, and the byte-wise check of a split double is ilp32d only.
 
     docker run --rm --entrypoint "" --user "$(id -u):$(id -g)" -v "$PWD":/w -w /w agent-compiler:latest bash -c \
       'make build/c_compiler && for s in 101 202 303 404 505; do TARGET=aarch64 tests/abi_check/run_abi.sh $s 300; done'
 
-Seeds 101, 202, 303, 404, 505 x 300 hit every aarch64 case at least 48 times per seed and pass in all four combinations
-at GCC -O0 and -O2 under `qemu-aarch64`.
+Seeds 101, 202, 303, 404, 505 x 300 hit every aarch64 case at least 13 times per seed (`s_mixed` is the rarest) and pass in
+all four combinations at GCC -O0 and -O2 under `qemu-aarch64` (step A5).

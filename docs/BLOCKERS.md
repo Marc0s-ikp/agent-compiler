@@ -372,3 +372,16 @@ From the review of `cleanup/pre-a5` (2026-11-19, approved in round 1). None of t
    `long`. Rejecting more than one `L` (or a mixed-case `lL`) would be stricter.
 3. `long` and `unsigned long` are not keywords (D27 27.8.3: out of D27), so `long g(void)` is a parse error. Realistic LP64
    programs need them; the custom tests use `sizeof(1L)` instead of `sizeof(long)`. A decision for Marcus after D27.
+
+## Nice to have from the AArch64 A5 review
+
+From the review of `feat/aarch64-a5` (2026-11-19, approved in round 1). None of these blocked the merge.
+
+1. `src/backend_aarch64.cpp`: comments that still say integers and pointers only: the file header ("calls with integer and
+   pointer arguments and results"), `WriteCall` ("an integer or pointer result is in x0 (w0)"), `Load` ("w or x by its
+   type"), `LoadReturnValue` ("x0 or w0").
+2. `WriteConversion` selects the float path with `in.op >= Op::IToF && in.op <= Op::FTrunc`, which depends on the order of
+   `Op` in `include/ir.hpp`. Name the six ops (or a helper) instead.
+3. `WriteFloatCompare` treats every op other than `FEq` and `FLt` as `ls`. A `switch` that throws on anything else is safer.
+4. `WriteFloatBinary`, `WriteFloatNeg`, `WriteFloatCompare` and `WriteFloatConversion` hard-code registers 16/17, while
+   Copy, Load, Store and stack arguments use `Scratch(type, k)`. Use one form.

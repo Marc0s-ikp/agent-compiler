@@ -12,7 +12,7 @@ int main()
 {
     if (sz_float() != 4 || sz_double() != 8) return 1;
     if (sz_arr_f() != 12 || sz_arr_d() != 24) return 2;
-    if (sz_ptr() != 8) return 3;
+    if (sz_ptr() != (int)(sizeof(float *) + sizeof(double *))) return 3;  /* the target's pointer size, from GCC */
     if (sz_lit() != 8448) return 4;
     if (sz_expr() != 4848) return 5;
     if (sz_cmp() != 4) return 6;

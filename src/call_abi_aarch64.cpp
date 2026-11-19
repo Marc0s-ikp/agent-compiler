@@ -4,12 +4,14 @@
 #include <string>
 
 // The AArch64 calling convention (AAPCS64, LP64; D27, 27.2) and nothing else
-// knows its rules (D25). Step A3 classifies integers and pointers: x0-x7, then
-// 8-byte stack slots in order. Later steps add floats and records (27.2) here,
-// behind the same interface.
+// knows its rules (D25). Steps A3 and A5 classify scalars: integers and
+// pointers in x0-x7, floats and doubles in v0-v7 (s and d), the two counts
+// independent, and then 8-byte stack slots in order for both. Step A6 adds
+// records (27.2) here, behind the same interface.
 namespace {
 
 constexpr int kIntArgRegs = 8;     // x0-x7
+constexpr int kFloatArgRegs = 8;   // v0-v7
 constexpr int kStackSlotBytes = 8;
 
 [[noreturn]] void NotYet(const std::string& what) {
@@ -25,24 +27,34 @@ Piece ScalarPiece(Piece::Where where, int index, const Type& type) {
     return Piece{where, index, 0, type.Size(), type.IsInteger() && type.IsSigned()};
 }
 
-// An integer result comes back in x0 (w0 for up to 4 bytes).
+bool IsScalar(const Type& type) { return IsIntegerOrPointer(type) || type.IsFloating(); }
+
+// An integer result comes back in x0 (w0 for up to 4 bytes), a float in s0 and
+// a double in d0.
 RetPlace ClassifyReturn(const Type& ret) {
     RetPlace place;
     if (ret.IsVoid()) return place;
-    if (!IsIntegerOrPointer(ret)) NotYet("return type other than an integer, a pointer or void");
-    place.pieces.push_back(ScalarPiece(Piece::Where::IntReg, 0, ret));
+    if (!IsScalar(ret)) NotYet("return type other than a scalar or void");
+    Piece::Where where = ret.IsFloating() ? Piece::Where::FloatReg : Piece::Where::IntReg;
+    place.pieces.push_back(ScalarPiece(where, 0, ret));
     return place;
 }
 
-// AAPCS64 stage C for integers: the next x register while NGRN < 8, else the
-// next 8-byte stack slot (NSAA, in bytes from the start of the outgoing area).
+// AAPCS64 stage C for scalars. An integer or pointer: the next x register while
+// NGRN < 8. A float or double: the next v register while NSRN < 8 (C.1). Else
+// (C.5, C.6, C.14 to C.17) the next 8-byte stack slot, a float in its low 4
+// bytes (NSAA, in bytes from the start of the outgoing area), shared by both
+// classes in argument order.
 class ArgAssigner {
 public:
     ArgPlace Place(const Type& type) {
-        if (!IsIntegerOrPointer(type)) NotYet("parameter type other than an integer or a pointer");
+        if (!IsScalar(type)) NotYet("parameter type other than a scalar");
+        bool floating = type.IsFloating();
+        int& next_reg = floating ? next_float_reg_ : next_int_reg_;
         ArgPlace place;
-        if (next_int_reg_ < kIntArgRegs) {
-            place.pieces.push_back(ScalarPiece(Piece::Where::IntReg, next_int_reg_++, type));
+        if (next_reg < (floating ? kFloatArgRegs : kIntArgRegs)) {
+            Piece::Where where = floating ? Piece::Where::FloatReg : Piece::Where::IntReg;
+            place.pieces.push_back(ScalarPiece(where, next_reg++, type));
         } else {
             place.pieces.push_back(ScalarPiece(Piece::Where::StackWord, stack_offset_, type));
             stack_offset_ += kStackSlotBytes;
@@ -55,6 +67,7 @@ public:
 
 private:
     int next_int_reg_ = 0;
+    int next_float_reg_ = 0;
     int stack_offset_ = 0;
 };
 

@@ -70,11 +70,11 @@ SCALAR_LAYOUT = {  # name: (size, align, class) with class i(nteger), p(ointer),
 }
 
 # LP64 scalars of aarch64 (D27 27.1): pointers are 8 bytes. Plain char is unsigned on both targets.
-# Only what the compiler supports so far (A3: integers and pointers); A5 and A6 add float and records.
+# Only what the compiler supports so far (A3: integers and pointers, A5: float and double); A6 adds records.
 AAPCS64_LAYOUT = {
     "int": (4, 4, "i"), "unsigned": (4, 4, "i"), "char": (1, 1, "i"), "signed char": (1, 1, "i"),
     "unsigned char": (1, 1, "i"), "short": (2, 2, "i"), "unsigned short": (2, 2, "i"),
-    "int *": (8, 8, "p"), "char *": (8, 8, "p"),
+    "int *": (8, 8, "p"), "char *": (8, 8, "p"), "float": (4, 4, "f"), "double": (8, 8, "f"),
 }
 TARGET = "riscv32"  # set by main; the generator draws and models by target
 
@@ -351,32 +351,76 @@ def classify(params, ret):
 
 # ---- A model of AAPCS64 (Procedure Call Standard for the Arm 64-bit Architecture,
 # section 6.8.2 "Parameter passing", and 6.9 "Result return"), written from the standard's
-# text and independent of the compiler's classifier. Only integers and pointers are
-# modelled (step A3); A5 adds the floating rules (C.1 to C.5) and A6 the composite ones
-# (B.2 to B.4, C.12 and on) to the same state machine. Rule numbers are those of the
-# AAPCS64 release I worked from (2023); check them against your copy.
+# text and independent of the compiler's classifier. Integers and pointers (step A3) and
+# float and double (step A5, rules C.1, C.5 and C.6, written from the standard before the
+# compiler's floating rows existed) are modelled; A6 adds the composite rules (B.2 to B.4,
+# C.2 to C.4, C.12 and on) to the same state machine. Rule numbers are those of the current
+# ARM-software/abi-aa aapcs64.rst (checked 2026-11-19), where C.7 and C.8 are the SVE rules.
 
 AAPCS64_CASES = [
     ("x_int", "4-byte integer in an x register (C.9)"),
     ("x_ptr", "pointer in an x register (C.9)"),
     ("x_narrow", "char/short in an x register (C.9; upper bits unspecified)"),
     ("x_last", "the eighth integer or pointer argument, in x7"),
-    ("s_first", "the first stack argument (NSAA 0), x0-x7 used up (C.14, C.17)"),
+    ("x_after_v", "integer or pointer in an x register once v0-v7 are used up (NSRN 8, NGRN < 8)"),
+    ("v_float", "float in an s register (C.1)"),
+    ("v_double", "double in a d register (C.1)"),
+    ("v_last", "the eighth float or double argument, in v7 (C.1)"),
+    ("v_after_x", "float or double in a v register once x0-x7 are used up (NGRN 8, NSRN < 8)"),
+    ("s_first", "the first stack argument (NSAA 0) (C.6 or C.14, C.17)"),
     ("s_int", "4-byte integer on the stack (C.14, C.17)"),
     ("s_ptr", "pointer on the stack (C.14, C.17)"),
     ("s_narrow", "char/short on the stack, 8-byte slot (C.16)"),
+    ("s_float", "float on the stack, 8-byte slot (C.5, C.6)"),
+    ("s_double", "double on the stack (C.6)"),
+    ("s_int_vfree", "integer or pointer on the stack while v registers are free (NGRN 8, NSRN < 8)"),
+    ("s_fp_xfree", "float or double on the stack while x registers are free (NSRN 8, NGRN < 8)"),
+    ("s_mixed", "a stack argument of the other class than the one before it (one NSAA for both)"),
     ("s_next", "a stack argument at NSAA > 0 (slots advance by 8)"),
     ("s_odd", "odd number of stack arguments: area padded to 16 (SP alignment)"),
     ("r_int", "4-byte integer result in w0"),
     ("r_ptr", "pointer result in x0"),
     ("r_narrow", "char/short result in w0 (upper bits unspecified)"),
+    ("r_float", "float result in s0 (6.9: where void f(T) gets its argument)"),
+    ("r_double", "double result in d0 (6.9)"),
 ]
 
 
 def aapcs64_kind(t):
-    """'int', 'ptr' or 'narrow' for a type of the A3 model."""
+    """'int', 'ptr', 'narrow', 'float' or 'double' for a scalar type of the model."""
     size, _, cls = AAPCS64_LAYOUT[t]
+    if cls == "f":
+        return "float" if size == 4 else "double"
     return "ptr" if cls == "p" else ("narrow" if size < 4 else "int")
+
+
+class Aapcs64State:
+    """Stage A: NGRN and NSRN (the next general-purpose and SIMD&FP register numbers) are 0,
+    and NSAA (the next stacked argument address) is SP, kept here as a byte offset from SP."""
+
+    def __init__(self):
+        self.ngrn = self.nsrn = self.nsaa = 0
+
+
+def aapcs64_place(st, t):
+    """Stage C for one argument of scalar type t (stage B leaves scalars unmodified).
+    Returns ('x', n), ('v', n) or ('stack', byte offset) and advances st."""
+    size, align, cls = AAPCS64_LAYOUT[t]
+    if cls == "f":
+        if st.nsrn < 8:  # C.1: the least significant bits of v[NSRN]; NSRN += 1
+            st.nsrn += 1
+            return ("v", st.nsrn - 1)
+        size = max(size, 8)  # C.5: a single-precision argument's size is set to 8
+        off = st.nsaa        # C.6: copied to memory at NSAA, which advances by the size
+        st.nsaa += size
+        return ("stack", off)
+    if size <= 8 and st.ngrn < 8:  # C.9: the least significant bits of x[NGRN]; NGRN += 1
+        st.ngrn += 1
+        return ("x", st.ngrn - 1)
+    st.nsaa = round_up(st.nsaa, max(8, align))  # C.14: NSAA rounded up to max(8, alignment)
+    off = st.nsaa
+    st.nsaa += max(size, 8)  # C.16: a size under 8 is set to 8; C.17: copied at NSAA, NSAA += size
+    return ("stack", off)
 
 
 def classify_aapcs64(params, ret):
@@ -384,31 +428,31 @@ def classify_aapcs64(params, ret):
     (one entry per occurrence). Nothing is split between registers and the stack on
     aarch64, so 'split' is always empty. A type the model does not know raises KeyError."""
     hits = []
-    ngrn = nsrn = 0   # stage A: the next general-purpose and SIMD&FP register numbers
-    nsaa = 0          # stage A: the next stacked argument address, as a byte offset from SP
-    stacked = 0
+    st = Aapcs64State()
+    stacked = []  # for each stack argument: is it floating
     for t in params:
-        size, align, cls = AAPCS64_LAYOUT[t]  # stage B: integers and pointers are unmodified
-        kind = aapcs64_kind(t)
-        if cls in "ip" and size <= 8 and ngrn < 8:  # C.9: the least significant bits of x[NGRN]
-            hits.append("x_" + kind)
-            if ngrn == 7:
-                hits.append("x_last")
-            ngrn += 1
-            continue
-        # C.14: NSAA is rounded up to the larger of 8 and the natural alignment
-        nsaa = round_up(nsaa, max(8, align))
-        hits.append("s_" + kind)
-        if nsaa == 0:
-            hits.append("s_first")
+        kind, floating = aapcs64_kind(t), AAPCS64_LAYOUT[t][2] == "f"
+        ngrn, nsrn = st.ngrn, st.nsrn
+        where, n = aapcs64_place(st, t)
+        if where == "x":
+            hits += ["x_" + kind] + (["x_last"] if n == 7 else []) + (["x_after_v"] if nsrn == 8 else [])
+        elif where == "v":
+            hits += ["v_" + kind] + (["v_last"] if n == 7 else []) + (["v_after_x"] if ngrn == 8 else [])
         else:
-            hits.append("s_next")
-        # C.16: a size under 8 bytes is set to 8; C.17: copied at NSAA, which advances by the size
-        nsaa += max(size, 8)
-        stacked += 1
-    if stacked % 2:
+            hits += ["s_" + kind, "s_first" if n == 0 else "s_next"]
+            if floating and ngrn < 8:
+                hits.append("s_fp_xfree")
+            if not floating and nsrn < 8:
+                hits.append("s_int_vfree")
+            if stacked and stacked[-1] != floating:
+                hits.append("s_mixed")
+            stacked.append(floating)
+    if len(stacked) % 2:
         hits.append("s_odd")
-    if ret in AAPCS64_LAYOUT:  # 6.9: an integral or pointer result of up to 8 bytes is in x0
+    if ret != "void":
+        # 6.9: a result goes in the registers that void f(T) would use for its argument
+        where, n = aapcs64_place(Aapcs64State(), ret)
+        assert where in ("x", "v") and n == 0, (ret, where, n)
         hits.append("r_" + aapcs64_kind(ret))
     return hits, set()
 
@@ -475,26 +519,44 @@ def gen_params(rng, ret):
 
 
 def gen_params_aarch64(rng):
-    """Integer and pointer parameter lists that reach x0-x7 and the stack: uniform draws
-    (0 to 14 parameters) and shapes that always use the stack: 'stack' (9 to 20 parameters),
-    'x_full' (exactly 8, then 1 to 4 more), 'narrow_tail' (8 any, then 1 to 8 char/short
-    types, so narrow values sit in stack slots) and 'ptr_tail' (8 integers, then pointers)."""
+    """Integer, pointer, float and double parameter lists that reach x0-x7, v0-v7 and the
+    stack: uniform draws (0 to 14 parameters) and shapes that always use the stack:
+    'stack' (9 to 20 parameters), 'x_full' (8 integers or pointers, then 1 to 4 of any type,
+    so floats go in v registers after x0-x7), 'narrow_tail' (8 integers or pointers, then
+    1 to 8 char/short types, so narrow values sit in stack slots), 'ptr_tail' (8 integers,
+    then pointers), 'fp_heavy' (9 to 14 floats and doubles among 0 to 6 integers: floating
+    values on the stack while x registers are free), 'v_full' (8 floats and doubles, then
+    1 to 4 of any type: integers in x registers after v0-v7) and 'both_full' (8 of each
+    class in any order, then 1 to 6 of any type: both classes interleaved on the stack)."""
     ints, narrow = list(INT_TYPES), ["char", "signed char", "unsigned char", "short", "unsigned short"]
     anyt = ints + PTR_TYPES
-    shape = rng.choice(["random", "random", "stack", "stack", "x_full", "narrow_tail", "ptr_tail"])
+    allt = anyt + FLOAT_TYPES
+    shape = rng.choice(["random", "random", "stack", "stack", "x_full", "narrow_tail", "ptr_tail",
+                        "fp_heavy", "v_full", "both_full"])
     if shape == "random":
-        return [rng.choice(anyt) for _ in range(rng.randint(0, 14))]
+        return [rng.choice(allt) for _ in range(rng.randint(0, 14))]
     if shape == "stack":
-        return [rng.choice(anyt) for _ in range(rng.randint(9, 20))]
+        return [rng.choice(allt) for _ in range(rng.randint(9, 20))]
     if shape == "x_full":
-        return [rng.choice(anyt) for _ in range(8 + rng.randint(1, 4))]
+        return [rng.choice(anyt) for _ in range(8)] + [rng.choice(allt) for _ in range(rng.randint(1, 4))]
     if shape == "narrow_tail":
         return [rng.choice(anyt) for _ in range(8)] + [rng.choice(narrow) for _ in range(rng.randint(1, 8))]
-    return [rng.choice(ints) for _ in range(8)] + [rng.choice(PTR_TYPES) for _ in range(rng.randint(1, 4))]
+    if shape == "ptr_tail":
+        return [rng.choice(ints) for _ in range(8)] + [rng.choice(PTR_TYPES) for _ in range(rng.randint(1, 4))]
+    if shape == "fp_heavy":
+        params = [rng.choice(FLOAT_TYPES) for _ in range(rng.randint(9, 14))]
+        params += [rng.choice(anyt) for _ in range(rng.randint(0, 6))]
+        rng.shuffle(params)
+        return params
+    if shape == "v_full":
+        return [rng.choice(FLOAT_TYPES) for _ in range(8)] + [rng.choice(allt) for _ in range(rng.randint(1, 4))]
+    params = [rng.choice(anyt) for _ in range(8)] + [rng.choice(FLOAT_TYPES) for _ in range(8)]
+    rng.shuffle(params)
+    return params + [rng.choice(allt) for _ in range(rng.randint(1, 6))]
 
 
 def gen_sig_aarch64(rng):
-    ret = rng.choice(list(INT_TYPES) + PTR_TYPES + ["void"])
+    ret = rng.choice(list(INT_TYPES) + PTR_TYPES + FLOAT_TYPES + ["void"])
     params = gen_params_aarch64(rng)
     raws = [leaf_values(rng, t) for t in params]
     modes = [rng.choice(["lit", "same", "int", "call"]) for _ in params]
@@ -675,7 +737,8 @@ def hit_table(seed, sigs):
         occurrences.update(hits)
         signatures.update(set(hits))
     lines = ["hits seed %d (signatures / occurrences):" % seed]
-    lines += ["  %-8s %4d / %4d  %s" % (key, signatures[key], occurrences[key], text) for key, text in cases]
+    width = max(8, max(len(key) for key, _ in cases))  # 8 keeps the ilp32d table as it was
+    lines += ["  %-*s %4d / %4d  %s" % (width, key, signatures[key], occurrences[key], text) for key, text in cases]
     missing = [key for key, _ in cases if not occurrences[key]]
     lines.append("  NOT HIT: " + " ".join(missing) if missing else "  every case hit")
     return "\n".join(lines)
