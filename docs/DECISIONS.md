@@ -983,3 +983,34 @@ every case hit. There is no step A7: nothing is deleted.
 2. 27.5.1 and 27.5.2 stay in A4: only LP64 shows them, and A4 is where they can be tested.
 3. `long` as a keyword stays out of D27.
 4. Added: 27.5.5 (8-byte unsigned constant folding through `uint64_t`), done in A4 with a custom test.
+
+## A1 notes (implementer, 2026-11-19)
+
+Choices that D27 left open, made in step A1 (`src/backend_aarch64.cpp`, `src/call_abi_aarch64.cpp`):
+
+- **Scratch registers.** x9/x10 (w9/w10) for operands and results, x16 for large offsets and constants (as 27.3),
+  and x17 for the quotient inside `rem`/`remu` (`sdiv w17, w9, w10; msub w9, w17, w10, w9`), so that x16 stays free for
+  the store of the result. Every IR type up to `I32` uses a w register (a narrow temp holds bits in its low
+  bytes, as on RISC-V); `I64` and `Ptr` use x.
+- **Frame offsets.** `used` starts at 16 (the frame record). Objects, then temps, each aligned to its own size or
+  alignment, at positive offsets from x29. `upper` is `used` rounded up to 16; `outgoing` is 0 until A3.
+  `sub sp, sp, #upper` is used when `upper` is at most 4095, else x16 holds it. The checks `off % size == 0` and
+  `off / size <= 4095` choose between the scaled immediate and the x16 fallback in `EmitMem`; the fallback
+  covers both a too-large and a misaligned offset.
+- **Constants.** `movz` always writes the low 16 bits (even when zero), then one `movk` per further non-zero
+  chunk. An `I8`/`I16` immediate is cut to its width first, so `ret i8 -6` loads 250.
+- **Narrow results.** `ret` loads the value into w0/x0 and does not extend (27.2: the upper bits are unspecified).
+  `AArch64Abi` fills `Piece::is_signed`, but A1 does not read it.
+- **A1 classifier.** Only `void` or an integer type is accepted as a return type; a pointer return also
+  throws "not in AArch64 yet" until A3/A4, together with every parameter.
+- **Beyond the letter of A1.** `addr`, `load` and `store` of `Ptr` come free with locals, so some pointer
+  tests (`pointer/addressof`, `pointer/assign`, `pointer/dereference`, `struct/struct_inst` and others that
+  only take addresses of locals) already pass. `ptradd`, `ptrtoint`, `inttoptr`, symbols, `memcpy`, `memzero`,
+  labels, branches and calls throw, as does a non-empty list of data entries (`WriteData` refuses rather
+  than silently drop data).
+- **Layout of the commits.** The `AArch64Abi` hook in `SetTarget` came with the backend commit, not the
+  `Aarch64Target()` commit, so that commit builds with a stub `EmitAArch64`.
+- **Function text.** Each function starts with `.p2align 2` (the assembler would align anyway); the shared
+  return label is `.Lret.<name>`; no `.type` or `.size` directives.
+- **compare_asm.sh and new custom tests.** `build/baseline/gen.sh` compiles every test it finds, so the two
+  new custom tests (`a1_int_ops`, `a1_big_frame`) show up as "Only in asm_new". The 321 original files are identical.
