@@ -95,6 +95,7 @@ Next: A4, arrays, pointers, globals (`ptradd`, symbols, data entries, the fronte
 | 2026-11-13 | 321/321 | cleanup before AArch64: pointer width from Target(), case values in the controlling type, step 7 review items, TARGET in run_tests.sh and abi_check |
 | 2026-11-19 | 323/323 | AArch64 A1: target, backend skeleton, integer expressions and locals (riscv32 321→323, aarch64 0→36) |
 | 2026-11-19 | 324/324 | AArch64 A2: labels, jump, branch; Isa has no default (riscv32 323→324, aarch64 36→52) |
+| 2026-11-19 | 325/325 | AArch64 A3: calls, integer and pointer rows of AArch64Abi, stack arguments, AAPCS64 case model in abi_check (riscv32 324→325, aarch64 52→160) |
 
 ## Step 6 baseline (before any struct/union work)
 Default 305/305 (incl. new `ir_float_round_nearest`), `--ir` 257/305. Per-test results: `results/baseline_default_step6.txt`, `results/baseline_ir_step6.txt`.
