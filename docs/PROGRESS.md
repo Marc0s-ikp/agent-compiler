@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: riscv32 332/332 before, 335/335 after (new: `a6_c13_int_stack`, `a6_hfa4_double`, `a6_x8_result_full`). aarch64 293/332 before, 335/335 after: `TARGET=aarch64` passes everything riscv32 passes. riscv32 assembly of the original tests byte-identical (`build/baseline/compare_asm.sh`; the `a6_*` tests are new files). abi_check seeds 101 to 505 x 300 pass on both targets, all four combinations at GCC -O0 and -O2, every aarch64 case hit (`results/a6_abi_aarch64.txt`, `results/a6_abi_riscv32.txt`).
-Fixed: AArch64 step A6 (D27): the AAPCS64 record rules in the abi_check model (stage B and C as the standard's rule list, HFA test, results derived from stage C; written first and checked against GCC's `-O2` caller by `probe_aapcs64.py`), then `memcpy`, record parameters (HFAs in v registers, records up to 16 bytes in x registers, by reference, odd-sized pieces), record results (x0/x1, v0 to v3, x8). `struct_typedef`'s driver takes the pointer size from GCC.
+Pass count: riscv32 335/335 before and after. aarch64 335/335 before, 336/336 after (new: `custom_aarch64/a4_literal_64`). Assembly of all tests on both targets byte-identical after the backend change. abi_check seeds 606, 707, 808, 909, 1010 x 500 pass on both targets, all four combinations at GCC -O0 and -O2 (35 of 35 runs per target), every case hit on every seed (riscv32 17 cases, aarch64 58; table in `docs/ABI_RESULTS.md`). `probe_aapcs64.py` on the same seeds: 0 of 2500 signatures disagree with the model.
+Fixed: release session. D28 (Marcus): where AAPCS64 is silent, GCC defines the ABI (first use: union HFA counting). `run_tests.sh` (allowed by Marcus): `tests/custom_riscv32/`, `tests/custom_aarch64/` run only under their TARGET, driver flags from `<name>.gccflags`. `a4_literal_types` uses the same expressions with `-std=gnu90`; `a4_literal_64` is 27.5.5's 8-byte literal test (folded and run time against GCC). The probe stub writes only the result's size through x8. `backend_aarch64.cpp`: `EmitCopyMem` comment, one `StoreRecordRegisterPiece`. README for two backends.
 Blocked: nothing.
-Next: D27 is done (the AArch64 backend passes everything riscv32 passes, abi_check passes on both targets with every case hit). Reviewed and merged (round 1); the review nice-to-haves are in BLOCKERS.md. Next feature is a decision for Marcus.
+Next: a decision for Marcus. The remaining A6 nice-to-haves (2, 5, 6) are in BLOCKERS.md.
 
 ## AArch64 (D27)
 | Step | riscv32 | aarch64 |
@@ -30,6 +30,7 @@ Next: D27 is done (the AArch64 backend passes everything riscv32 passes, abi_che
 | A6 `memcpy` (EmitCopyMem by access unit) | 332/332 | 296/332 |
 | A6 record parameters: HFAs in v registers, records up to 16 bytes in x registers, by reference, odd-sized pieces; custom test `a6_c13_int_stack` | 333/333 | 313/333 |
 | A6 record results: x0/x1, v0 to v3, x8; custom tests `a6_hfa4_double`, `a6_x8_result_full`; `struct_typedef` driver | 335/335 | 335/335 |
+| release: `tests/custom_<target>/` and `.gccflags` in `run_tests.sh`, `a4_literal_64` (aarch64 only), probe and backend review fixes, D28 | 335/335 | 336/336 |
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
