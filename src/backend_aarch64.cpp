@@ -229,17 +229,21 @@ private:
     // Only the piece's bytes are stored: the upper bits of a narrow argument are
     // unspecified (27.2), and the IR extends the loaded home again.
     void StoreIncomingPiece(const Piece& piece, int home) {
-        std::string reg = PieceReg(piece.where == Piece::Where::IntReg ? piece.index : 9, piece.bytes);
+        std::string reg = PieceReg(piece);
         if (piece.where == Piece::Where::StackWord) {
             EmitMem(os_, PieceLoadOp(piece.bytes), reg, "x29", frame_.upper + piece.index, piece.bytes);
-        } else if (piece.where != Piece::Where::IntReg) {
-            NotYet("floating parameter");
         }
         EmitMem(os_, PieceStoreOp(piece.bytes), reg, "x29", home + piece.offset, piece.bytes);
     }
 
-    // x<n> for an 8-byte piece, else w<n>.
-    static std::string PieceReg(int n, int bytes) { return std::string(bytes == 8 ? "x" : "w") + std::to_string(n); }
+    // The register that holds the piece: x<n> or w<n> for an integer piece; s<n>
+    // or d<n> for a floating one. A stack piece goes through x9 or w9 (a float
+    // or double is only copied, as bits).
+    static std::string PieceReg(const Piece& piece) {
+        bool wide = piece.bytes == 8;
+        if (piece.where == Piece::Where::FloatReg) return std::string(wide ? "d" : "s") + std::to_string(piece.index);
+        return std::string(wide ? "x" : "w") + std::to_string(piece.where == Piece::Where::IntReg ? piece.index : 9);
+    }
 
     static const char* PieceLoadOp(int bytes) { return bytes == 1 ? "ldrb" : bytes == 2 ? "ldrh" : "ldr"; }
     static const char* PieceStoreOp(int bytes) { return bytes == 1 ? "strb" : bytes == 2 ? "strh" : "str"; }
@@ -282,8 +286,7 @@ private:
     // The value comes back in x0 or w0 (27.2); the upper bits of a narrow
     // value are unspecified, so nothing is extended.
     void LoadReturnValue(const Operand& value) {
-        if (entry_.ret.pieces.at(0).where != Piece::Where::IntReg) NotYet("return in a floating register");
-        Load(0, value);
+        Load(entry_.ret.pieces.at(0).index, value);  // x0, w0, s0 or d0, by the value's type
     }
 
     // ---- calls (caller side) ----
@@ -307,9 +310,8 @@ private:
             case Piece::Where::StackWord:
                 Load(Scratch(o.type, 0), o);
                 return EmitMem(os_, StoreOp(o.type), Reg(Scratch(o.type, 0), o.type), "sp", piece.index, ir::SizeOf(o.type));
-            case Piece::Where::FloatReg: break;
+            case Piece::Where::FloatReg: return Load(piece.index, o);  // s<n> or d<n> by the type
         }
-        NotYet("floating argument");
     }
 
     // ---- instructions ----
