@@ -360,6 +360,7 @@ private:
     // a trunc stores the low bytes of the same register number.
     void WriteConversion(const Instruction& in) {
         IrType from = in.args[0].type;
+        if (in.op == Op::PtrToInt || in.op == Op::IntToPtr) return WritePointerCast(in);
         if (in.op != Op::SExt && in.op != Op::ZExt && in.op != Op::Trunc) NotYet(ir::OpName(in.op));
         Load(9, in.args[0]);
         std::string src = Reg(9, from), dst = Reg(9, in.type);
@@ -369,6 +370,12 @@ private:
         } else if (in.op == Op::ZExt) {  // a w-register write clears bits 32 to 63
             os_ << "\t" << (bytes == 1 ? "uxtb " : bytes == 2 ? "uxth " : "mov ") << "w9, w9\n";
         }
+        StoreResult(9, in.dst);
+    }
+
+    // A pointer and an I64 are both 64 bits in an x register, so the cast is a copy.
+    void WritePointerCast(const Instruction& in) {
+        Load(9, in.args[0]);
         StoreResult(9, in.dst);
     }
 
