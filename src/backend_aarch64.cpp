@@ -159,9 +159,17 @@ Frame LayoutFrame(const ir::Function& fn, int outgoing_bytes) {
 
 class FunctionWriter {
 public:
+    // One Classify call for the function's own entry and one for each call (D5,
+    // 21.5); the frame layout needs the calls' stack sizes first.
     FunctionWriter(const ir::Function& fn, std::ostream& os) : fn_(fn), os_(os) {
         entry_ = Target().Abi().Classify(ParamTypes(), fn.c_return);
-        int outgoing = 0;  // A3: the largest stack_bytes over the function's calls
+        int outgoing = 0;
+        for (size_t i = 0; i < fn.body.size(); ++i) {
+            const Instruction& in = fn.body[i];
+            if (in.op != Op::Call) continue;
+            calls_[i] = Target().Abi().Classify(in.arg_types, in.ret_type);
+            outgoing = std::max(outgoing, calls_[i].stack_bytes);
+        }
         frame_ = LayoutFrame(fn, outgoing);
     }
 
@@ -170,7 +178,7 @@ public:
         if (fn_.is_global) os_ << "\t.globl " << fn_.name << "\n";
         os_ << fn_.name << ":\n";
         WritePrologue();
-        for (const Instruction& in : fn_.body) WriteInstruction(in);
+        for (size_t i = 0; i < fn_.body.size(); ++i) WriteInstruction(i, fn_.body[i]);
         os_ << ReturnLabel() << ":\n";
         WriteEpilogue();
     }
@@ -256,6 +264,32 @@ private:
     void LoadReturnValue(const Operand& value) {
         if (entry_.ret.pieces.at(0).where != Piece::Where::IntReg) NotYet("return in a floating register");
         Load(0, value);
+    }
+
+    // ---- calls (caller side) ----
+
+    // Each argument piece goes to its x register or its word of the outgoing
+    // area at sp. Only the piece's bytes are written: the upper bits of a narrow
+    // argument are unspecified (27.2). Then 'bl'; an integer or pointer result
+    // is in x0 (w0), and its slot keeps the bytes of the result's type.
+    void WriteCall(size_t index, const Instruction& in) {
+        const CallLayout& layout = calls_.at(index);
+        for (size_t i = 0; i < in.args.size(); ++i) {
+            for (const Piece& piece : layout.args[i].pieces) PlaceOutgoingPiece(in.args[i], piece);
+        }
+        os_ << "\tbl " << in.callee << "\n";
+        if (in.dst.kind == Operand::Kind::Temp) StoreResult(0, in.dst);
+    }
+
+    void PlaceOutgoingPiece(const Operand& o, const Piece& piece) {
+        switch (piece.where) {
+            case Piece::Where::IntReg: return Load(piece.index, o);
+            case Piece::Where::StackWord:
+                Load(9, o);
+                return EmitMem(os_, StoreOp(o.type), Reg(9, o.type), "sp", piece.index, ir::SizeOf(o.type));
+            case Piece::Where::FloatReg: break;
+        }
+        NotYet("floating argument");
     }
 
     // ---- instructions ----
@@ -346,7 +380,7 @@ private:
             << "\n1:\n\tb " << LocalLabel(in.label2) << "\n";
     }
 
-    void WriteInstruction(const Instruction& in) {
+    void WriteInstruction(size_t index, const Instruction& in) {
         if (ir::IsBinaryArith(in.op)) return WriteBinary(in);
         if (ir::IsCompare(in.op)) return WriteCompare(in);
         if (ir::IsConversion(in.op)) return WriteConversion(in);
@@ -376,6 +410,7 @@ private:
             case Op::Label: os_ << LocalLabel(in.label) << ":\n"; return;
             case Op::Jump: os_ << "\tb " << LocalLabel(in.label) << "\n"; return;
             case Op::Branch: return WriteBranch(in);
+            case Op::Call: return WriteCall(index, in);
             case Op::Ret:
                 if (!in.args.empty()) LoadReturnValue(in.args[0]);
                 os_ << "\tb " << ReturnLabel() << "\n";
@@ -387,6 +422,7 @@ private:
     const ir::Function& fn_;
     std::ostream& os_;
     CallLayout entry_;
+    std::map<size_t, CallLayout> calls_;  // by instruction index
     Frame frame_;
 };
 
