@@ -94,7 +94,10 @@ int CompileViaIR(const Options& opts, const ast::TranslationUnit& root, std::ost
         return ReportIRErrors(module) ? 1 : 0;  // 2. then the checker
     }
     if (ReportIRErrors(module)) return 1;  // checker first, then the backend
-    EmitRiscv(module, out);
+    switch (Target().isa) {
+        case Isa::RiscV32: EmitRiscv(module, out); break;
+        case Isa::AArch64: EmitAArch64(module, out); break;
+    }
     return 0;
 }
 

@@ -22,13 +22,33 @@ TargetInfo Riscv32Target() {
     t.double_align = 8;
     t.char_is_signed = false;
     t.stack_align = 16;
+    t.isa = Isa::RiscV32;
     t.abi_kind = AbiKind::RiscV32;
     return t;
 }
 
+// D27, 27.1: LP64, plain char unsigned (__CHAR_UNSIGNED__), as GCC for aarch64-linux-gnu.
+TargetInfo Aarch64Target() {
+    TargetInfo t;
+    t.char_size = 1;
+    t.short_size = 2;
+    t.int_size = 4;
+    t.long_size = 8;
+    t.pointer_size = 8;
+    t.float_size = 4;
+    t.double_size = 8;
+    t.double_align = 8;
+    t.char_is_signed = false;
+    t.stack_align = 16;
+    t.isa = Isa::AArch64;
+    t.abi_kind = AbiKind::AArch64;
+    return t;
+}
+
 bool FindTarget(const std::string& name, TargetInfo& out) {
-    if (name != "riscv32") return false;
-    out = Riscv32Target();
+    if (name == "riscv32") out = Riscv32Target();
+    else if (name == "aarch64") out = Aarch64Target();
+    else return false;
     return true;
 }
 
@@ -46,6 +66,7 @@ const TargetAbi* AbiFor(AbiKind kind) {
     static const RiscV32Abi riscv32;
     switch (kind) {
         case AbiKind::RiscV32: return &riscv32;
+        case AbiKind::AArch64:  // the classifier arrives with the backend skeleton
         case AbiKind::None: return nullptr;
     }
     return nullptr;
