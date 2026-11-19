@@ -16,6 +16,9 @@ OPTS=("$@")
 [ "$#" -eq 0 ] && OPTS=(-O0)
 case " ${OPTS[*]} " in *" -O2 "*) ;; *) OPTS+=(-O2) ;; esac
 TARGET="${TARGET:-riscv32}"
+# D27 27.6: the ilp32d case model would report "every case hit" for cases AArch64
+# does not have. Step A3 adds the AAPCS64 model and removes this refusal.
+if [ "$TARGET" = aarch64 ]; then echo "no AAPCS64 case model yet"; exit 2; fi
 case "$TARGET" in
   riscv32) GCC="riscv64-unknown-elf-gcc -march=rv32imfd -mabi=ilp32d"; LINK_FLAGS=""; SIM="spike pk" ;;
   aarch64) GCC="aarch64-linux-gnu-gcc"; LINK_FLAGS="-static"; SIM="qemu-aarch64" ;;
