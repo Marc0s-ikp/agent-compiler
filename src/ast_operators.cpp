@@ -192,7 +192,7 @@ static TypePtr CompareType(const TypePtr& l, const TypePtr& r) {
         if (l->IsFloating() || r->IsFloating()) {
             throw std::runtime_error("comparison of pointer and floating value");
         }
-        return Type::UInt();
+        return Type::SizeT();  // the unsigned integer of pointer width (27.5.3)
     }
     return UsualArithmetic(l, r);
 }
