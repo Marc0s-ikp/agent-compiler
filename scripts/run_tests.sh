@@ -45,6 +45,7 @@ fi
 pass=0; total=0
 for t in "${TESTS[@]}"; do
   name="${t%.c}"
+  name="${name#./}"
   rel="${name#tests/}"
   case "$rel" in
     custom_"$TARGET"/*) ;;
