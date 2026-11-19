@@ -385,8 +385,21 @@ private:
         }
     }
 
+    // fcmp sets N, Z, C, V as 0b0011 (C, V) for an unordered pair, so 'lt' and
+    // 'le' would be true for NaN. 'mi' (N set) is "less than" and 'ls' (C clear
+    // or Z set) is "less or equal", both false when unordered; 'eq' is false too.
+    // != is built from FEq by the frontend.
+    void WriteFloatCompare(const Instruction& in) {
+        const char* cond = in.op == Op::FEq ? "eq" : in.op == Op::FLt ? "mi" : "ls";
+        Load(16, in.args[0]);
+        Load(17, in.args[1]);
+        os_ << "\tfcmp " << Reg(16, in.type) << ", " << Reg(17, in.type) << "\n";
+        os_ << "\tcset w9, " << cond << "\n";
+        StoreResult(9, in.dst);
+    }
+
     void WriteCompare(const Instruction& in) {
-        if (ir::IsFloatType(in.type)) NotYet("floating compare");
+        if (ir::IsFloatType(in.type)) return WriteFloatCompare(in);
         Load(9, in.args[0]);
         Load(10, in.args[1]);
         os_ << "\tcmp " << Reg(9, in.type) << ", " << Reg(10, in.type) << "\n";
