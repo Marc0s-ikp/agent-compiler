@@ -28,6 +28,8 @@ public:
     static TypePtr UInt();
     // ptrdiff_t: the signed integer type of the target's pointer width.
     static TypePtr PtrDiff();
+    // size_t, the type of sizeof: the unsigned integer type of the target's pointer width.
+    static TypePtr SizeT();
     // The size picks float or double; Float() and Double() use the target's.
     static TypePtr Floating(int size);
     static TypePtr Float();

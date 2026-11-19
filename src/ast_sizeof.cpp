@@ -8,8 +8,8 @@ namespace ast {
 
 namespace {
 
-// sizeof yields size_t, which is unsigned int on this target.
-TypePtr SizeType() { return Type::UInt(); }
+// sizeof yields size_t, the unsigned integer of pointer width (27.5.1).
+TypePtr SizeType() { return Type::SizeT(); }
 
 // The size of an object type; void, functions and incomplete arrays have none.
 long ObjectSize(const Type& type) {
