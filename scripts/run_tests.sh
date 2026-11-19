@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Runs the compiler against every test (or the ones given as arguments).
 # Each test is <name>.c plus <name>_driver.c; the driver returns 0 on success.
+# An optional <name>.gccflags next to them holds extra GCC flags for building the driver
+# (for example -std=gnu90); the compiler under test never sees them.
+# tests/custom_<TARGET>/ holds tests that run only under that TARGET: they are found only
+# for that TARGET, and one named on the command line under another TARGET is skipped.
 # Output: results/latest.txt and a summary line on stdout.
 # TARGET picks the target: riscv32 (default) or aarch64. It is passed to the
 # compiler as --target and selects the toolchain that links and runs the test.
@@ -35,21 +39,28 @@ mkdir -p "$WORK" "$ROOT/results"
 if [ "$#" -gt 0 ]; then
   TESTS=("$@")
 else
-  mapfile -t TESTS < <(find tests/compiler_tests tests/custom -name '*.c' ! -name '*_driver.c' | sort)
+  mapfile -t TESTS < <(find tests/compiler_tests tests/custom "tests/custom_$TARGET" -name '*.c' ! -name '*_driver.c' 2>/dev/null | sort)
 fi
 
 pass=0; total=0
 for t in "${TESTS[@]}"; do
-  total=$((total + 1))
   name="${t%.c}"
+  name="${name#./}"
   rel="${name#tests/}"
+  case "$rel" in
+    custom_"$TARGET"/*) ;;
+    custom_*/*) echo "skipped $rel (not a $TARGET test)" >&2; continue ;;
+  esac
+  total=$((total + 1))
   base="$WORK/${rel//\//_}"
   driver="${name}_driver.c"
+  driver_flags=""
+  [ -f "$name.gccflags" ] && driver_flags="$(cat "$name.gccflags")"
 
   if ! timeout "$TIMEOUT" build/c_compiler --target "$TARGET" ${COMPILER_FLAGS:-} -S "$t" -o "$base.s" > "$base.compile.log" 2>&1; then
     echo "CRASH   $rel (compiler)" >> "$OUT"; continue
   fi
-  if ! $GCC $ARCH_FLAGS -o "$base.elf" "$base.s" "$driver" > "$base.link.log" 2>&1; then
+  if ! $GCC $ARCH_FLAGS $driver_flags -o "$base.elf" "$base.s" "$driver" > "$base.link.log" 2>&1; then
     echo "FAIL    $rel (assemble/link)" >> "$OUT"; continue
   fi
   timeout "$TIMEOUT" $SIM "$base.elf" > "$base.run.log" 2>&1

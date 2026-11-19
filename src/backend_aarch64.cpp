@@ -162,7 +162,9 @@ std::string UnitReg(int n, int unit) { return std::string(unit == 8 ? "x" : "w")
 
 // Copies 'bytes' bytes of alignment 'align' from the address in 'src' to the one in 'dst'. Up to 16
 // units it is straight-line code; beyond that a loop runs x12 (dst) up to x14 (the end) with x13 (src).
-// Clobbers x11 to x14 (and x16), so 'dst' and 'src' must be other registers; both stay unchanged.
+// Clobbers x11 to x14 and x16. 'src' must be none of them and stays unchanged. 'dst' must not be x11
+// to x14; it may be x16 (read before x16 is written), but x16 is then overwritten by a loop copy whose
+// end offset needs more than 12 bits, so do not rely on 'dst' afterwards.
 void EmitCopyMem(std::ostream& os, const std::string& dst, const std::string& src, int bytes, int align) {
     const int kUnrolledMax = 16;
     int unit = AccessUnit(align, bytes);
@@ -321,19 +323,27 @@ private:
 
     static IrType FloatPieceType(const Piece& piece) { return piece.bytes == 8 ? IrType::F64 : IrType::F32; }
 
-    void StoreIncomingRecordPiece(const Piece& piece, const Type& type, int home) {
-        int dst = home + piece.offset;
+    // A record piece held in a register (v<n> as its float type, or x<n> a unit at a time) to off(base).
+    // Used for an incoming parameter and for a returned record. Clobbers x11 (and x16 for a far offset).
+    void StoreRecordRegisterPiece(const Piece& piece, const Type& type, const std::string& base, int off) {
         switch (piece.where) {
             case Piece::Where::FloatReg:
-                return EmitMem(os_, "str", Reg(piece.index, FloatPieceType(piece)), "x29", dst, piece.bytes);
+                return EmitMem(os_, "str", Reg(piece.index, FloatPieceType(piece)), base, off, piece.bytes);
             case Piece::Where::IntReg:
-                return EmitStoreChunks(os_, piece.index, piece.bytes, type.Align(), "x29", dst);
+                return EmitStoreChunks(os_, piece.index, piece.bytes, type.Align(), base, off);
             case Piece::Where::StackWord:
-                if (!IsWholeStackRecord(piece, type)) NotYet("a record split between registers and the stack");
-                EmitAddrOffset(os_, "x17", "x29", frame_.upper + piece.index);
-                EmitAddrOffset(os_, "x16", "x29", home);
-                return EmitCopyMem(os_, "x16", "x17", piece.bytes, type.Align());
+                NotYet("a stack piece where a register piece is expected");
         }
+    }
+
+    void StoreIncomingRecordPiece(const Piece& piece, const Type& type, int home) {
+        if (piece.where != Piece::Where::StackWord) {
+            return StoreRecordRegisterPiece(piece, type, "x29", home + piece.offset);
+        }
+        if (!IsWholeStackRecord(piece, type)) NotYet("a record split between registers and the stack");
+        EmitAddrOffset(os_, "x17", "x29", frame_.upper + piece.index);
+        EmitAddrOffset(os_, "x16", "x29", home);
+        EmitCopyMem(os_, "x16", "x17", piece.bytes, type.Align());
     }
 
     // Only the piece's bytes are stored: the upper bits of a narrow argument are
@@ -468,13 +478,7 @@ private:
         if (ret.in_memory) return;
         const Type& type = *in.ret_type;
         Load(17, in.result_object);
-        for (const Piece& piece : ret.pieces) {
-            if (piece.where == Piece::Where::FloatReg) {
-                EmitMem(os_, "str", Reg(piece.index, FloatPieceType(piece)), "x17", piece.offset, piece.bytes);
-            } else {
-                EmitStoreChunks(os_, piece.index, piece.bytes, type.Align(), "x17", piece.offset);
-            }
-        }
+        for (const Piece& piece : ret.pieces) StoreRecordRegisterPiece(piece, type, "x17", piece.offset);
     }
 
     void PlaceOutgoingPiece(const Operand& o, const Piece& piece) {
