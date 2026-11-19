@@ -11,10 +11,10 @@
 - [x] 8. structs, unions
 
 ## Latest session
-Pass count: riscv32 323/323 before, 324/324 after (new: `a2_control_flow`). aarch64 36/323 before, 52/324 after. riscv32 assembly of the 321 original tests byte-identical (`build/baseline/compare_asm.sh`).
-Fixed: `Isa::None` is the default and aborts (BLOCKERS A1 review item 1). AArch64 step A2 (D27): `label`, `jump`, `branch` (`cbz`, `b`, `b`); every compare op was already covered.
-Blocked: nothing. 2 review nice-to-haves are in BLOCKERS.md. `custom/sizeof_types` still fails on aarch64: its driver hard-codes ILP32 sizes (27.6: compute them with GCC's `sizeof`).
-Next: A3, calls and parameters (the first error in 200 of the 272 aarch64 failures).
+Pass count: riscv32 324/324 before, 325/325 after (new: `a3_stack_mixed`). aarch64 52/324 before, 160/325 after. riscv32 assembly of the 321 original tests byte-identical (`build/baseline/compare_asm.sh`).
+Fixed: AArch64 step A3 (D27): integer and pointer rows of `AArch64Abi`, callee parameter homes, `bl`, the outgoing area, stack arguments, recursion, `ptrtoint`/`inttoptr` as copies (needed for pointer results). `call_abi.hpp` comments name no ISA. `abi_check` has the AAPCS64 case model; `run_abi.sh` accepts aarch64 (seeds 101-505 x 300 pass in all four combinations, GCC -O0 and -O2, every case hit, on both targets).
+Blocked: nothing.
+Next: A4, arrays, pointers, globals (`ptradd`, symbols, data entries, the frontend LP64 items 27.5.1 to 27.5.3 and 27.5.5).
 
 ## AArch64 (D27)
 | Step | riscv32 | aarch64 |
@@ -22,6 +22,7 @@ Next: A3, calls and parameters (the first error in 200 of the 272 aarch64 failur
 | baseline (master after D27 docs) | 321/321 | 0/321 |
 | A1 target, skeleton, integer expressions and locals | 323/323 | 36/323 |
 | A2 control flow | 324/324 | 52/324 |
+| A3 calls: integer and pointer rows of `AArch64Abi`, outgoing area, stack arguments, AAPCS64 case model in `abi_check` | 325/325 | 160/325 |
 
 ## v3 migration (IR path)
 | Step | Default | --ir |
