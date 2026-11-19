@@ -14,7 +14,7 @@ int main()
     if (s_concat() != 4) return 3;
     if (s_escape() != 3) return 4;
     if (s_nul() != 4) return 5;
-    if (s_ptr() != 4) return 6;
+    if (s_ptr() != sizeof(char *)) return 6;
     if (s_array() != 6) return 7;
     if (s_len() != 5) return 8;
     return 0;

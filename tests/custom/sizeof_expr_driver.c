@@ -33,16 +33,16 @@ int main()
     if (s_garr() != 7) return 8;
     if (s_deref() != 4) return 9;
     if (s_deref_ch() != 1) return 10;
-    if (s_ptr() != 4) return 11;
+    if (s_ptr() != sizeof(char *)) return 11;
     if (s_promote() != 4) return 12;
     if (s_char_lit() != 4) return 13;
     if (s_add() != 4) return 14;
     if (s_cmp() != 4) return 15;
     if (s_neg() != 4) return 16;
-    if (s_addr() != 4) return 17;
+    if (s_addr() != sizeof(int *)) return 17;
     if (s_2d() != 4800 + 160 + 4) return 18;
-    if (s_param(a) != 4) return 19;
-    if (s_sizeof_sizeof() != 4) return 20;
+    if (s_param(a) != sizeof(int *)) return 19;
+    if (s_sizeof_sizeof() != sizeof(sizeof(char))) return 20;
     if (s_in_expr() != 19) return 21;
     return 0;
 }

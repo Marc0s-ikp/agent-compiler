@@ -29,7 +29,7 @@ int main(void)
     if (size_char(&ch, 1) != 1) return 7;
     if (size_zero(&i, 1) != 4) return 8;
     if (size_ptr_arith(&s, 1) != 8) return 9;
-    if (size_void_var(&i, &j, 0) != 4) return 10;
+    if (size_void_var(&i, &j, 0) != sizeof(void *)) return 10;
     if (!void_var_assign(&i, &i, 1) || !void_var_assign(&i, &i, 0)) return 11;
     if (both_void(&i, &j, 1) != (void *)&i || both_void(&i, &j, 0) != (void *)&j) return 12;
     if (same_int(&i, &j, 1) != &i || same_int(&i, &j, 0) != &j) return 13;
