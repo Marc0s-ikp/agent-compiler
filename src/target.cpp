@@ -1,5 +1,6 @@
 #include "target.hpp"
 
+#include "call_abi_aarch64.hpp"
 #include "call_abi_riscv.hpp"
 
 #include <cstdlib>
@@ -64,9 +65,10 @@ namespace {
 // One static object per ABI class; a target only points at it.
 const TargetAbi* AbiFor(AbiKind kind) {
     static const RiscV32Abi riscv32;
+    static const AArch64Abi aarch64;
     switch (kind) {
         case AbiKind::RiscV32: return &riscv32;
-        case AbiKind::AArch64:  // the classifier arrives with the backend skeleton
+        case AbiKind::AArch64: return &aarch64;
         case AbiKind::None: return nullptr;
     }
     return nullptr;
