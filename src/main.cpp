@@ -97,6 +97,9 @@ int CompileViaIR(const Options& opts, const ast::TranslationUnit& root, std::ost
     switch (Target().isa) {
         case Isa::RiscV32: EmitRiscv(module, out); break;
         case Isa::AArch64: EmitAArch64(module, out); break;
+        case Isa::None:
+            std::cerr << "internal error: no isa selected\n";
+            std::abort();
     }
     return 0;
 }

@@ -303,7 +303,7 @@ From the review of `cleanup/pre-aarch64` (2026-11-13, approved in round 1). None
 
 From the review of `feat/aarch64-a1` (2026-11-19, approved in round 1). None of these blocked the merge.
 
-1. `include/target.hpp`: `Isa isa = Isa::RiscV32;` is a silent default. A `TargetInfo` built outside a factory would
+1. DONE (A2 commit 1: `Isa::None` is the default, `SetTarget` and `main` abort on it). `include/target.hpp`: `Isa isa = Isa::RiscV32;` is a silent default. A `TargetInfo` built outside a factory would
    pick the RISC-V backend without complaint. `abi_kind` defaults to `None`, and an `Isa::None` that `main` rejects
    would fit the "never fall back to a default" rule.
 2. `tests/custom/a1_int_ops.c`: the header says it tests 64-bit immediates, but every operand is 32-bit (I64
